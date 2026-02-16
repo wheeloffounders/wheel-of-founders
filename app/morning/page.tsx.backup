@@ -1,0 +1,488 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Calendar, Target, Shield, CheckCircle, ArrowRight, Sparkles, MessageSquare } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { format } from 'date-fns'
+import { useRouter } from 'next/navigation'
+
+type Task = {
+  description: string
+  why: string
+  isNeedleMover: boolean
+  preventability: 'batch' | 'delegate' | 'eliminate' | 'do_now'
+}
+
+type Step = 'task' | 'why' | 'needle' | 'prevent' | 'addAnother' | 'decision' | 'decisionWhy'
+
+export default function MorningPage() {
+  const router = useRouter()
+  const [currentTaskIndex, setCurrentTaskIndex] = useState(0)
+  const [currentStep, setCurrentStep] = useState<Step>('task')
+  const [tasks, setTasks] = useState<Task[]>([
+    { description: '', why: '', isNeedleMover: true, preventability: 'do_now' },
+  ])
+  const [decision, setDecision] = useState({
+    decisionText: '',
+    decisionType: 'tactical' as 'strategic' | 'tactical',
+    why: ''
+  })
+  const [showCelebration, setShowCelebration] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const today = new Date()
+
+  const steps = ['task', 'why', 'needle', 'prevent', 'addAnother', 'decision', 'decisionWhy'] as Step[]
+  const currentStepIndex = steps.indexOf(currentStep)
+  const progress = ((currentStepIndex + 1) / steps.length) * 100
+
+  // CONVERSATIONAL FRAMING (#1) + SOFTER LABELS (#2)
+  const coachMessages = {
+    task: [
+      "What's the ONE thing that would make today a win?",
+      "Start with your most important priority.",
+      "First thing on your mind this morning?"
+    ],
+    why: [
+      "Why does this matter to you?",
+      "What makes this meaningful?",
+      "How does this move you forward?"
+    ],
+    needle: [
+      "Is this moving the needle? 🎯",
+      "Strategic move or daily maintenance?",
+      "Will this create lasting impact?"
+    ],
+    prevent: [
+      "How can you handle this smarter? 🛡️",
+      "What's the most efficient way forward?",
+      "Can this be streamlined?"
+    ],
+    addAnother: [
+      `Looking good — ${tasks.length} of ${tasks.length === 3 ? '3' : '3 max'} priorities set.`,
+      `${tasks.length} priorities planned. Feeling focused?`,
+      `You've planned ${tasks.length} ${tasks.length === 1 ? 'priority' : 'priorities'}.`
+    ],
+    decision: [
+      "What decision are you sitting on?",
+      "Today's key choice that will shape your week?",
+      "One decision that deserves your attention?"
+    ],
+    decisionWhy: [
+      "Walk me through your thinking...",
+      "What's behind this choice?",
+      "Why this direction?"
+    ]
+  }
+
+  // Get random coach message for variety
+  const getCoachMessage = (step: Step) => {
+    const messages = coachMessages[step]
+    return messages[Math.floor(Math.random() * messages.length)]
+  }
+
+  const confidenceMessages = [
+    "Great start!",
+    "Looking sharp!",
+    "You're on track!",
+    "Making progress!",
+    "Focus building!",
+    "Almost there!"
+  ]
+
+  const getConfidenceMessage = () => {
+    return confidenceMessages[Math.floor(Math.random() * confidenceMessages.length)]
+  }
+
+  const handleNext = () => {
+    const currentIdx = steps.indexOf(currentStep)
+    if (currentIdx < steps.length - 1) {
+      setCurrentStep(steps[currentIdx + 1])
+      
+      // Celebrate after completing a task
+      if (currentStep === 'prevent') {
+        setShowCelebration(true)
+        setTimeout(() => setShowCelebration(false), 1500)
+      }
+    }
+  }
+
+  const handleBack = () => {
+    const currentIdx = steps.indexOf(currentStep)
+    if (currentIdx > 0) {
+      setCurrentStep(steps[currentIdx - 1])
+    }
+  }
+
+  const addAnotherTask = () => {
+    if (tasks.length < 3) {
+      setTasks([...tasks, { description: '', why: '', isNeedleMover: true, preventability: 'do_now' }])
+      setCurrentTaskIndex(tasks.length)
+      setCurrentStep('task')
+    }
+  }
+
+  const finishTasks = () => {
+    setCurrentStep('decision')
+  }
+
+  const saveMorningPlan = async () => {
+    setLoading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        alert('Please sign in first')
+        return
+      }
+
+      // Save tasks
+      for (const task of tasks) {
+        if (task.description.trim()) {
+          await supabase.from('tasks').insert({
+            user_id: user.id,
+            description: task.description,
+            why: task.why,
+            is_needle_mover: task.isNeedleMover,
+            preventability: task.preventability,
+            completed: false,
+            created_at: new Date().toISOString()
+          })
+        }
+      }
+
+      // Save decision
+      if (decision.decisionText.trim()) {
+        await supabase.from('decisions').insert({
+          user_id: user.id,
+          decision_text: decision.decisionText,
+          decision_type: decision.decisionType,
+          why: decision.why,
+          created_at: new Date().toISOString()
+        })
+      }
+
+      alert('🎉 Morning plan saved! Today is yours to shape.')
+      router.push('/')
+    } catch (error) {
+      console.error('Error saving:', error)
+      alert('Something went wrong. Let\'s try that again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const currentTask = tasks[currentTaskIndex]
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-8">
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Morning Architect</h1>
+            <div className="flex items-center mt-2 text-gray-600">
+              <Calendar className="w-4 h-4 mr-2" />
+              <span>{format(today, 'EEEE, MMMM do')}</span>
+            </div>
+          </div>
+          <div className="text-sm text-gray-500">
+            {tasks.length === 1 ? 'First priority' : 
+             tasks.length === 2 ? 'Second priority' : 
+             tasks.length === 3 ? 'Third priority' : 'Planning'}
+          </div>
+        </div>
+
+        {/* Progress Bar with Confidence Messaging */}
+        <div className="mt-6">
+          <div className="flex justify-between items-center text-sm mb-2">
+            <span className="text-gray-600">{getConfidenceMessage()}</span>
+            <span className="text-gray-600">{Math.round(progress)}% focused</span>
+          </div>
+          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-[#ef725c] transition-all duration-500 ease-out"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Coach Message */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-blue-500 p-4 mb-6 rounded-r-lg animate-pulse">
+        <div className="flex items-start">
+          <MessageSquare className="w-5 h-5 text-blue-500 mr-3 mt-0.5 flex-shrink-0" />
+          <p className="text-gray-800 font-medium">{getCoachMessage(currentStep)}</p>
+        </div>
+      </div>
+
+      {/* Celebration Animation */}
+      {showCelebration && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none animate-fade-in">
+          <div className="text-center animate-bounce">
+            <CheckCircle className="w-16 h-16 text-green-500 mx-auto" />
+            <p className="mt-4 text-xl font-bold text-green-600">Nice work! 🎯</p>
+            <p className="text-gray-600">Priority set with intention</p>
+          </div>
+        </div>
+      )}
+
+      {/* Step Content */}
+      <div className="bg-white rounded-xl shadow-lg p-6 mb-6 transition-all duration-300">
+        {currentStep === 'task' && (
+          <div className="animate-fade-in">
+            <textarea
+              value={currentTask.description}
+              onChange={(e) => {
+                const newTasks = [...tasks]
+                newTasks[currentTaskIndex].description = e.target.value
+                setTasks(newTasks)
+              }}
+              placeholder="Describe your focus for today..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-lg"
+              rows={2}
+              autoFocus
+            />
+            <p className="text-sm text-gray-500 mt-2">
+              Research shows 3 priorities optimizes focus
+            </p>
+          </div>
+        )}
+
+        {currentStep === 'why' && (
+          <div className="animate-fade-in">
+            <textarea
+              value={currentTask.why}
+              onChange={(e) => {
+                const newTasks = [...tasks]
+                newTasks[currentTaskIndex].why = e.target.value
+                setTasks(newTasks)
+              }}
+              placeholder="What makes this meaningful to you?"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-lg"
+              rows={2}
+              autoFocus
+            />
+          </div>
+        )}
+
+        {currentStep === 'needle' && (
+          <div className="animate-fade-in">
+            <div className="flex space-x-4">
+              <button
+                onClick={() => {
+                  const newTasks = [...tasks]
+                  newTasks[currentTaskIndex].isNeedleMover = true
+                  setTasks(newTasks)
+                }}
+                className={`flex-1 py-4 px-4 rounded-lg border-2 transition-all duration-200 ${
+                  currentTask.isNeedleMover
+                    ? 'border-green-500 bg-green-50 text-green-800 shadow-sm'
+                    : 'border-gray-300 text-gray-700 hover:border-gray-400 hover:shadow'
+                }`}
+              >
+                <div className="flex flex-col items-center">
+                  <span className="text-2xl mb-1">🎯</span>
+                  <span className="font-medium">Needle Mover</span>
+                  <span className="text-xs text-gray-600 mt-1">Strategic impact</span>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  const newTasks = [...tasks]
+                  newTasks[currentTaskIndex].isNeedleMover = false
+                  setTasks(newTasks)
+                }}
+                className={`flex-1 py-4 px-4 rounded-lg border-2 transition-all duration-200 ${
+                  !currentTask.isNeedleMover
+                    ? 'border-gray-500 bg-gray-100 text-gray-800 shadow-sm'
+                    : 'border-gray-300 text-gray-700 hover:border-gray-400 hover:shadow'
+                }`}
+              >
+                <div className="flex flex-col items-center">
+                  <span className="text-2xl mb-1">⚙️</span>
+                  <span className="font-medium">Maintenance</span>
+                  <span className="text-xs text-gray-600 mt-1">Keep things running</span>
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {currentStep === 'prevent' && (
+          <div className="animate-fade-in">
+            <select
+              value={currentTask.preventability}
+              onChange={(e) => {
+                const newTasks = [...tasks]
+                newTasks[currentTaskIndex].preventability = e.target.value as any
+                setTasks(newTasks)
+              }}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-lg transition-all duration-200"
+              autoFocus
+            >
+              <option value="batch">📦 Batch later (group similar tasks)</option>
+              <option value="delegate">👥 Delegate (someone else can handle)</option>
+              <option value="eliminate">🗑️ Eliminate (does this even need doing?)</option>
+              <option value="do_now">⚡ Do now (truly urgent & important)</option>
+            </select>
+            <p className="text-sm text-gray-500 mt-2">
+              Smart founders batch, delegate, or eliminate first
+            </p>
+          </div>
+        )}
+
+        {currentStep === 'addAnother' && (
+          <div className="text-center py-8 animate-fade-in">
+            <div className="text-4xl mb-4 animate-bounce">
+              {tasks.length === 1 ? '📝' : tasks.length === 2 ? '📚' : '🏆'}
+            </div>
+            <h3 className="text-xl font-semibold mb-2">
+              {tasks.length === 3 ? 'Power List Complete!' : `${tasks.length} of 3 priorities set`}
+            </h3>
+            <p className="text-gray-600 mb-6">
+              {tasks.length === 3 
+                ? 'You\'re focused on what matters most today!'
+                : 'Ready to add another priority?'}
+            </p>
+            <div className="flex space-x-4 justify-center">
+              {tasks.length < 3 && (
+                <button
+                  onClick={addAnotherTask}
+                  className="px-6 py-3 bg-[#152b50] text-white rounded-lg font-medium hover:bg-opacity-90 transition-all duration-200 hover:scale-105"
+                >
+                  Add Another Priority
+                </button>
+              )}
+              <button
+                onClick={finishTasks}
+                className="px-6 py-3 bg-gradient-to-r from-[#ef725c] to-orange-500 text-white rounded-lg font-medium hover:opacity-90 transition-all duration-200 hover:scale-105"
+              >
+                {tasks.length === 3 ? 'Shape Your Day →' : 'Finish Planning'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {currentStep === 'decision' && (
+          <div className="animate-fade-in">
+            <input
+              type="text"
+              value={decision.decisionText}
+              onChange={(e) => setDecision({...decision, decisionText: e.target.value})}
+              placeholder="The decision on your mind..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-lg"
+              autoFocus
+            />
+            <div className="mt-6">
+              <div className="flex space-x-4">
+                <button
+                  onClick={() => setDecision({...decision, decisionType: 'strategic'})}
+                  className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all duration-200 ${
+                    decision.decisionType === 'strategic'
+                      ? 'border-[#152b50] bg-[#152b50] text-white shadow-sm'
+                      : 'border-gray-300 text-gray-700 hover:border-gray-400 hover:shadow'
+                  }`}
+                >
+                  🎯 Strategic
+                  <div className="text-xs mt-1">Quarter/year impact</div>
+                </button>
+                <button
+                  onClick={() => setDecision({...decision, decisionType: 'tactical'})}
+                  className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all duration-200 ${
+                    decision.decisionType === 'tactical'
+                      ? 'border-[#152b50] bg-[#152b50] text-white shadow-sm'
+                      : 'border-gray-300 text-gray-700 hover:border-gray-400 hover:shadow'
+                  }`}
+                >
+                  ⚡ Tactical
+                  <div className="text-xs mt-1">Day/week impact</div>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {currentStep === 'decisionWhy' && (
+          <div className="animate-fade-in">
+            <textarea
+              value={decision.why}
+              onChange={(e) => setDecision({...decision, why: e.target.value})}
+              placeholder="Your reasoning behind this choice..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-lg"
+              rows={3}
+              autoFocus
+            />
+          </div>
+        )}
+
+        {/* Navigation Buttons */}
+        <div className="flex justify-between mt-8 pt-6 border-t border-gray-200">
+          <button
+            onClick={handleBack}
+            disabled={currentStep === 'task'}
+            className={`px-4 py-2 rounded-lg transition-all duration-200 ${
+              currentStep === 'task'
+                ? 'text-gray-400 cursor-not-allowed'
+                : 'text-gray-700 hover:bg-gray-100 hover:scale-105'
+            }`}
+          >
+            ← Back
+          </button>
+
+          {currentStep === 'decisionWhy' ? (
+            <button
+              onClick={saveMorningPlan}
+              disabled={loading}
+              className="px-6 py-3 bg-gradient-to-r from-[#152b50] to-blue-900 text-white rounded-lg font-medium hover:opacity-90 transition-all duration-200 hover:scale-105 disabled:opacity-50"
+            >
+              {loading ? 'Saving...' : 'Complete Morning Plan →'}
+            </button>
+          ) : currentStep !== 'addAnother' ? (
+            <button
+              onClick={handleNext}
+              disabled={
+                (currentStep === 'task' && !currentTask.description.trim()) ||
+                (currentStep === 'why' && !currentTask.why.trim()) ||
+                (currentStep === 'decision' && !decision.decisionText.trim())
+              }
+              className="flex items-center px-6 py-3 bg-gradient-to-r from-[#ef725c] to-orange-500 text-white rounded-lg font-medium hover:opacity-90 transition-all duration-200 hover:scale-105 disabled:opacity-50"
+            >
+              Continue
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Plan Summary */}
+      <div className="bg-gradient-to-br from-gray-50 to-blue-50 rounded-lg p-4 mb-6 border border-gray-200">
+        <h3 className="font-medium text-gray-700 mb-2">Today's Blueprint</h3>
+        <div className="space-y-2">
+          {tasks.map((task, index) => (
+            <div key={index} className="flex items-center text-sm p-2 rounded hover:bg-white/50 transition-colors">
+              <div className={`w-3 h-3 rounded-full mr-3 transition-all duration-300 ${index === currentTaskIndex ? 'bg-[#ef725c] animate-pulse' : 'bg-gray-300'}`} />
+              <div className="flex-1">
+                <span className={task.description ? 'text-gray-900 font-medium' : 'text-gray-500'}>
+                  {task.description || `Priority ${index + 1}`}
+                </span>
+                {task.isNeedleMover && (
+                  <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">Needle Mover</span>
+                )}
+              </div>
+            </div>
+          ))}
+          {decision.decisionText && (
+            <div className="flex items-center text-sm mt-3 pt-3 border-t border-gray-200 p-2 rounded hover:bg-white/50 transition-colors">
+              <div className="w-3 h-3 rounded-full mr-3 bg-blue-500" />
+              <div className="flex-1">
+                <span className="text-gray-900 font-medium">Decision: {decision.decisionText}</span>
+                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                  {decision.decisionType === 'strategic' ? 'Strategic' : 'Tactical'}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

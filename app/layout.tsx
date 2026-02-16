@@ -1,0 +1,74 @@
+import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+import './globals.css'
+import Navigation from '@/components/Navigation'
+import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
+import InstallPrompt from '@/components/InstallPrompt'
+import PostHogProvider from '@/components/PostHogProvider'
+import PageViewTracker from '@/components/PageViewTracker'
+import { FloatingBugButton } from '@/components/FloatingBugButton'
+import { FeedbackPopUp } from '@/components/FeedbackPopUp'
+
+const inter = Inter({ subsets: ['latin'] })
+
+export const metadata: Metadata = {
+  title: 'Wheel of Founders',
+  description: 'Your daily founder coaching companion',
+}
+
+export default async function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                const stored = localStorage.getItem('wof_theme');
+                const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const theme = stored === 'light' || stored === 'dark' ? stored : (prefersDark ? 'dark' : 'light');
+                if (theme === 'dark') {
+                  document.documentElement.classList.add('dark');
+                }
+              })();
+            `,
+          }}
+        />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#152b50" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <link rel="apple-touch-icon" href="/icon-192x192.png" />
+        <meta name="msapplication-TileColor" content="#152b50" />
+        <meta name="msapplication-TileImage" content="/icon-144x144.png" />
+      </head>
+      <body
+        className={`${inter.className} bg-[#FAFBFC] text-[#4A5568] dark:bg-[#0F1419] dark:text-[#E2E8F0] transition-colors duration-300 overflow-x-hidden`}
+      >
+        <PostHogProvider />
+        <PageViewTracker />
+        <PageViewTracker />
+        <ServiceWorkerRegister />
+        <InstallPrompt />
+        <Navigation />
+        <main className="min-h-screen pt-20 md:pt-16">{children}</main>
+        <FloatingBugButton />
+        <FeedbackPopUp />
+        <FeedbackPopUp />
+        <footer className="border-t border-gray-100 mt-8 py-4 text-center text-xs text-gray-500">
+          <p>
+            Install Wheel of Founders as an app on desktop or phone – look for{' '}
+            <span className="font-medium">Install app</span> in your browser menu. No app store
+            needed.
+          </p>
+        </footer>
+      </body>
+    </html>
+  )
+}
