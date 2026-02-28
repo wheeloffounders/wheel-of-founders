@@ -4,6 +4,9 @@ import { getServerSupabase } from '@/lib/server-supabase'
 
 export type TriggerType = '7_days_active' | '7_evening_reviews' | 'first_export' | '30_days'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export async function GET() {
   const session = await getUserSession()
   if (!session) {
@@ -14,15 +17,22 @@ export async function GET() {
   const userId = session.user.id
 
   // Fetch preferences first
-  const { data: prefs } = await db
+  const { data: prefsData } = await db
     .from('feedback_trigger_preferences')
     .select('dismissed_triggers, maybe_later_until, last_trigger_shown')
     .eq('user_id', userId)
     .maybeSingle()
 
-  const dismissed = (prefs?.dismissed_triggers as Record<string, boolean>) || {}
-  const maybeLater = (prefs?.maybe_later_until as Record<string, string>) || {}
-  const lastShown = (prefs?.last_trigger_shown as Record<string, string>) || {}
+  type FeedbackPrefsRow = {
+    dismissed_triggers?: Record<string, boolean> | null
+    maybe_later_until?: Record<string, string> | null
+    last_trigger_shown?: Record<string, string> | null
+  }
+  const prefs = prefsData as FeedbackPrefsRow | null
+
+  const dismissed = prefs?.dismissed_triggers || {}
+  const maybeLater = prefs?.maybe_later_until || {}
+  const lastShown = prefs?.last_trigger_shown || {}
 
   const now = new Date()
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
@@ -50,7 +60,8 @@ export async function GET() {
     db.from('data_exports').select('id').eq('user_id', userId).eq('status', 'completed').limit(1).maybeSingle(),
   ])
 
-  const firstReviewDate = reviewsRes.data?.review_date
+  type ReviewRow = { review_date?: string }
+  const firstReviewDate = (reviewsRes.data as ReviewRow | null)?.review_date
   const firstTaskDate = (tasksRes.data as { plan_date?: string } | null)?.plan_date
   const dates = [firstReviewDate, firstTaskDate].filter(Boolean) as string[]
   const firstActivityDate = dates.length ? dates.sort()[0] : null

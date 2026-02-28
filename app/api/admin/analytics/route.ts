@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { subDays, format } from 'date-fns'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 const FOUNDER_EMAIL = 'wttmotivation@gmail.com'
 
 /**
@@ -59,7 +62,7 @@ export async function GET(req: NextRequest) {
       const key = `${p.pattern_text ?? ''}|${p.pattern_type ?? ''}`
       const cur = byTextType.get(key)
       if (cur) cur.count++
-      else byTextType.set(key, { type: p.pattern_type, count: 1 })
+      else byTextType.set(key, { type: p.pattern_type ?? '', count: 1 })
     }
     const topPatterns = Array.from(byTextType.entries())
       .map(([k, v]) => {

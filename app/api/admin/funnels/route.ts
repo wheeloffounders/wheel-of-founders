@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserSession } from '@/lib/auth'
 import { getFunnelAnalysis } from '@/lib/analytics/funnels'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * GET: Funnel analysis for admin
  */

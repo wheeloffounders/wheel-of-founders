@@ -52,11 +52,11 @@ export default function InstallPrompt() {
   if (!showPrompt) return null
 
   return (
-    <div className="fixed bottom-4 right-4 left-4 md:left-auto md:max-w-sm z-40">
-      <div className="bg-white shadow-lg rounded-xl border border-gray-200 p-4 flex flex-col gap-3">
+    <div className="fixed bottom-20 left-4 right-4 md:left-auto md:max-w-sm z-50">
+      <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex flex-col gap-3">
         <div>
-          <h4 className="text-sm font-medium text-gray-900">Install Wheel of Founders</h4>
-          <p className="text-xs text-gray-600 mt-1">
+          <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">Install Wheel of Founders</h4>
+          <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">
             Get the app experience on your desktop or home screen. No app store needed.
           </p>
         </div>
@@ -64,7 +64,7 @@ export default function InstallPrompt() {
           <button
             type="button"
             onClick={handleDismiss}
-            className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700"
+            className="px-3 py-1.5 text-xs text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300"
           >
             Not now
           </button>

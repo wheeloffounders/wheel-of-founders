@@ -1,8 +1,10 @@
 'use client'
 
+import { sendNotification } from '@/lib/notifications'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Settings, Mail, Check, Download, FileText, Clock, Zap, CreditCard, MessageSquare, Loader2 } from 'lucide-react'
+import { Settings, Mail, Check, Download, FileText, Clock, Zap, CreditCard, MessageSquare, Loader2, Bell, Target, Moon, Sun } from 'lucide-react'
+import { useTheme } from '@/components/ThemeProvider'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
 import { getFeatureAccess } from '@/lib/features'
@@ -12,6 +14,7 @@ import SpeechToTextInput from '@/components/SpeechToTextInput'
 
 export default function SettingsPage() {
   const router = useRouter()
+  const { theme, toggleTheme } = useTheme()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(true)
@@ -19,6 +22,7 @@ export default function SettingsPage() {
   const [exportNotificationEnabled, setExportNotificationEnabled] = useState(true)
   const [communityInsightsEnabled, setCommunityInsightsEnabled] = useState(true)
   const [emailAddress, setEmailAddress] = useState('')
+  const [preferredName, setPreferredName] = useState('')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [userTier, setUserTier] = useState<string>('beta')
   const [exporting, setExporting] = useState(false)
@@ -49,7 +53,7 @@ export default function SettingsPage() {
     try {
       const { data, error } = await supabase
         .from('user_profiles')
-        .select('weekly_email_enabled, welcome_email_enabled, export_notification_enabled, community_insights_enabled, email_address')
+        .select('weekly_email_enabled, welcome_email_enabled, export_notification_enabled, community_insights_enabled, email_address, preferred_name, name')
         .eq('id', userId)
         .maybeSingle()
 
@@ -67,6 +71,7 @@ export default function SettingsPage() {
         setExportNotificationEnabled(data.export_notification_enabled ?? true)
         setCommunityInsightsEnabled(data.community_insights_enabled ?? true)
         setEmailAddress(data.email_address || '')
+        setPreferredName(data.preferred_name || data.name || '')
       } else {
         // Get email from auth user
         const { data: authData } = await supabase.auth.getUser()
@@ -110,6 +115,7 @@ export default function SettingsPage() {
             export_notification_enabled: exportNotificationEnabled,
             community_insights_enabled: communityInsightsEnabled,
             email_address: finalEmail,
+            preferred_name: preferredName.trim() || null,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'id' }
@@ -132,21 +138,21 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-8">
-        <p className="text-gray-500">Loading settings...</p>
+      <div className="max-w-2xl mx-auto px-4 md:px-5 py-8">
+        <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300">Loading settings...</p>
       </div>
     )
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
+    <div className="max-w-2xl mx-auto px-4 md:px-5 py-8">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 dark:text-white flex items-center gap-3">
           <Settings className="w-8 h-8 text-[#ef725c]" />
           Settings
         </h1>
-        <p className="text-gray-600 mt-2">Manage your account preferences</p>
+        <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-2">Manage your account preferences</p>
         <Link
           href="/feedback"
           className="mt-3 inline-flex items-center gap-2 text-sm text-[#ef725c] hover:underline"
@@ -156,16 +162,60 @@ export default function SettingsPage() {
         </Link>
       </div>
 
-      {/* Email Preferences */}
-      <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+      {/* Appearance */}
+     {/* <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg 
+px-4 
+md:px-5 py-4 md:py-5 mb-6 border-2 border-gray-200 dark:border-gray-700 dark:border-gray-700">
+        <div className="flex items-center gap-3 mb-4">
+          {theme === 'dark' ? <Moon className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" /> : <Sun className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />}
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Appearance</h2>
+        </div>
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="flex items-center gap-3 px-4 py-2.5 bg-[#ef725c] hover:bg-[#F28771] text-white rounded-lg border-2 border-[#c95a47] font-medium transition-colors"
+        >
+          {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+          Switch to {theme === 'light' ? 'Dark' : 'Light'} Mode
+        </button>
+      </div> */}
+
+      {/* Personalization */}
+      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 mb-6 border-2 border-gray-200 dark:border-gray-700 dark:border-gray-700">
         <div className="flex items-center gap-3 mb-6">
-          <Mail className="w-6 h-6 text-[#152b50]" />
-          <h2 className="text-xl font-semibold text-gray-900">Email Preferences</h2>
+          <Settings className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Personalization</h2>
+        </div>
+
+        {/* Preferred Name */}
+        <div className="mb-6">
+          <label htmlFor="preferred-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
+            Preferred Name
+          </label>
+          <SpeechToTextInput
+            type="text"
+            id="preferred-name"
+            value={preferredName}
+            onChange={(e) => setPreferredName(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
+            placeholder="How should we address you? (e.g., Vanie)"
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
+            This name will be used throughout the app instead of &quot;Founder&quot;. Leave empty to use &quot;Founder&quot;.
+          </p>
+        </div>
+      </div>
+
+      {/* Email Preferences */}
+      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 mb-6 border-2 border-gray-200 dark:border-gray-700 dark:border-gray-700">
+        <div className="flex items-center gap-3 mb-6">
+          <Mail className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Email Preferences</h2>
         </div>
 
         {/* Email Address */}
         <div className="mb-6">
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
             Email Address
           </label>
           <SpeechToTextInput
@@ -173,19 +223,19 @@ export default function SettingsPage() {
             id="email"
             value={emailAddress}
             onChange={(e) => setEmailAddress(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
             placeholder="your@email.com"
           />
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
             This email will be used for weekly summary emails.
           </p>
         </div>
 
         {/* Weekly Email Toggle */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg mb-4">
+        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 rounded-lg mb-4">
           <div className="flex-1">
-            <h3 className="text-sm font-semibold text-gray-900 mb-1">Weekly Summary Emails</h3>
-            <p className="text-sm text-gray-600">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-1">Weekly Summary Emails</h3>
+            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
               Receive a personalized weekly summary every Sunday at 8 PM with your focus score
               trends, accomplishments, and insights.
             </p>
@@ -194,13 +244,13 @@ export default function SettingsPage() {
             type="button"
             onClick={() => setWeeklyEmailEnabled(!weeklyEmailEnabled)}
             className={`ml-4 relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#ef725c] focus:ring-offset-2 ${
-              weeklyEmailEnabled ? 'bg-[#ef725c]' : 'bg-gray-200'
+              weeklyEmailEnabled ? 'bg-[#ef725c]' : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
             }`}
             role="switch"
             aria-checked={weeklyEmailEnabled}
           >
             <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-gray-800 dark:bg-gray-800 shadow ring-0 transition duration-200 ease-in-out ${
                 weeklyEmailEnabled ? 'translate-x-5' : 'translate-x-0'
               }`}
             />
@@ -208,10 +258,10 @@ export default function SettingsPage() {
         </div>
 
         {/* Welcome Email Toggle */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg mb-4">
+        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 rounded-lg mb-4">
           <div className="flex-1">
-            <h3 className="text-sm font-semibold text-gray-900 mb-1">Welcome Email</h3>
-            <p className="text-sm text-gray-600">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-1">Welcome Email</h3>
+            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
               Receive a welcome email after signup with tips to get started.
             </p>
           </div>
@@ -219,13 +269,13 @@ export default function SettingsPage() {
             type="button"
             onClick={() => setWelcomeEmailEnabled(!welcomeEmailEnabled)}
             className={`ml-4 relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#ef725c] focus:ring-offset-2 ${
-              welcomeEmailEnabled ? 'bg-[#ef725c]' : 'bg-gray-200'
+              welcomeEmailEnabled ? 'bg-[#ef725c]' : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
             }`}
             role="switch"
             aria-checked={welcomeEmailEnabled}
           >
             <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-gray-800 dark:bg-gray-800 shadow ring-0 transition duration-200 ease-in-out ${
                 welcomeEmailEnabled ? 'translate-x-5' : 'translate-x-0'
               }`}
             />
@@ -233,10 +283,10 @@ export default function SettingsPage() {
         </div>
 
         {/* Export Notification Toggle */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg mb-4">
+        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 rounded-lg mb-4">
           <div className="flex-1">
-            <h3 className="text-sm font-semibold text-gray-900 mb-1">Export Ready Notification</h3>
-            <p className="text-sm text-gray-600">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-1">Export Ready Notification</h3>
+            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
               Receive an email when your data export is ready with a download link.
             </p>
           </div>
@@ -244,13 +294,13 @@ export default function SettingsPage() {
             type="button"
             onClick={() => setExportNotificationEnabled(!exportNotificationEnabled)}
             className={`ml-4 relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#ef725c] focus:ring-offset-2 ${
-              exportNotificationEnabled ? 'bg-[#ef725c]' : 'bg-gray-200'
+              exportNotificationEnabled ? 'bg-[#ef725c]' : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
             }`}
             role="switch"
             aria-checked={exportNotificationEnabled}
           >
             <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-gray-800 dark:bg-gray-800 shadow ring-0 transition duration-200 ease-in-out ${
                 exportNotificationEnabled ? 'translate-x-5' : 'translate-x-0'
               }`}
             />
@@ -258,10 +308,10 @@ export default function SettingsPage() {
         </div>
 
         {/* Community Insights Toggle */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 rounded-lg">
           <div className="flex-1">
-            <h3 className="text-sm font-semibold text-gray-900 mb-1">Community Insights</h3>
-            <p className="text-sm text-gray-600">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-1">Community Insights</h3>
+            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
               See anonymized insights from fellow founders. Your data contributes to these patterns but is never individually identified.
             </p>
           </div>
@@ -269,13 +319,13 @@ export default function SettingsPage() {
             type="button"
             onClick={() => setCommunityInsightsEnabled(!communityInsightsEnabled)}
             className={`ml-4 relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#ef725c] focus:ring-offset-2 ${
-              communityInsightsEnabled ? 'bg-[#ef725c]' : 'bg-gray-200'
+              communityInsightsEnabled ? 'bg-[#ef725c]' : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
             }`}
             role="switch"
             aria-checked={communityInsightsEnabled}
           >
             <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-gray-800 dark:bg-gray-800 shadow ring-0 transition duration-200 ease-in-out ${
                 communityInsightsEnabled ? 'translate-x-5' : 'translate-x-0'
               }`}
             />
@@ -312,33 +362,60 @@ export default function SettingsPage() {
       </div>
 
       {/* Timezone Section */}
-      <div className="bg-white rounded-xl shadow-lg p-6 mt-6">
+      {/* Notification Reminders */}
+      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 mt-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-3">
-              <Clock className="w-6 h-6 text-[#152b50]" />
-              Timezone Settings
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white flex items-center gap-3">
+              <Bell className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
+              Notification Reminders
             </h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Smart analysis runs between 2-5 AM in your local time
+            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-1">
+              Choose when you&apos;d like gentle nudges for morning planning and evening reflection.
             </p>
           </div>
           <Link
-            href="/settings/timezone"
-            className="px-4 py-2 text-[#152b50] border border-[#152b50] rounded-lg hover:bg-[#152b50] hover:text-white transition text-sm font-medium"
+            href="/settings/notifications"
+            className="px-4 py-2 text-gray-900 dark:text-gray-100 dark:text-white border border-[#152b50] dark:border-[#334155] rounded-lg 
+hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 hover:text-white transition text-sm font-medium"
           >
-            Manage Timezone
+            Manage Notifications
           </Link>
         </div>
-      </div>
-
-      {/* Manual Analysis Trigger */}
-      <div className="bg-white rounded-xl shadow-lg p-6 mt-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Zap className="w-6 h-6 text-[#152b50]" />
-          <h2 className="text-xl font-semibold text-gray-900">Manual Analysis</h2>
+        
+        {/* Test notification buttons */}
+        <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Test Notifications</h3>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => sendNotification(
+                '🛞 Morning reflection',
+                'Mrs. Deer, your AI companion is waiting to help you set your intention.'
+              )}
+              className="px-4 py-2 bg-[#ef725c] text-white rounded-lg hover:bg-[#f0886c] transition"
+            >
+              Test Morning Reminder
+            </button>
+            
+            <button
+              onClick={() => sendNotification(
+                '🌙 Evening check-in',
+                'How did your day go? Mrs. Deer, your AI companion would love to hear.'
+              )}
+              className="px-4 py-2 bg-[#152b50] text-white rounded-lg hover:bg-[#1a3565] transition"
+            >
+              Test Evening Reminder
+            </button>
+          </div>
         </div>
-        <p className="text-sm text-gray-600 mb-4">
+      </div>
+      {/* Manual Analysis Trigger */}
+      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 mt-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Zap className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Manual Analysis</h2>
+        </div>
+        <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-4">
           Run analysis now if it was missed (e.g., you were offline). Analysis normally runs automatically between 2-5 AM your local time.
         </p>
         <button
@@ -374,25 +451,25 @@ export default function SettingsPage() {
         </button>
       </div>
 
-      {/* Personalization Section */}
-      <div className="bg-white rounded-xl shadow-lg p-6 mt-6">
+      {/* Goals & Preferences Section */}
+      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 mt-6">
         <div className="flex items-center gap-3 mb-6">
-          <Settings className="w-6 h-6 text-[#152b50]" />
-          <h2 className="text-xl font-semibold text-gray-900">Personalization</h2>
+          <Target className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Goals & Preferences</h2>
         </div>
 
         <div className="mb-6">
-          <label htmlFor="primary-goal" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="primary-goal" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
             What brings you here?
           </label>
-          <p className="text-xs text-gray-500 mb-3">
+          <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mb-3">
             This helps us personalize your experience throughout the app.
           </p>
           <select
             id="primary-goal"
             value={primaryGoal || 'general_clarity'}
             onChange={(e) => setPrimaryGoal(e.target.value as UserGoal)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
           >
             <option value="find_purpose">🎯 Finding my purpose</option>
             <option value="build_significance">🌟 Build a meaningful business</option>
@@ -435,26 +512,26 @@ export default function SettingsPage() {
       </div>
 
       {/* Data Export Section */}
-      <div className="bg-white rounded-xl shadow-lg p-6 mt-6">
+      <div id="data-export" className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 mt-6">
         <div className="flex items-center gap-3 mb-6">
-          <Download className="w-6 h-6 text-[#152b50]" />
-          <h2 className="text-xl font-semibold text-gray-900">Data Export</h2>
+          <Download className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Data Export</h2>
         </div>
 
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-4">
           Export your data in JSON, CSV, or PDF format. Files are stored for 7 days—export anytime to access.
         </p>
 
         <div className="space-y-4">
           <div>
-            <label htmlFor="export-type" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="export-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               Export Type
             </label>
             <select
               id="export-type"
               value={exportType}
               onChange={(e) => setExportType(e.target.value as any)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
             >
               <option value="full_history">Full History</option>
               <option value="yearly_report">Yearly Report</option>
@@ -466,14 +543,14 @@ export default function SettingsPage() {
           </div>
 
           <div>
-            <label htmlFor="export-format" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="export-format" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               Format
             </label>
             <select
               id="export-format"
               value={exportFormat}
               onChange={(e) => setExportFormat(e.target.value as 'json' | 'csv' | 'pdf' | 'all')}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
             >
               <option value="all">All (JSON + CSV + PDF)</option>
               <option value="json">JSON</option>
@@ -485,7 +562,7 @@ export default function SettingsPage() {
           {exportType === 'custom_range' && (
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="export-date-start" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="export-date-start" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                   Start Date
                 </label>
                 <input
@@ -493,11 +570,11 @@ export default function SettingsPage() {
                   type="date"
                   value={exportDateStart}
                   onChange={(e) => setExportDateStart(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
                 />
               </div>
               <div>
-                <label htmlFor="export-date-end" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="export-date-end" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                   End Date
                 </label>
                 <input
@@ -505,7 +582,7 @@ export default function SettingsPage() {
                   type="date"
                   value={exportDateEnd}
                   onChange={(e) => setExportDateEnd(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
                 />
               </div>
             </div>
@@ -591,7 +668,7 @@ export default function SettingsPage() {
             <span>{exporting ? 'Generating Export...' : 'Download Export'}</span>
           </button>
 
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400">
             {getFeatureAccess({ tier: userTier }).canViewFullHistory
               ? 'Your full history will be included in the export.'
               : 'Free tier exports include the last 2 days only. Upgrade to export full history.'}

@@ -60,17 +60,17 @@ export function DateSelector({ selectedDate, onDateChange, maxDaysBack = 30, max
         disabled={!canGoBack}
         className={`p-2 rounded-lg transition-colors ${
           canGoBack
-            ? 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
-            : 'bg-gray-50 dark:bg-gray-900 text-gray-300 dark:text-gray-600 cursor-not-allowed'
+            ? 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 dark:text-gray-300'
+            : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-900 text-gray-300 dark:text-gray-700 dark:text-gray-300 cursor-not-allowed'
         }`}
         aria-label="Previous day"
       >
         <ChevronLeft className="w-4 h-4" />
       </button>
 
-      <div className="flex items-center gap-2 bg-white dark:bg-[#1A202C] border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">
-        <Calendar className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+      <div className="flex items-center gap-2 bg-white dark:bg-gray-800 dark:bg-[#1A202C] border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg px-3 py-2">
+        <Calendar className="w-4 h-4 text-gray-500 dark:text-gray-500 dark:text-gray-400" />
+        <label className="text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">
           {getDateLabel(selected)}
         </label>
         {isPastDate && (
@@ -89,7 +89,7 @@ export function DateSelector({ selectedDate, onDateChange, maxDaysBack = 30, max
           onChange={handleDateInputChange}
           min={format(minDate, 'yyyy-MM-dd')}
           max={format(maxDate, 'yyyy-MM-dd')}
-          className="ml-2 text-xs text-gray-600 dark:text-gray-400 border-0 bg-transparent cursor-pointer focus:outline-none focus:ring-0"
+          className="ml-2 text-xs text-gray-700 dark:text-gray-300 dark:text-gray-400 border-0 bg-transparent cursor-pointer focus:outline-none focus:ring-0"
           aria-label="Select date"
         />
       </div>
@@ -99,8 +99,8 @@ export function DateSelector({ selectedDate, onDateChange, maxDaysBack = 30, max
         disabled={!canGoForward}
         className={`p-2 rounded-lg transition-colors ${
           canGoForward
-            ? 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
-            : 'bg-gray-50 dark:bg-gray-900 text-gray-300 dark:text-gray-600 cursor-not-allowed'
+            ? 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 dark:text-gray-300'
+            : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-900 text-gray-300 dark:text-gray-700 dark:text-gray-300 cursor-not-allowed'
         }`}
         aria-label="Next day"
       >

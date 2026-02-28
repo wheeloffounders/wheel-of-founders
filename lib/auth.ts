@@ -52,11 +52,20 @@ export async function getUserSession(): Promise<SessionWithProfile | null> {
   if (!session) return null
   
   // Get user profile with tier and admin info
-  const { data: profile } = await supabase
+  const { data: profileData } = await supabase
     .from('user_profiles')
-    .select('tier, pro_features_enabled, is_admin, admin_role')
+    .select('tier, pro_features_enabled, is_admin, admin_role, timezone')
     .eq('id', session.user.id)
     .maybeSingle()
+  
+  type ProfileRow = {
+    tier?: string | null
+    pro_features_enabled?: boolean | null
+    is_admin?: boolean | null
+    admin_role?: string | null
+    timezone?: string | null
+  }
+  const profile = profileData as ProfileRow | null
   
   // If profile doesn't exist, create it with beta defaults
   if (!profile) {

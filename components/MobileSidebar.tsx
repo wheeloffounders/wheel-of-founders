@@ -3,7 +3,8 @@
 import { useEffect, useRef } from 'react'
 import { LogOut, X, Sun, Moon } from 'lucide-react'
 import Link from 'next/link'
-import Image from 'next/image'
+import { ProgressCircle } from './ProgressCircle'
+import type { ProgressData } from '@/lib/progress'
 
 export type NavItem = {
   name: string
@@ -23,6 +24,8 @@ type MobileSidebarProps = {
   onSignOut: () => void
   theme: 'light' | 'dark'
   onToggleTheme: () => void
+  monthlyProgress?: ProgressData | null
+  quarterlyProgress?: ProgressData | null
 }
 
 export default function MobileSidebar({
@@ -37,6 +40,8 @@ export default function MobileSidebar({
   onSignOut,
   theme,
   onToggleTheme,
+  monthlyProgress,
+  quarterlyProgress,
 }: MobileSidebarProps) {
   const sidebarRef = useRef<HTMLDivElement>(null)
   const previousActiveRef = useRef<HTMLElement | null>(null)
@@ -96,7 +101,9 @@ export default function MobileSidebar({
     `flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium transition-colors touch-manipulation min-h-[44px] ${
       isActive
         ? 'bg-[#ef725c] text-white'
-        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+        : isDark
+          ? 'text-gray-300 hover:bg-gray-700 hover:text-white'
+          : 'text-[#152b50] dark:text-[#E2E8F0] hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800'
     }`
 
   const isDark = theme === 'dark'
@@ -104,11 +111,15 @@ export default function MobileSidebar({
   const renderLink = (item: NavItem) => {
     const Icon = item.icon
     const isActive = pathname === item.href
+    const progress = item.href === '/monthly-insight' ? monthlyProgress : item.href === '/quarterly' ? quarterlyProgress : null
     return (
       <li key={item.name}>
         <Link href={item.href} onClick={onClose} className={linkClass(isActive)}>
           <Icon className="w-5 h-5 flex-shrink-0" />
-          <span>{item.name}</span>
+          <span className="flex-1">{item.name}</span>
+          {progress && (
+            <ProgressCircle current={progress.current} required={progress.required} size="sm" showFraction />
+          )}
         </Link>
       </li>
     )
@@ -131,11 +142,11 @@ export default function MobileSidebar({
         aria-hidden={!isOpen}
         className={`fixed top-0 left-0 h-full w-[280px] z-[70] flex flex-col shadow-xl transition-transform duration-300 ease-out md:hidden ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
-        } ${isDark ? 'bg-[#152b50] text-white' : 'bg-white text-[#152b50]'}`}
+        } ${isDark ? 'bg-[#152b50] text-white' : 'bg-white dark:bg-gray-800 text-[#152b50]'}`}
       >
         <div
           className={`flex items-center justify-between p-4 flex-shrink-0 border-b ${
-            isDark ? 'border-white/10' : 'border-gray-200'
+            isDark ? 'border-white/10' : 'border-gray-200 dark:border-gray-700'
           }`}
         >
           <Link
@@ -145,7 +156,7 @@ export default function MobileSidebar({
               isDark ? 'focus:ring-offset-[#152b50]' : 'focus:ring-offset-white'
             }`}
           >
-            <Image src="/logo.jpg" alt="Wheel of Founders" width={180} height={76} className="w-[160px] h-auto object-contain object-left" unoptimized />
+            <span className="text-lg font-medium text-[#152b50] dark:text-[#E2E8F0]">Wheel of Founders</span>
           </Link>
           <div className="flex items-center gap-1">
             <button
@@ -155,7 +166,7 @@ export default function MobileSidebar({
               className={`p-2 rounded-lg touch-manipulation min-h-[36px] min-w-[36px] flex items-center justify-center transition-colors ${
                 isDark
                   ? 'text-gray-200 hover:bg-gray-700 hover:text-white'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-[#152b50]'
+                  : 'text-gray-700 dark:text-gray-300 dark:text-gray-400 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800 hover:text-[#152b50] dark:hover:text-[#E2E8F0]'
               }`}
             >
               {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
@@ -166,7 +177,7 @@ export default function MobileSidebar({
               className={`p-2 rounded-lg touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center transition-colors ${
                 isDark
                   ? 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                  : 'text-gray-500 hover:bg-gray-100 hover:text-[#152b50]'
+                  : 'text-gray-500 dark:text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800 hover:text-[#152b50] dark:hover:text-[#E2E8F0]'
               }`}
             >
               <X className="w-6 h-6" />
@@ -178,18 +189,18 @@ export default function MobileSidebar({
           <ul className="space-y-1">
             {mainNavItems.map(renderLink)}
 
-            <li className={`pt-2 mt-2 border-t ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
+            <li className={`pt-2 mt-2 border-t ${isDark ? 'border-white/10' : 'border-gray-200 dark:border-gray-700'}`}>
               <span className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-400">Insights</span>
             </li>
             {insightsItems.map(renderLink)}
 
-            <li className={`pt-2 mt-2 border-t ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
+            <li className={`pt-2 mt-2 border-t ${isDark ? 'border-white/10' : 'border-gray-200 dark:border-gray-700'}`}>
               <span className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-400">Profile</span>
             </li>
             {profileItems.map(renderLink)}
             {adminItems.map(renderLink)}
 
-            <li className={`pt-2 mt-2 border-t ${isDark ? 'border-white/10' : 'border-gray-200'}`} />
+            <li className={`pt-2 mt-2 border-t ${isDark ? 'border-white/10' : 'border-gray-200 dark:border-gray-700'}`} />
             {isLoggedIn && (
               <li>
                 <button

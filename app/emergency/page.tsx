@@ -4,13 +4,19 @@ import { useState, useEffect } from 'react'
 import { format, isToday } from 'date-fns'
 import { Flame, AlertCircle, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation' // Add useRouter
-import { getUserSession } from '@/lib/auth' // Add getUserSession
+import { useRouter } from 'next/navigation'
+import { getUserSession } from '@/lib/auth'
 import { AICoachPrompt } from '@/components/AICoachPrompt'
+import { StreamingIndicator } from '@/components/StreamingIndicator'
 import SpeechToTextInput from '@/components/SpeechToTextInput'
+import { useStreamingInsight } from '@/lib/hooks/useStreamingInsight'
 import { getFeatureAccess } from '@/lib/features'
 import { trackEvent } from '@/lib/analytics'
 import { DateSelector } from '@/components/DateSelector'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
+import { colors, typography, spacing } from '@/lib/design-tokens'
 
 type Severity = 'hot' | 'warm' | 'contained'
 
@@ -30,7 +36,18 @@ const SEVERITY_OPTIONS: { value: Severity; label: string; emoji: string }[] = [
 ]
 
 export default function EmergencyPage() {
-  const router = useRouter() // Initialize useRouter
+  const router = useRouter()
+  const [description, setDescription] = useState('')
+  const [severity, setSeverity] = useState<Severity>('hot')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [todayFires, setTodayFires] = useState<Emergency[]>([])
+  const [loadingFires, setLoadingFires] = useState(true)
+  const [aiCoachMessage, setAiCoachMessage] = useState<string | null>(null)
+  const [userTier, setUserTier] = useState<string>('beta')
+  const [fireDate, setFireDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const { insight: streamingInsight, isStreaming, error: streamingError, startStream } = useStreamingInsight()
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -42,17 +59,7 @@ export default function EmergencyPage() {
       setUserTier(session.user.tier || 'beta')
     }
     checkAuth()
-  }, [router]) // Add router to dependency array
-  const [description, setDescription] = useState('')
-  const [severity, setSeverity] = useState<Severity>('hot')
-  const [notes, setNotes] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [todayFires, setTodayFires] = useState<Emergency[]>([])
-  const [loadingFires, setLoadingFires] = useState(true)
-  const [aiCoachMessage, setAiCoachMessage] = useState<string | null>(null)
-  const [userTier, setUserTier] = useState<string>('beta')
-  const [fireDate, setFireDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  }, [router])
 
   useEffect(() => {
     const fetchTodayFires = async () => {
@@ -117,7 +124,7 @@ export default function EmergencyPage() {
           console.log('✅ Loading emergency insight (date-specific):', insightToShow.substring(0, 50))
         } else {
           // No insight for this date - check for ANY emergency insight (most recent)
-          console.log('⚠️ No emergency insight found for date:', fireDate, '- checking for any recent insight')
+          console.log('⚠️ No emergency insight found for date:', fireDate, '- checking for ayn recent insight')
           const { data: anyInsight, error: anyError } = await supabase
             .from('personal_prompts')
             .select('prompt_text, prompt_type, generated_at')
@@ -189,31 +196,37 @@ export default function EmergencyPage() {
         fire_date: fireDate,
       })
 
-      // Generate emergency insight (Pro only) - always generate, regardless of date
+      // Generate emergency insight (Pro only) - stream for faster feedback
       const features = getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
       if (features.dailyMorningPrompt) {
         try {
-          const res = await fetch('/api/personal-coaching', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              emergencyDescription: trimmed, 
-              severity,
+          console.log('🔍 Starting emergency insight stream...')
+          await startStream(
+            {
+              promptType: 'emergency',
               userId: session.user.id,
-              promptDate: fireDate, // Store with the selected date
-            }),
-          })
-          if (res.ok) {
-            const data = await res.json()
-            if (data.prompt) {
-              setAiCoachMessage(data.prompt)
+              promptDate: fireDate,
+              emergencyDescription: trimmed,
+              severity,
+            },
+            async (fullPrompt) => {
+              console.log('✅ Emergency insight received:', fullPrompt.substring(0, 50))
+              setAiCoachMessage(fullPrompt)
+              if (inserted?.id) {
+                const { error: updateError } = await supabase
+                  .from('emergencies')
+                  .update({ insight: fullPrompt })
+                  .eq('id', inserted.id)
+                if (updateError) {
+                  console.error('❌ Failed to save insight to emergency:', updateError)
+                } else {
+                  console.log('✅ Insight saved to emergency:', inserted.id)
+                }
+              }
             }
-          } else {
-            const errorData = await res.json().catch(() => ({}))
-            console.error('API error:', res.status, errorData)
-          }
+          )
         } catch (error) {
-          console.error('Failed to load emergency AI insight:', error)
+          console.error('Failed to stream emergency AI insight:', error)
         }
       }
 
@@ -253,43 +266,63 @@ export default function EmergencyPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold text-[#152b50] dark:text-[#E2E8F0] mb-2 flex items-center gap-2">
-        <Flame className="w-8 h-8 text-[#ef725c]" />
-        Firefighter Mode
-      </h1>
-      <p className="text-gray-600 dark:text-gray-400 mb-4">
-        {isToday(new Date(fireDate)) ? 'Log urgent tasks that pull you off your Power List' : `Viewing emergencies for ${format(new Date(fireDate), 'MMMM d, yyyy')}`}
-      </p>
-      <DateSelector selectedDate={fireDate} onDateChange={setFireDate} maxDaysBack={30} className="mb-8" />
+    <div className="max-w-3xl mx-auto px-4 md:px-5 py-8" style={{ paddingTop: spacing['3xl'], paddingBottom: spacing['2xl'] }}>
+      {/* Header with Mrs. Deer - responsive: avatar above on mobile, left on desktop */}
+      <div className="mb-8" style={{ marginBottom: spacing['2xl'] }}>
+        <div className="flex flex-col md:flex-row md:items-start gap-4 mb-4">
+          <div className="flex justify-center md:justify-start">
+            <MrsDeerAvatar expression="empathetic" size="mobile" className="md:hidden" />
+            <MrsDeerAvatar expression="empathetic" size="large" className="hidden md:block" />
+          </div>
+          <div className="flex-1 text-center md:text-left">
+            <h1
+              className="font-bold mb-2 text-gray-900 dark:text-gray-100 dark:text-white"
+              style={{
+                fontSize: typography.pageTitle.fontSize,
+                fontWeight: typography.pageTitle.fontWeight,
+                lineHeight: typography.pageTitle.lineHeight,
+              }}
+            >
+              Firefighter Mode
+            </h1>
+            <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300">
+              {isToday(new Date(fireDate)) ? 'Log urgent tasks that pull you off your Power List' : `Viewing emergencies for ${format(new Date(fireDate), 'MMMM d, yyyy')}`}
+            </p>
+          </div>
+        </div>
+        <DateSelector selectedDate={fireDate} onDateChange={setFireDate} maxDaysBack={30} className="mb-6" />
+      </div>
 
-      {/* Log Emergency Form */}
-      <section className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-8 border-l-4 border-[#ef725c] dark:border-[#ef725c]/70">
-        <h2 className="text-xl font-semibold text-[#152b50] dark:text-[#E2E8F0] mb-4 flex items-center gap-2">
-          <Zap className="w-5 h-5 text-[#ef725c]" />
-          {isToday(new Date(fireDate)) ? 'Track the disruption' : `Track the disruption for ${format(new Date(fireDate), 'MMMM d')}`}
-        </h2>
-
+      {/* Log Emergency Form - Card with amber accent */}
+      <Card highlighted className="mb-8 bg-white dark:bg-gray-800 dark:bg-gray-800" style={{ marginBottom: spacing['2xl'], borderLeft: `4px solid ${colors.amber.DEFAULT}` }}>
+        <CardHeader style={{ padding: spacing.xl }}>
+          <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
+            <Zap className="w-5 h-5" style={{ color: colors.amber.DEFAULT }} />
+            {isToday(new Date(fireDate)) ? 'Track the disruption' : `Track the disruption for ${format(new Date(fireDate), 'MMMM d')}`}
+          </CardTitle>
+        </CardHeader>
+        <CardContent style={{ padding: spacing.xl }}>
         <div className="space-y-4">
           <div>
             <label
               htmlFor="emergency-desc"
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-medium mb-1 text-gray-900 dark:text-gray-100 dark:text-white"
             >
               What&apos;s the fire?
             </label>
             <SpeechToTextInput
               id="emergency-desc"
-              type="text"
+              as="textarea"
+              rows={1}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="e.g. Server down, key client escalation..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#152b50] focus:border-transparent text-gray-900"
+              className="w-full px-4 py-2 rounded-lg focus:ring-2 focus:ring-offset-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-800 text-gray-900 dark:text-gray-100 dark:text-white resize-none"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100 dark:text-white">
               Severity
             </label>
             <div className="flex gap-3">
@@ -298,11 +331,11 @@ export default function EmergencyPage() {
                   key={opt.value}
                   type="button"
                   onClick={() => setSeverity(opt.value)}
-                  className={`flex-1 py-2 px-4 rounded-lg font-medium transition ${
-                    severity === opt.value
-                      ? 'bg-[#ef725c] text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
+                  className="flex-1 py-2 px-4 rounded-lg font-medium transition-all duration-200"
+                  style={{
+                    backgroundColor: severity === opt.value ? colors.amber.DEFAULT : colors.neutral.background,
+                    color: severity === opt.value ? '#FFFFFF' : colors.neutral.text.secondary,
+                  }}
                 >
                   {opt.emoji} {opt.label}
                 </button>
@@ -313,7 +346,7 @@ export default function EmergencyPage() {
           <div>
             <label
               htmlFor="emergency-notes"
-              className="block text-sm font-medium text-gray-700 mb-1"
+              className="block text-sm font-medium mb-1 text-gray-900 dark:text-gray-100 dark:text-white"
             >
               Notes (optional)
             </label>
@@ -324,38 +357,43 @@ export default function EmergencyPage() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Context, next steps..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#152b50] focus:border-transparent resize-none text-gray-900"
+              className="w-full px-4 py-2 rounded-lg resize-none border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-800 text-gray-900 dark:text-gray-100 dark:text-white"
             />
           </div>
         </div>
 
         {error && (
-          <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <div className="mt-4 p-4 rounded-lg flex items-center gap-2 border bg-[#FFF0EC] dark:bg-amber-900/30 border-[#EF725C] dark:border-amber-600 text-gray-900 dark:text-gray-100 dark:text-white">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 text-[#EF725C]" />
             {error}
           </div>
         )}
 
-        <button
+        <Button
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="mt-4 w-full py-3 px-4 bg-[#ef725c] text-white font-semibold rounded-lg hover:bg-[#e8654d] disabled:opacity-70 disabled:cursor-not-allowed transition"
+          className="mt-4 w-full"
+          style={{ backgroundColor: colors.amber.DEFAULT, color: '#FFFFFF' }}
         >
           {saving ? 'Tracking...' : 'Track the disruption'}
-        </button>
-      </section>
+        </Button>
+        </CardContent>
+      </Card>
 
-      {/* Today's Fires */}
-      <section className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 border-l-4 border-[#152b50] dark:border-[#152b50]/70">
-        <h2 className="text-xl font-semibold text-[#152b50] dark:text-[#E2E8F0] mb-4">
-          {isToday(new Date(fireDate)) ? `Today's Fires` : `Fires for ${format(new Date(fireDate), 'MMM d, yyyy')}`}
-        </h2>
-
+      {/* Today's Fires - Card with navy accent */}
+      <Card highlighted className="mb-8 bg-white dark:bg-gray-800 dark:bg-gray-800" style={{ marginBottom: spacing['2xl'], borderLeft: `4px solid ${colors.navy.DEFAULT}` }}>
+        <CardHeader style={{ padding: spacing.xl }}>
+          <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
+            <Flame className="w-5 h-5" style={{ color: colors.navy.DEFAULT }} />
+            {isToday(new Date(fireDate)) ? `Today's Fires` : `Fires for ${format(new Date(fireDate), 'MMM d, yyyy')}`}
+          </CardTitle>
+        </CardHeader>
+        <CardContent style={{ padding: spacing.xl }}>
         {loadingFires ? (
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Loading...</p>
+          <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">Loading...</p>
         ) : todayFires.length === 0 ? (
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
+          <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
             {isToday(new Date(fireDate)) ? 'No emergencies logged today. Stay focused on your Power List.' : `No emergencies logged for ${format(new Date(fireDate), 'MMMM d')}.`}
           </p>
         ) : (
@@ -365,8 +403,8 @@ export default function EmergencyPage() {
                 key={fire.id}
                 className={`p-4 rounded-lg border ${
                   fire.resolved
-                    ? 'bg-gray-50 border-gray-200 opacity-75'
-                    : 'bg-amber-50/50 border-amber-200'
+                    ? 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 border-gray-200 dark:border-gray-700 dark:border-gray-700 opacity-75'
+                    : 'bg-amber-50/50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700'
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -375,29 +413,29 @@ export default function EmergencyPage() {
                       <span
                         className={`text-xs font-medium px-2 py-0.5 rounded ${
                           fire.severity === 'hot'
-                            ? 'bg-red-100 text-red-700'
+                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
                             : fire.severity === 'warm'
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-green-100 text-green-700'
+                            ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                            : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
                         }`}
                       >
                         {SEVERITY_OPTIONS.find((s) => s.value === fire.severity)
                           ?.emoji}{' '}
                         {fire.severity}
                       </span>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-gray-700 dark:text-gray-300 dark:text-gray-300">
                         {format(new Date(fire.created_at), 'h:mm a')}
                       </span>
                     </div>
                     <p
-                      className={`text-gray-900 ${
-                        fire.resolved ? 'line-through text-gray-600' : ''
+                      className={`text-gray-900 dark:text-gray-100 dark:text-white ${
+                        fire.resolved ? 'line-through text-gray-700 dark:text-gray-300 dark:text-gray-300' : ''
                       }`}
                     >
                       {fire.description}
                     </p>
                     {fire.notes && (
-                      <p className="text-sm text-gray-600 mt-1">{fire.notes}</p>
+                      <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-1">{fire.notes}</p>
                     )}
                   </div>
                   <button
@@ -405,8 +443,8 @@ export default function EmergencyPage() {
                     onClick={() => toggleResolved(fire.id, !fire.resolved)}
                     className={`text-sm font-medium px-2 py-1 rounded shrink-0 ${
                       fire.resolved
-                        ? 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                        : 'bg-green-100 text-green-700 hover:bg-green-200'
+                        ? 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
+                        : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-800/40'
                     }`}
                   >
                     {fire.resolved ? 'Reopen' : 'Resolved'}
@@ -416,18 +454,19 @@ export default function EmergencyPage() {
             ))}
           </ul>
         )}
-      </section>
+        </CardContent>
+      </Card>
 
       {/* Mrs. Deer AI Coach - Emergency Insight (permanent, always shown if exists) */}
-      {aiCoachMessage && (
-        <AICoachPrompt
-          message={aiCoachMessage}
-          trigger="evening_after"
-          onClose={() => {
-            // Insights are permanent - don't actually close them
-            // This handler is kept for component compatibility but does nothing
-          }}
-        />
+      {(aiCoachMessage || isStreaming || streamingError) && (
+        <>
+          {isStreaming && <StreamingIndicator expression="empathetic" className="mb-4" />}
+          <AICoachPrompt
+            message={isStreaming ? (streamingInsight || '...') : (streamingError ? `[AI ERROR] ${streamingError}` : aiCoachMessage!)}
+            trigger="emergency"
+            onClose={() => {}}
+          />
+        </>
       )}
     </div>
   )

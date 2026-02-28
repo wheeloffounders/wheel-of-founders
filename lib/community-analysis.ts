@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { format, subDays } from 'date-fns'
-import { detectFounderStage, FounderStage } from './stage-detection'
-import { MRS_DEER_RULES } from './mrs-deer'
+import { detectFounderStage } from './stage-detection'
+import { MRS_DEER_RULES, type FounderStage } from './mrs-deer'
 
 const ANONYMIZATION_RULES = {
   minUsers: 5, // Minimum users before sharing any pattern

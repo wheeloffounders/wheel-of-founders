@@ -1,3 +1,4 @@
+
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -110,66 +111,75 @@ export default function ProfilePage() {
   const [notificationFrequency, setNotificationFrequency] = useState('daily')
   const [profileInsight, setProfileInsight] = useState<string | null>(null)
   const [generatingInsight, setGeneratingInsight] = useState(false)
+  const [session, setSession] = useState<Awaited<ReturnType<typeof getUserSession>> | null>(null)
 
   useEffect(() => {
     const loadProfile = async () => {
-      const session = await getUserSession()
-      if (!session) {
+      setLoading(true)
+      const sess = await getUserSession()
+      if (!sess?.user?.id) {
         router.push('/login')
+        setLoading(false)
         return
       }
+      setSession(sess)
 
       let profileData: Record<string, unknown> | null = null
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('user_profiles')
           .select('*')
-          .eq('id', session.user.id)
+          .eq('id', sess.user.id)
           .maybeSingle()
-        profileData = data as Record<string, unknown> | null
 
-        if (data) {
-          setName(data.name || '')
-          setPreferredName(data.preferred_name || '')
-          setCompanyName(data.company_name || '')
-          setPrimaryGoal(data.primary_goal)
-          setPrimaryGoalText(data.primary_goal_text || '')
-          setDestressActivity(data.destress_activity || '')
-          setHobbies(data.hobbies || [])
-          setHobbiesOther(data.hobbies_other || '')
-          setMessageToMrsDeer(data.message_to_mrs_deer || '')
-          setFounderStage(data.founder_stage || '')
-          setFounderStageOther(data.founder_stage_other || '')
-          setPrimaryRole(data.primary_role || '')
-          setPrimaryRoleOther(data.primary_role_other || '')
-          setWeeklyHours(data.weekly_hours || '')
-          setStruggles(data.struggles || [])
-          setStrugglesOther(data.struggles_other || '')
-          setYearsAsFounder(data.years_as_founder || '')
-          setFounderPersonality(data.founder_personality || '')
-          setFounderPersonalityOther(data.founder_personality_other || '')
-          setEmailDigest(data.email_digest ?? true)
-          setNotificationFrequency(data.notification_frequency || 'daily')
-          
-          // Load existing profile insight if available
-          // Try to fetch the most recent profile insight from personal_prompts
-          const { data: insightData } = await supabase
-            .from('personal_prompts')
-            .select('prompt_text')
-            .eq('user_id', session.user.id)
-            .eq('prompt_type', 'profile')
-            .order('generated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-          
-          if (insightData?.prompt_text) {
-            setProfileInsight(insightData.prompt_text)
-          }
+        if (error) {
+          console.error('Failed to load profile:', error)
+          setLoading(false)
+          return
         }
 
-        // Load current goal
-        const goal = await getUserGoal(session.user.id)
-        setPrimaryGoal(goal)
+        if (data) {
+          profileData = data as Record<string, unknown>
+          setName((data.name as string) || '')
+          setPreferredName((data.preferred_name as string) || '')
+          setCompanyName((data.company_name as string) || '')
+          setPrimaryGoal(data.primary_goal as UserGoal | null)
+          setPrimaryGoalText((data.primary_goal_text as string) || '')
+          setDestressActivity((data.destress_activity as string) || '')
+          setHobbies(Array.isArray(data.hobbies) ? data.hobbies : [])
+          setHobbiesOther((data.hobbies_other as string) || '')
+          setMessageToMrsDeer((data.message_to_mrs_deer as string) || '')
+          setFounderStage((data.founder_stage as string) || '')
+          setFounderStageOther((data.founder_stage_other as string) || '')
+          setPrimaryRole((data.primary_role as string) || '')
+          setPrimaryRoleOther((data.primary_role_other as string) || '')
+          setWeeklyHours((data.weekly_hours as string) || '')
+          setStruggles(Array.isArray(data.struggles) ? data.struggles : [])
+          setStrugglesOther((data.struggles_other as string) || '')
+          setYearsAsFounder((data.years_as_founder as string) || '')
+          setFounderPersonality((data.founder_personality as string) || '')
+          setFounderPersonalityOther((data.founder_personality_other as string) || '')
+          setEmailDigest((data.email_digest as boolean) ?? true)
+          setNotificationFrequency((data.notification_frequency as string) || 'daily')
+        }
+
+        // Load current goal from user_profiles or user_goals
+        const goal = await getUserGoal(sess.user.id)
+        if (goal) setPrimaryGoal(goal)
+
+        // Load existing profile insight from personal_prompts
+        const { data: insightData } = await supabase
+          .from('personal_prompts')
+          .select('prompt_text')
+          .eq('user_id', sess.user.id)
+          .eq('prompt_type', 'profile')
+          .order('generated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (insightData?.prompt_text) {
+          setProfileInsight(insightData.prompt_text)
+        }
       } catch (error) {
         console.error('Failed to load profile:', error)
       } finally {
@@ -229,7 +239,11 @@ export default function ProfilePage() {
       return
     }
 
-    try {
+    try {   
+      if (!session?.user?.id) {
+        throw new Error('No session found')
+      }
+
       console.log('🟡 Saving profile to Supabase...', {
         userId: session.user.id,
         name,
@@ -367,14 +381,15 @@ export default function ProfilePage() {
         }),
       })
 
+      const data = await response.json().catch(() => ({}))
       if (!response.ok) {
-        const errorText = await response.text()
-        console.error('❌ Profile insight API failed:', response.status, errorText)
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to generate insight')
+        console.error('❌ Profile insight API failed:', response.status, data)
+        const msg = data.aiError
+          ? `[AI ERROR] ${data.error}${data.model ? ` (model: ${data.model})` : ''}${data.status ? ` [status ${data.status}]` : ''}`
+          : `Error: ${data.error || 'Failed to generate insight'}`
+        setProfileInsight(msg)
+        return
       }
-
-      const data = await response.json()
       if (data.insight) {
         console.log('✅ Received profile insight from API')
         setProfileInsight(data.insight)
@@ -388,8 +403,15 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <p className="text-gray-500">Loading profile...</p>
+      <div className="flex justify-center items-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-4">
+          <div
+            className="animate-spin rounded-full h-12 w-12 border-b-2"
+            style={{ borderColor: '#ef725c' }}
+            aria-hidden
+          />
+          <p className="text-gray-500 dark:text-gray-400">Loading profile...</p>
+        </div>
       </div>
     )
   }
@@ -398,16 +420,16 @@ export default function ProfilePage() {
     <div className="max-w-4xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-[#E2E8F0] flex items-center gap-3">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 dark:text-white flex items-center gap-3">
           <FileText className="w-8 h-8 text-[#ef725c]" />
           Your Founder Profile
         </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Mrs. Deer gets to know you better
+        <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-2">
+          Mrs. Deer, your AI companion gets to know you better
         </p>
         {primaryGoal && (
           <div className="mt-4 flex items-center gap-2">
-            <span className="text-sm text-gray-600 dark:text-gray-400">Current goal:</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">Current goal:</span>
             <span className="px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 rounded-lg text-sm font-medium">
               {lang.dashboardTitle}
             </span>
@@ -431,7 +453,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Mrs. Deer Profile Insight (permanent, always shown if exists) */}
+      {/* Mrs. Deer, your AI companion Profile Insight (permanent, always shown if exists) */}
       {profileInsight && (
         <AICoachPrompt
           message={profileInsight}
@@ -447,21 +469,21 @@ export default function ProfilePage() {
         <div className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-[#1A202C] dark:to-[#1A202C] rounded-xl shadow-lg p-6 mb-6 border border-amber-200 dark:border-amber-500/40">
           <div className="flex items-center gap-3">
             <Sparkles className="w-5 h-5 text-amber-600 dark:text-amber-300 animate-pulse" />
-            <p className="text-gray-700 dark:text-gray-300">
-              Mrs. Deer is reflecting on your profile...
+            <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300">
+              Mrs. Deer, your AI companion is reflecting on your profile...
             </p>
           </div>
         </div>
       )}
 
       {/* Basic Info Section */}
-      <div className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-[#E2E8F0] mb-6">
+      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-6">
           Basic Info
         </h2>
         <div className="space-y-4">
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               Your name <span className="text-[#ef725c]">*</span>
             </label>
             <SpeechToTextInput
@@ -471,15 +493,15 @@ export default function ProfilePage() {
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Alex Chen"
               required
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
             />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              This is how Mrs. Deer will greet you
+            <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
+              This is how Mrs. Deer, your AI companion will greet you
             </p>
           </div>
           
           <div>
-            <label htmlFor="preferred_name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="preferred_name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               What should I call you? (optional)
             </label>
             <SpeechToTextInput
@@ -488,15 +510,15 @@ export default function ProfilePage() {
               value={preferredName}
               onChange={(e) => setPreferredName(e.target.value)}
               placeholder="e.g., Alex, Al, or leave blank to use your name"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
             />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              A nickname or preferred name Mrs. Deer can use instead
+            <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
+              A nickname or preferred name Mrs. Deer, your AI companion can use instead
             </p>
           </div>
           
           <div>
-            <label htmlFor="company_name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="company_name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               Company name (optional)
             </label>
             <SpeechToTextInput
@@ -505,24 +527,24 @@ export default function ProfilePage() {
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
               placeholder="e.g., Acme Studios"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
             />
           </div>
         </div>
       </div>
 
       {/* Your Founder Story */}
-      <div className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-6">
+      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
         <div className="flex items-center gap-3 mb-6">
-          <FileText className="w-6 h-6 text-[#152b50]" />
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-[#E2E8F0]">
+          <FileText className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">
             Your Founder Story
           </h2>
         </div>
 
         <div className="space-y-6">
           <div>
-            <label htmlFor="primary-goal-text" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="primary-goal-text" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               In two sentences, what's your primary goal right now?
             </label>
             <SpeechToTextInput
@@ -533,13 +555,13 @@ export default function ProfilePage() {
               placeholder="I'm building a SaaS for creators and trying to figure out pricing..."
               maxLength={280}
               rows={3}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent resize-none text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent resize-none text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
             />
-            <p className="text-xs text-gray-500 mt-1">{primaryGoalText.length}/280 characters</p>
+            <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">{primaryGoalText.length}/280 characters</p>
           </div>
 
           <div>
-            <label htmlFor="destress" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="destress" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               What do you do to decompress or destress?
             </label>
             <SpeechToTextInput
@@ -549,28 +571,28 @@ export default function ProfilePage() {
               onChange={(e) => setDestressActivity(e.target.value)}
               placeholder="I run, play guitar, or cook something complicated..."
               rows={2}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent resize-none text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent resize-none text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
             />
           </div>
         </div>
       </div>
 
       {/* A Little About You */}
-      <div className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-6">
+      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
-          <Sparkles className="w-6 h-6 text-[#152b50]" />
+          <Sparkles className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-[#E2E8F0]">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">
               A Little About You
             </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Helps Mrs. Deer understand you as a whole person, not just a founder.
+            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-1">
+              Helps Mrs. Deer, your AI companion understand you as a whole person, not just a founder.
             </p>
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-3">
             What are your hobbies or interests outside of work? (check all that apply)
           </label>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-4">
@@ -582,12 +604,12 @@ export default function ProfilePage() {
                 className={`p-3 rounded-lg border-2 transition-all text-left ${
                   hobbies.includes(hobby.value)
                     ? 'border-[#ef725c] bg-amber-50 dark:bg-amber-900/20'
-                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                    : 'border-gray-200 dark:border-gray-700 dark:border-gray-700 hover:border-gray-300 dark:border-gray-600'
                 }`}
               >
                 <div className="flex items-center gap-2">
                   <span className="text-xl">{hobby.emoji}</span>
-                  <span className="text-sm font-medium text-gray-900 dark:text-[#E2E8F0]">
+                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100 dark:text-white">
                     {hobby.label}
                   </span>
                   {hobbies.includes(hobby.value) && (
@@ -598,7 +620,7 @@ export default function ProfilePage() {
             ))}
           </div>
           <div className="mt-4">
-            <label htmlFor="hobbies-other" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="hobbies-other" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               Something else? Tell us:
             </label>
             <SpeechToTextInput
@@ -607,14 +629,14 @@ export default function ProfilePage() {
               value={hobbiesOther}
               onChange={(e) => setHobbiesOther(e.target.value)}
               placeholder="e.g., Photography, Chess, Surfing..."
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
             />
           </div>
           
-          {/* Message to Mrs. Deer */}
-          <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-            <label htmlFor="message-mrs-deer" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Is there anything else you'd like Mrs. Deer to know about you?
+          {/* Message to Mrs. Deer, your AI companion */}
+          <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 dark:border-gray-700">
+            <label htmlFor="message-mrs-deer" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
+              Is there anything else you'd like Mrs. Deer, your AI companion to know about you?
             </label>
             <SpeechToTextInput
               as="textarea"
@@ -624,27 +646,27 @@ export default function ProfilePage() {
               placeholder="I'm building this because... I struggle with... I'm excited about... I'd love her to know that I..."
               maxLength={500}
               rows={5}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent resize-none text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent resize-none text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
             />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              {messageToMrsDeer.length}/500 characters • This helps Mrs. Deer understand you as a whole person. Share whatever feels right.
+            <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
+              {messageToMrsDeer.length}/500 characters • This helps Mrs. Deer, your AI companion understand you as a whole person. Share whatever feels right.
             </p>
           </div>
         </div>
       </div>
 
       {/* Unlock Deeper Insights */}
-      <div className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-6">
+      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
-          <Sparkles className="w-6 h-6 text-[#152b50]" />
+          <Sparkles className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-[#E2E8F0]">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">
               Unlock Deeper Insights
             </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-1">
               Answer a few more questions to get even more personalized coaching.
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
               {progressText}
             </p>
           </div>
@@ -653,14 +675,14 @@ export default function ProfilePage() {
         <div className="space-y-6">
           {/* Startup Stage */}
           <div>
-            <label htmlFor="founder-stage" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="founder-stage" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               Startup Stage
             </label>
             <select
               id="founder-stage"
               value={founderStage}
               onChange={(e) => setFounderStage(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
             >
               <option value="">Select stage...</option>
               {STAGE_OPTIONS.map((opt) => (
@@ -675,21 +697,21 @@ export default function ProfilePage() {
                 value={founderStageOther}
                 onChange={(e) => setFounderStageOther(e.target.value)}
                 placeholder="Please specify..."
-                className="w-full mt-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+                className="w-full mt-2 px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
               />
             )}
           </div>
 
           {/* Primary Role */}
           <div>
-            <label htmlFor="primary-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="primary-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               Primary Role
             </label>
             <select
               id="primary-role"
               value={primaryRole}
               onChange={(e) => setPrimaryRole(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
             >
               <option value="">Select role...</option>
               {ROLE_OPTIONS.map((opt) => (
@@ -704,21 +726,21 @@ export default function ProfilePage() {
                 value={primaryRoleOther}
                 onChange={(e) => setPrimaryRoleOther(e.target.value)}
                 placeholder="Please specify..."
-                className="w-full mt-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+                className="w-full mt-2 px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
               />
             )}
           </div>
 
           {/* Weekly Hours */}
           <div>
-            <label htmlFor="weekly-hours" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="weekly-hours" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               Weekly Hours
             </label>
             <select
               id="weekly-hours"
               value={weeklyHours}
               onChange={(e) => setWeeklyHours(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
             >
               <option value="">Select hours...</option>
               {HOURS_OPTIONS.map((opt) => (
@@ -731,7 +753,7 @@ export default function ProfilePage() {
 
           {/* Biggest Struggles */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               Biggest Struggles (select up to 3)
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
@@ -744,12 +766,12 @@ export default function ProfilePage() {
                   className={`p-3 rounded-lg border-2 transition-all text-left ${
                     struggles.includes(struggle.value)
                       ? 'border-[#ef725c] bg-amber-50 dark:bg-amber-900/20'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed'
+                      : 'border-gray-200 dark:border-gray-700 dark:border-gray-700 hover:border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed'
                   }`}
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-xl">{struggle.emoji}</span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-[#E2E8F0]">
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100 dark:text-white">
                       {struggle.label}
                     </span>
                     {struggles.includes(struggle.value) && (
@@ -760,7 +782,7 @@ export default function ProfilePage() {
               ))}
             </div>
             <div className="mt-4">
-              <label htmlFor="struggles-other" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor="struggles-other" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
                 Other struggle not listed?
               </label>
               <SpeechToTextInput
@@ -769,21 +791,21 @@ export default function ProfilePage() {
                 value={strugglesOther}
                 onChange={(e) => setStrugglesOther(e.target.value)}
                 placeholder="Tell us about it..."
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+                className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
               />
             </div>
           </div>
 
           {/* Years as Founder */}
           <div>
-            <label htmlFor="years-founder" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="years-founder" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               Years as Founder
             </label>
             <select
               id="years-founder"
               value={yearsAsFounder}
               onChange={(e) => setYearsAsFounder(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
             >
               <option value="">Select years...</option>
               {YEARS_OPTIONS.map((opt) => (
@@ -796,14 +818,14 @@ export default function ProfilePage() {
 
           {/* Founder Personality */}
           <div>
-            <label htmlFor="founder-personality" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="founder-personality" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               Founder Personality (Fun)
             </label>
             <select
               id="founder-personality"
               value={founderPersonality}
               onChange={(e) => setFounderPersonality(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
             >
               <option value="">Select personality...</option>
               {PERSONALITY_OPTIONS.map((opt) => (
@@ -818,7 +840,7 @@ export default function ProfilePage() {
                 value={founderPersonalityOther}
                 onChange={(e) => setFounderPersonalityOther(e.target.value)}
                 placeholder="Describe your style..."
-                className="w-full mt-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+                className="w-full mt-2 px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
               />
             )}
           </div>
@@ -826,10 +848,10 @@ export default function ProfilePage() {
       </div>
 
       {/* Preferences */}
-      <div className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-6">
+      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
         <div className="flex items-center gap-3 mb-6">
-          <Settings className="w-6 h-6 text-[#152b50]" />
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-[#E2E8F0]">
+          <Settings className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">
             Preferences
           </h2>
         </div>
@@ -837,8 +859,8 @@ export default function ProfilePage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-[#E2E8F0]">Email Digest</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Receive weekly summary emails</p>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Email Digest</h3>
+              <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">Receive weekly summary emails</p>
             </div>
             <button
               type="button"
@@ -848,7 +870,7 @@ export default function ProfilePage() {
               }`}
             >
               <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-gray-800 dark:bg-gray-800 shadow ring-0 transition ${
                   emailDigest ? 'translate-x-5' : 'translate-x-0'
                 }`}
               />
@@ -856,14 +878,14 @@ export default function ProfilePage() {
           </div>
 
           <div>
-            <label htmlFor="notification-frequency" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="notification-frequency" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
               Notification Frequency
             </label>
             <select
               id="notification-frequency"
               value={notificationFrequency}
               onChange={(e) => setNotificationFrequency(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
             >
               <option value="daily">Daily</option>
               <option value="weekly">Weekly</option>
@@ -871,16 +893,22 @@ export default function ProfilePage() {
             </select>
           </div>
 
-          <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="pt-4 border-t border-gray-200 dark:border-gray-700 dark:border-gray-700">
             <Link
               href="/settings/timezone"
-              className="flex items-center gap-2 text-sm text-[#152b50] hover:underline"
+              className="flex items-center gap-2 text-sm text-[#ef725c] hover:underline"
             >
               <Clock className="w-4 h-4" />
               Manage Timezone Settings
             </Link>
           </div>
         </div>
+      </div>
+
+      {/* User ID (read-only) */}
+      <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 mb-6">
+        <p className="text-sm text-gray-500 dark:text-gray-400">User ID (cannot be changed)</p>
+        <p className="font-mono text-sm text-gray-900 dark:text-white break-all mt-1">{session?.user?.id}</p>
       </div>
 
       {/* Message */}

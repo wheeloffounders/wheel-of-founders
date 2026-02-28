@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import Image from 'next/image'
+import { MrsDeerAvatar } from './MrsDeerAvatar'
 
 export type AdaptivePattern = {
   kind: 'behavior' | 'coaching'
@@ -32,6 +32,7 @@ export function MrsDeerAdaptivePrompt({ pattern, onDismiss, onRecordShown }: Mrs
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ planning_mode: 'light' }),
+        credentials: 'include',
       }).catch(() => {})
       // User can go to morning to see 2-task template
     }
@@ -49,20 +50,14 @@ export function MrsDeerAdaptivePrompt({ pattern, onDismiss, onRecordShown }: Mrs
     <div className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-[#1A202C] dark:to-[#1A202C] rounded-xl shadow-lg p-6 mb-6 border border-amber-200 dark:border-amber-500/40">
       <div className="flex gap-4">
         <div className="flex-shrink-0">
-          <Image
-            src="/mrs-deer.png"
-            alt="Mrs. Deer"
-            width={48}
-            height={48}
-            className="w-12 h-12 object-contain rounded-full"
-          />
+          <MrsDeerAvatar expression="encouraging" size="medium" />
         </div>
         <div className="flex-1 min-w-0">
           {acknowledged ? (
             <p className="text-gray-700 dark:text-gray-300">Got it. We’ll keep it in mind.</p>
           ) : (
             <>
-              <p className="text-gray-800 dark:text-[#E2E8F0] leading-relaxed mb-4">
+              <p className="text-gray-900 dark:text-gray-100 leading-relaxed mb-4">
                 {pattern.message}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -78,7 +73,7 @@ export function MrsDeerAdaptivePrompt({ pattern, onDismiss, onRecordShown }: Mrs
                 <button
                   type="button"
                   onClick={handleMaybeLater}
-                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                  className="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900"
                 >
                   Maybe later
                 </button>

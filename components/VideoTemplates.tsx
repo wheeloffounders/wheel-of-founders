@@ -82,12 +82,12 @@ export function VideoTemplates({ onSelect }: VideoTemplatesProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-6">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
       <div className="flex items-center gap-3 mb-6">
         <Video className="w-6 h-6 text-purple-600" />
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Video Template Library</h2>
-          <p className="text-sm text-gray-600">Record structured reflections using these templates</p>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Video Template Library</h2>
+          <p className="text-sm text-gray-700 dark:text-gray-300">Record structured reflections using these templates</p>
         </div>
       </div>
 
@@ -98,7 +98,7 @@ export function VideoTemplates({ onSelect }: VideoTemplatesProps) {
             className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
               selectedTemplate === template.id
                 ? 'border-purple-500 bg-purple-50'
-                : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50/50'
+                : 'border-gray-200 dark:border-gray-700 hover:border-purple-300 hover:bg-purple-50/50'
             }`}
             onClick={() => {
               setSelectedTemplate(template.id)
@@ -106,14 +106,14 @@ export function VideoTemplates({ onSelect }: VideoTemplatesProps) {
             }}
           >
             <div className="flex items-start justify-between mb-2">
-              <h3 className="font-semibold text-gray-900">{template.title}</h3>
-              <div className="flex items-center gap-1 text-xs text-gray-500">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">{template.title}</h3>
+              <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-500">
                 <Clock className="w-3 h-3" />
                 {template.duration}
               </div>
             </div>
-            <p className="text-sm text-gray-600 mb-3">{template.description}</p>
-            <ul className="space-y-1 text-xs text-gray-700">
+            <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">{template.description}</p>
+            <ul className="space-y-1 text-xs text-gray-700 dark:text-gray-300">
               {template.template.map((item, idx) => (
                 <li key={idx} className="flex items-start gap-2">
                   <span className="text-purple-600 mt-0.5">•</span>
@@ -134,7 +134,7 @@ export function VideoTemplates({ onSelect }: VideoTemplatesProps) {
       </div>
 
       <div className="mt-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
-        <p className="text-sm text-gray-700">
+        <p className="text-sm text-gray-700 dark:text-gray-300">
           <strong>Tip:</strong> Use these templates to create structured video reflections. Record yourself following
           the prompts, then save for future reference or share with your team.
         </p>

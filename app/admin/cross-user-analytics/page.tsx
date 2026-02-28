@@ -129,7 +129,7 @@ export default function CrossUserAnalyticsPage() {
     const init = async () => {
       const session = await getUserSession()
       if (!session?.user?.is_admin) {
-        router.push('/')
+        router.push('/dashboard')
         return
       }
       if (dateRange !== 'custom' || (customStart && customEnd)) {
@@ -208,7 +208,7 @@ export default function CrossUserAnalyticsPage() {
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
                   dateRange === r
                     ? 'text-white'
-                    : 'text-gray-400 hover:text-white bg-white/5 hover:bg-white/10'
+                    : 'text-gray-400 hover:text-white bg-white dark:bg-gray-800/5 hover:bg-white dark:bg-gray-800/10'
                 }`}
                 style={dateRange === r ? { backgroundColor: CORAL } : {}}
               >
@@ -222,14 +222,14 @@ export default function CrossUserAnalyticsPage() {
                 type="date"
                 value={customStart}
                 onChange={(e) => setCustomStart(e.target.value)}
-                className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white placeholder-gray-400"
+                className="rounded-lg border border-white/20 bg-white dark:bg-gray-800/10 px-3 py-2 text-white placeholder-gray-400"
               />
               <span className="text-gray-400">to</span>
               <input
                 type="date"
                 value={customEnd}
                 onChange={(e) => setCustomEnd(e.target.value)}
-                className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white placeholder-gray-400"
+                className="rounded-lg border border-white/20 bg-white dark:bg-gray-800/10 px-3 py-2 text-white placeholder-gray-400"
               />
               <button
                 onClick={loadData}
@@ -402,13 +402,13 @@ export default function CrossUserAnalyticsPage() {
                     placeholder="Search pattern, type, user, date…"
                     value={tableSearch}
                     onChange={(e) => setTableSearch(e.target.value)}
-                    className="w-full rounded-lg border border-white/20 bg-white/10 pl-9 pr-3 py-2 text-white placeholder-gray-400"
+                    className="w-full rounded-lg border border-white/20 bg-white dark:bg-gray-800/10 pl-9 pr-3 py-2 text-white placeholder-gray-400"
                   />
                 </div>
                 <select
                   value={tableTypeFilter}
                   onChange={(e) => setTableTypeFilter(e.target.value)}
-                  className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white"
+                  className="rounded-lg border border-white/20 bg-white dark:bg-gray-800/10 px-3 py-2 text-white"
                 >
                   <option value="">All types</option>
                   <option value="struggle">Struggle</option>

@@ -36,7 +36,7 @@ export default function VideoTemplatesPage() {
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8">
-        <p className="text-gray-500">Loading...</p>
+        <p className="text-gray-500 dark:text-gray-500">Loading...</p>
       </div>
     )
   }
@@ -45,7 +45,7 @@ export default function VideoTemplatesPage() {
     <div className="max-w-4xl mx-auto px-4 py-8">
       <Link
         href="/"
-        className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition"
+        className="inline-flex items-center gap-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:text-gray-100 mb-6 transition"
       >
         <ArrowLeft className="w-4 h-4" />
         Back to Dashboard

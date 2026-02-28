@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserSession } from '@/lib/auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * GET: Cohort retention for admin
  */

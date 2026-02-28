@@ -56,15 +56,15 @@ export function PersonalPromptsCard({
     <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-[#1A202C] dark:to-[#1A202C] rounded-xl shadow-lg p-6 mb-8 border border-purple-200 dark:border-purple-500/40">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-[#E2E8F0] flex items-center gap-2">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-[#E2E8F0] flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-purple-600 dark:text-purple-300" />
             Personal Coaching
             <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-200 rounded-full font-medium">
               PRO+
             </span>
           </h2>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-            Mrs. Deer's personalized insights just for you
+          <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-1">
+            Mrs. Deer, your AI companion's personalized insights just for you
           </p>
         </div>
         {refreshable && onRefresh && (
@@ -85,7 +85,7 @@ export function PersonalPromptsCard({
           {prompts.map((prompt, idx) => (
             <div
               key={idx}
-              className="bg-white dark:bg-[#0F1419] rounded-lg p-5 border-l-4 border-purple-500 shadow-sm"
+              className="bg-white dark:bg-gray-800 dark:bg-[#0F1419] rounded-lg p-5 border-l-4 border-purple-500 shadow-sm"
             >
               <div className="flex items-start gap-3">
                 <div className="flex-shrink-0 mt-0.5 text-2xl">
@@ -93,18 +93,18 @@ export function PersonalPromptsCard({
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
-                    <h3 className="font-semibold text-gray-900 dark:text-[#E2E8F0]">
+                    <h3 className="font-semibold text-gray-900 dark:text-gray-100 dark:text-[#E2E8F0]">
                       {promptTitles[prompt.prompt_type]}
                     </h3>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                    <span className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400">
                       {format(new Date(prompt.generated_at), 'MMM d')}
                     </span>
                   </div>
-                  <MarkdownText className="text-gray-800 dark:text-[#E2E8F0] leading-relaxed mb-2">
+                  <MarkdownText className="text-gray-900 dark:text-gray-100 dark:text-[#E2E8F0] leading-relaxed mb-2">
                     {prompt.prompt_text}
                   </MarkdownText>
                   {prompt.stage_context && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+                    <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 italic">
                       Stage: {toNaturalStage(prompt.stage_context)}
                     </p>
                   )}
@@ -114,10 +114,10 @@ export function PersonalPromptsCard({
           ))}
         </div>
       ) : (
-        <div className="bg-white dark:bg-[#0F1419] rounded-lg p-6 text-center border-2 border-dashed border-purple-300 dark:border-purple-500/50">
+        <div className="bg-white dark:bg-gray-800 dark:bg-[#0F1419] rounded-lg p-6 text-center border-2 border-dashed border-purple-300 dark:border-purple-500/50">
           <Sparkles className="w-12 h-12 text-purple-400 dark:text-purple-300 mx-auto mb-3" />
-          <p className="text-gray-600 dark:text-gray-300 mb-2">Your personal prompts will appear here</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Your personal prompts will appear here</p>
+          <p className="text-sm text-gray-500 dark:text-gray-500 dark:text-gray-400">
             Pro+ includes: 3 daily prompts + weekly insights + monthly reviews
           </p>
         </div>

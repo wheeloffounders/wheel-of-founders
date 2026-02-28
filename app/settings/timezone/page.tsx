@@ -69,22 +69,41 @@ export default function TimezoneSettingsPage() {
     setMessage(null)
 
     const session = await getUserSession()
-    if (!session) return
+    if (!session) {
+      setSaving(false)
+      setMessage({ type: 'error', text: 'Please log in to save your timezone.' })
+      router.push('/login')
+      return
+    }
 
     const tz = COMMON_TIMEZONES.find((t) => t.value === selectedTimezone)
-    const offsetMinutes = tz?.offset || 0
+    const offsetMinutes = tz?.offset ?? 0
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (session.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`
+    }
 
     try {
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({
+      const res = await fetch('/api/user-preferences/timezone', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({
           timezone: selectedTimezone,
           timezone_offset: offsetMinutes,
-          timezone_detected_at: new Date().toISOString(),
-        })
-        .eq('id', session.user.id)
+        }),
+      })
 
-      if (error) throw error
+      const data = await res.json().catch(() => ({}))
+      if (res.status === 401) {
+        setSaving(false)
+        router.push('/login')
+        return
+      }
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error || `Failed to save (${res.status})`)
+      }
 
       setCurrentTimezone(selectedTimezone)
       setMessage({ type: 'success', text: 'Timezone saved successfully!' })
@@ -107,17 +126,17 @@ export default function TimezoneSettingsPage() {
 
   if (loading) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-8">
-        <p className="text-gray-500">Loading...</p>
+      <div className="max-w-2xl mx-auto px-4 md:px-5 py-8">
+        <p className="text-gray-500 dark:text-gray-500">Loading...</p>
       </div>
     )
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
+    <div className="max-w-2xl mx-auto px-4 md:px-5 py-8">
       <Link
         href="/settings"
-        className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition"
+        className="inline-flex items-center gap-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:text-gray-100 mb-6 transition"
       >
         <ArrowLeft className="w-4 h-4" />
         Back to Settings
@@ -127,28 +146,25 @@ export default function TimezoneSettingsPage() {
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
           <Clock className="w-8 h-8 text-[#ef725c]" />
-          <h1 className="text-3xl font-bold text-gray-900">Your Timezone</h1>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Your Timezone</h1>
         </div>
-        <p className="text-gray-600">
-          Smart analysis runs between 2-5 AM in your local time.
-        </p>
         {timezoneDetectedAt && (
-          <p className="text-sm text-gray-500 mt-2">
+          <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">
             Previously detected: <strong>{currentTimezone}</strong> (you can change if incorrect)
           </p>
         )}
       </div>
 
       {/* Timezone Selector */}
-      <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-        <label htmlFor="timezone" className="block text-sm font-medium text-gray-700 mb-2">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
+        <label htmlFor="timezone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           Select your timezone:
         </label>
         <select
           id="timezone"
           value={selectedTimezone}
           onChange={(e) => setSelectedTimezone(e.target.value)}
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900"
+          className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800"
         >
           {COMMON_TIMEZONES.map((tz) => (
             <option key={tz.value} value={tz.value}>
@@ -156,21 +172,6 @@ export default function TimezoneSettingsPage() {
             </option>
           ))}
         </select>
-      </div>
-
-      {/* Analysis Schedule Info */}
-      <div className="bg-gradient-to-r from-[#ef725c]/10 to-[#152b50]/10 rounded-xl p-6 mb-6 border-l-4 border-[#ef725c]">
-        <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-[#ef725c]" />
-          Analysis Schedule
-        </h3>
-        <p className="text-sm text-gray-700 mb-2">
-          Based on <strong>{COMMON_TIMEZONES.find((t) => t.value === selectedTimezone)?.label || selectedTimezone}</strong>, analysis will run between:
-        </p>
-        <p className="text-lg font-bold text-gray-900 mb-2">2:00 AM - 5:00 AM your local time</p>
-        <p className="text-xs text-gray-600">
-          You&apos;ll get fresh insights when you wake up! 🌅
-        </p>
       </div>
 
       {/* Message */}

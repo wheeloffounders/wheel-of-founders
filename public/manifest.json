@@ -1,7 +1,8 @@
 {
   "name": "Wheel of Founders",
-  "short_name": "Founders",
-  "description": "Daily operating system for founders",
+  "short_name": "🛞 Of Founders",
+  "version": "0.1.0",
+  "description": "Your daily founder coaching companion",
   "theme_color": "#152b50",
   "background_color": "#ffffff",
   "display": "standalone",

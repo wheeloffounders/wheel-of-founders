@@ -49,14 +49,14 @@ function extractPatternFeatures(userData: any): UserPatternFeatures['features'] 
   const proactiveDecisions = decisions.filter((d: any) => d.is_proactive === true).length
   const totalDecisions = decisions.length
 
-  const moods = reviews.map((r: any) => r.mood).filter((m): m is number => m != null)
-  const energies = reviews.map((r: any) => r.energy).filter((e): e is number => e != null)
+  const moods = reviews.map((r: any) => r.mood).filter((m: any): m is number => m != null)
+  const energies = reviews.map((r: any) => r.energy).filter((e: any): e is number => e != null)
   const focusScores = reviews
     .filter((r: any) => r.mood && r.energy)
     .map((r: any) => (r.mood + r.energy) / 2)
 
   const days = CLUSTERING_CONFIG.lookbackDays
-  const avgFocusScore = focusScores.length > 0 ? focusScores.reduce((a, b) => a + b, 0) / focusScores.length : 5
+  const avgFocusScore = focusScores.length > 0 ? focusScores.reduce((a: number, b: number) => a + b, 0) / focusScores.length : 5
 
   return {
     taskVolume: totalTasks / days,

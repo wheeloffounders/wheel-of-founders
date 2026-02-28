@@ -1,11 +1,37 @@
-import { supabase } from './supabase'
 import { getServerSupabase } from './server-supabase'
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns'
 import { detectFounderStage, getUserStage, updateUserStage } from './stage-detection'
+import { filterInsightLabels } from './insight-utils'
 import { GENTLE_ARCHITECT, MRS_DEER_RULES, FounderStage, toNaturalStage } from './mrs-deer'
+
+/** Safe get for Supabase/unknown data - avoids 'never' type errors */
+function safeGet<T>(obj: unknown, key: string, defaultValue: T): T {
+  const val = (obj as Record<string, unknown> | null | undefined)?.[key]
+  return (val as T) ?? defaultValue
+}
+
+const NO_LABELS = ' DO NOT use labels like "Observe:", "Validate:", "Reframe:", or "Question:" in your response. Write naturally without headers or section titles.'
+
 import { analyzeUserPatterns, UserPatterns } from './analysis-engine'
-import { generateAIPrompt, getAIModel } from './ai-client'
+import { generateAIPrompt, generateAIPromptStream } from './ai-client'
 import { getUserGoal, getUserLanguage } from './user-language'
+
+/** Call AI - streams chunks to onChunk when provided, otherwise returns full string */
+async function callAI(
+  opts: { systemPrompt: string; userPrompt: string; maxTokens?: number; temperature?: number },
+  onChunk?: (chunk: string) => void
+): Promise<string> {
+  if (onChunk) {
+    let full = ''
+    for await (const chunk of generateAIPromptStream(opts)) {
+      full += chunk
+      onChunk(chunk)
+    }
+    return full
+  }
+  return generateAIPrompt(opts)
+}
+import { checkUserHistory } from './user-history'
 
 export type PromptType = 'morning' | 'post_morning' | 'post_evening' | 'weekly' | 'monthly' | 'emergency'
 
@@ -15,6 +41,11 @@ interface UserData {
   patterns: UserPatterns | null
   todayPlan?: any
   todayReview?: any
+todayDecision?: {           // ← ADD THIS
+    decision: string
+    decision_type: string
+    why_this_decision?: string | null
+  } | null
   weekData?: any
   monthData?: any
   /** For date-specific prompts: the date we're generating for (e.g. Feb 15 morning prompt) */
@@ -26,12 +57,14 @@ interface UserData {
  * @param userId - User ID
  * @param promptType - Type of prompt (morning, post_morning, post_evening, weekly, monthly)
  * @param promptDate - Optional date for date-specific prompts (defaults to today)
+ * @param opts - Optional { onChunk } for streaming; when provided, yields chunks as they arrive
  */
 export async function generateProPlusPrompt(
   userId: string,
   promptType: PromptType,
-  promptDate?: string // Format: 'yyyy-MM-dd', defaults to today
-): Promise<string | null> {
+  promptDate?: string, // Format: 'yyyy-MM-dd', defaults to today
+  opts?: { onChunk?: OnChunk; postMorningOverride?: PostMorningOverride | null; postEveningOverride?: PostEveningOverride | null; morningOverride?: MorningOverride | null }
+): Promise<string> {
   // Get user's current stage
   let stage = await getUserStage(userId)
   if (!stage) {
@@ -83,27 +116,37 @@ export async function generateProPlusPrompt(
   //     }
   //   }
   // }
-  console.log('[Personal Coaching] Generating new prompt (3-gen limit temporarily disabled for debugging)')
+  const { hasHistory } = await checkUserHistory(userId)
+  console.log('[Personal Coaching] Generating', promptType, 'prompt for', targetDate, 'hasHistory=', hasHistory)
 
   // Get user data based on prompt type (uses targetDate for date-specific prompts)
-  const userData = await getUserDataForPrompt(userId, promptType, stage, targetDate)
+  const optsTyped = opts as { postMorningOverride?: PostMorningOverride | null; postEveningOverride?: PostEveningOverride | null }
+  const userData = await getUserDataForPrompt(
+    userId,
+    promptType,
+    stage,
+    targetDate,
+    optsTyped?.postMorningOverride,
+    optsTyped?.postEveningOverride
+  )
 
   if (promptType === 'morning') {
     console.log('[Personal Coaching] Generating morning prompt for', targetDate, '— will use yesterday\'s (', format(subDays(new Date(targetDate), 1), 'yyyy-MM-dd'), ') evening review')
   }
 
-  // Generate prompt based on type
-  let promptText: string | null = null
-
+  // Generate prompt based on type (throws on AI failure - no fallbacks)
+  const optsFull = opts as { onChunk?: OnChunk; morningOverride?: MorningOverride | null }
+  const onChunk = optsFull?.onChunk
+  let promptText: string
   switch (promptType) {
     case 'morning':
-      promptText = await generateGentleArchitectPrompt(userData, userLang)
+      promptText = await generateGentleArchitectPrompt(userData, userLang, hasHistory, onChunk, optsFull?.morningOverride)
       break
     case 'post_morning':
-      promptText = await analyzeMorningPlan(userData, userLang)
+      promptText = await analyzeMorningPlan(userData, userLang, hasHistory, onChunk)
       break
     case 'post_evening':
-      promptText = await reflectOnDay(userData, userLang)
+      promptText = await reflectOnDay(userData, userLang, hasHistory, onChunk)
       break
     case 'weekly':
       promptText = await generateWeeklyInsight(userData, userLang)
@@ -111,14 +154,14 @@ export async function generateProPlusPrompt(
     case 'monthly':
       promptText = await generateMonthlyInsight(userData, userLang)
       break
+    default:
+      throw new Error(`Unknown prompt type: ${promptType}`)
   }
-
-  if (!promptText) return null
 
   // Calculate generation count for date-specific prompts (db already set above)
   let generationCount = 1
   if (['morning', 'post_morning', 'post_evening'].includes(promptType)) {
-    const { data: existingPrompts } = await db
+    const { data: existingPromptsData } = await db
       .from('personal_prompts')
       .select('generation_count')
       .eq('user_id', userId)
@@ -127,6 +170,9 @@ export async function generateProPlusPrompt(
       .order('generated_at', { ascending: false })
       .limit(1)
       .maybeSingle()
+    
+    type PromptRow = { generation_count?: number | null }
+    const existingPrompts = existingPromptsData as PromptRow | null
     
     if (existingPrompts?.generation_count) {
       generationCount = existingPrompts.generation_count + 1
@@ -142,23 +188,18 @@ export async function generateProPlusPrompt(
     prompt_date: ['morning', 'post_morning', 'post_evening'].includes(promptType) ? targetDate : null,
     generation_count: generationCount,
   }
-  
-  console.log('[SAVE INSIGHT] Attempting to save to personal_prompts (server client):', {
-    userId,
-    promptType,
-    targetDate,
-    generationCount,
-    promptTextLength: promptText.length,
-    promptTextPreview: promptText.substring(0, 100),
-    prompt_date: insertData.prompt_date,
-  })
-  
-  const { data: insertedData, error: insertError } = await db
-    .from('personal_prompts')
-    .insert(insertData)
+
+  // Real insert
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit personal_prompts
+  const { data: insertedData, error: insertError } = await (db.from('personal_prompts') as any)
+    .insert(insertData as any)
     .select()
-  
+
   if (insertError) {
+    console.error('[SAVE DEBUG] ❌ INSERT ERROR:', insertError)
+    console.error('[SAVE DEBUG] Error code:', insertError.code)
+    console.error('[SAVE DEBUG] Error message:', insertError.message)
+    console.error('[SAVE DEBUG] Error details:', insertError.details)
     console.error('[SAVE INSIGHT] ❌ Insert FAILED:', {
       code: insertError.code,
       message: insertError.message,
@@ -167,6 +208,7 @@ export async function generateProPlusPrompt(
     })
     // Don't throw - still return the prompt text so user sees it
   } else {
+    console.log('[SAVE DEBUG] ✅ INSERT SUCCESS:', insertedData)
     console.log('[SAVE INSIGHT] ✅ Insert SUCCEEDED:', {
       insertedRows: insertedData?.length || 0,
       insertedId: insertedData?.[0]?.id,
@@ -180,10 +222,11 @@ export async function generateProPlusPrompt(
 }
 
 /**
- * Get user profile data for AI context
+ * Get user profile data for AI context (including struggles and message to Mrs. Deer for deep personalization)
  */
 async function getUserProfileData(userId: string): Promise<{ context: string; name?: string; preferredName?: string; companyName?: string }> {
-  const { data } = await supabase
+  const db = getServerSupabase()
+  const { data } = await db
     .from('user_profiles')
     .select('name, preferred_name, company_name, primary_goal_text, destress_activity, hobbies, hobbies_other, message_to_mrs_deer, founder_stage, founder_stage_other, primary_role, primary_role_other, struggles, struggles_other, years_as_founder, founder_personality, founder_personality_other')
     .eq('id', userId)
@@ -192,78 +235,128 @@ async function getUserProfileData(userId: string): Promise<{ context: string; na
   if (!data) return { context: '' }
 
   let context = ''
-  
-  // Name and company for personalization (prefer preferred_name over name)
-  const userName = data.preferred_name || data.name
-  const companyName = data.company_name
+  const profileData = data as Record<string, unknown>
 
-  // Primary goal text
-  if (data.primary_goal_text) {
-    context += ` They described their goal as: "${data.primary_goal_text}". `
+  const userName = (profileData.preferred_name as string) || (profileData.name as string)
+  const companyName = profileData.company_name as string | undefined
+
+  if (profileData.primary_goal_text) {
+    context += ` They described their goal as: "${profileData.primary_goal_text}". `
   }
-  
-  // Company name
   if (companyName) {
     context += ` They're building ${companyName}. `
   }
-
-  // Destress activity
-  if (data.destress_activity) {
-    context += ` They destress by ${data.destress_activity}. `
+  if (profileData.destress_activity) {
+    context += ` They destress by ${profileData.destress_activity}. `
   }
-
-  // Hobbies
-  if (data.hobbies && data.hobbies.length > 0) {
-    const hobbyList = data.hobbies.join(', ')
+  if (profileData.hobbies && Array.isArray(profileData.hobbies) && profileData.hobbies.length > 0) {
+    const hobbyList = (profileData.hobbies as string[]).join(', ')
     context += ` Outside work, they enjoy ${hobbyList}. `
-    if (data.hobbies_other) {
-      context += ` They also mentioned: ${data.hobbies_other}. `
+    if (profileData.hobbies_other) context += ` They also mentioned: ${profileData.hobbies_other}. `
+  }
+
+  // Message to Mrs. Deer — use as primary personal lens; reference in prompts
+  if (profileData.message_to_mrs_deer) {
+    context += ` They shared this with you personally (use it to sound like you know them): "${profileData.message_to_mrs_deer}". `
+  }
+
+  const stage = (profileData.founder_stage === 'other' ? profileData.founder_stage_other : profileData.founder_stage) as string | undefined
+  if (stage) context += ` Their startup stage: ${stage}. `
+  const role = (profileData.primary_role === 'other' ? profileData.primary_role_other : profileData.primary_role) as string | undefined
+  if (role) context += ` Their primary role: ${role}. `
+
+  // Struggles and fears — reference these when relevant; validate these as part of growth
+  if (profileData.struggles && Array.isArray(profileData.struggles) && profileData.struggles.length > 0) {
+    const struggleList = (profileData.struggles as string[]).join(', ')
+    context += ` Their stated struggles/fears include: ${struggleList}. When relevant, acknowledge these and reframe—e.g. "It makes sense that [X] feels heavy given [their struggle]. What would change if…?" `
+    if (profileData.struggles_other) {
+      context += ` They also wrote: ${profileData.struggles_other}. `
     }
   }
 
-  // Message to Mrs. Deer (personal introduction)
-  if (data.message_to_mrs_deer) {
-    context += ` They shared this with you personally: "${data.message_to_mrs_deer}". `
+  if (profileData.years_as_founder) {
+    context += ` They've been a founder for ${profileData.years_as_founder}. `
   }
-
-  // Stage
-  const stage = data.founder_stage === 'other' ? data.founder_stage_other : data.founder_stage
-  if (stage) {
-    context += ` Their startup stage: ${stage}. `
-  }
-
-  // Role
-  const role = data.primary_role === 'other' ? data.primary_role_other : data.primary_role
-  if (role) {
-    context += ` Their primary role: ${role}. `
-  }
-
-  // Struggles
-  if (data.struggles && data.struggles.length > 0) {
-    const struggleList = data.struggles.join(', ')
-    context += ` Their biggest struggles include: ${struggleList}. `
-    if (data.struggles_other) {
-      context += ` They also mentioned: ${data.struggles_other}. `
-    }
-  }
-
-  // Years as founder
-  if (data.years_as_founder) {
-    context += ` They've been a founder for ${data.years_as_founder}. `
-  }
-
-  // Personality
-  const personality = data.founder_personality === 'other' ? data.founder_personality_other : data.founder_personality
+  const personality = (profileData.founder_personality === 'other' ? profileData.founder_personality_other : profileData.founder_personality) as string | undefined
   if (personality) {
     context += ` Their founder personality/style: ${personality}. `
   }
 
-  return { 
-    context: context.trim(), 
-    name: data.name || undefined, 
-    preferredName: data.preferred_name || undefined,
-    companyName: companyName || undefined 
+  return {
+    context: context.trim(),
+    name: (profileData.name as string) || undefined,
+    preferredName: (profileData.preferred_name as string) || undefined,
+    companyName: companyName || undefined,
   }
+}
+
+/**
+ * Get recent challenges for personalization: last 7 days of emergencies and/or repeated lessons from reviews
+ */
+async function getRecentChallengesContext(userId: string, targetDate: string): Promise<string> {
+  const end = new Date(targetDate)
+  const start = subDays(end, 7)
+  const startStr = format(start, 'yyyy-MM-dd')
+  const endStr = format(end, 'yyyy-MM-dd')
+
+  const db = getServerSupabase()
+  const [emergenciesRes, reviewsRes] = await Promise.all([
+    db
+      .from('emergencies')
+      .select('description, severity, fire_date')
+      .eq('user_id', userId)
+      .gte('fire_date', startStr)
+      .lte('fire_date', endStr)
+      .order('fire_date', { ascending: false })
+      .limit(5),
+    db
+      .from('evening_reviews')
+      .select('lessons')
+      .eq('user_id', userId)
+      .gte('review_date', startStr)
+      .lte('review_date', endStr),
+  ])
+
+  const emergencies = emergenciesRes.data || []
+  const reviews = reviewsRes.data || []
+  const lessonsList: string[] = []
+  reviews.forEach((r: { lessons?: string }) => {
+    if (!r.lessons) return
+    try {
+      const parsed = typeof r.lessons === 'string' && r.lessons.startsWith('[') ? JSON.parse(r.lessons) : [r.lessons]
+      if (Array.isArray(parsed)) lessonsList.push(...parsed.filter(Boolean).map((l: string) => l.trim()))
+    } catch {
+      lessonsList.push(r.lessons)
+    }
+  })
+
+  let context = ''
+  if (emergencies.length > 0) {
+    const recent = emergencies.slice(0, 3).map((e: { description: string; severity: string }) => `${e.description} (${e.severity})`).join('; ')
+    context += ` Recent fires (last 7 days): ${recent}. When relevant, reference these without judgment—e.g. "You've been carrying [theme]. What would make that load slightly lighter?" `
+  }
+  if (lessonsList.length > 0) {
+    const unique = [...new Set(lessonsList)].slice(0, 5).join('; ')
+    context += ` Recurring lessons they've written: ${unique}. Weave in when it deepens the insight. `
+  }
+  return context.trim()
+}
+
+/** Override for post_morning when client passes tasks/decision to avoid DB timing issues */
+export interface PostMorningOverride {
+  todayPlan: Array<{ description?: string; needle_mover?: boolean; [k: string]: unknown }>
+  todayDecision: { decision: string; decision_type: string; why_this_decision?: string | null } | null
+}
+
+/** Override for post_evening when client passes review/tasks to avoid DB timing issues */
+export interface PostEveningOverride {
+  todayReview: { wins?: string | null; lessons?: string | null; journal?: string | null; mood?: number | null; energy?: number | null } | null
+  todayPlan: Array<{ description?: string; completed?: boolean; needle_mover?: boolean; [k: string]: unknown }>
+}
+
+/** Override for morning when client passes yesterday's evening review to avoid DB timing issues */
+export interface MorningOverride {
+  yesterdayReview: { wins?: string | null; lessons?: string | null; journal?: string | null; mood?: number | null; energy?: number | null } | null
 }
 
 /**
@@ -273,34 +366,64 @@ async function getUserDataForPrompt(
   userId: string,
   promptType: PromptType,
   stage: FounderStage,
-  targetDate?: string // Format: 'yyyy-MM-dd', defaults to today
+  targetDate?: string, // Format: 'yyyy-MM-dd', defaults to today
+  postMorningOverride?: PostMorningOverride | null,
+  postEveningOverride?: PostEveningOverride | null
 ): Promise<UserData> {
+  const db = getServerSupabase()
   const patterns = await analyzeUserPatterns(userId, 14)
 
   let todayPlan = null
   let todayReview = null
+  let todayDecision: UserData['todayDecision'] = null
   let weekData = null
   let monthData = null
 
   const dateToUse = targetDate || format(new Date(), 'yyyy-MM-dd')
 
-  if (promptType === 'post_morning' || promptType === 'morning') {
-    const { data } = await supabase
-      .from('morning_tasks')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('plan_date', dateToUse)
-    todayPlan = data || []
+  // When client passes tasks/decision for post_morning, use them directly to avoid DB timing/race
+  if (promptType === 'post_morning' && postMorningOverride) {
+    todayPlan = postMorningOverride.todayPlan || []
+    todayDecision = postMorningOverride.todayDecision
+  } else if (promptType === 'post_morning' || promptType === 'morning') {
+    const [tasksRes, decisionRes] = await Promise.all([
+      db
+        .from('morning_tasks')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('plan_date', dateToUse),
+      db
+        .from('morning_decisions')
+        .select('decision, decision_type, why_this_decision')
+        .eq('user_id', userId)
+        .eq('plan_date', dateToUse)
+        .maybeSingle(),
+    ])
+    todayPlan = tasksRes.data || []
+    todayDecision = decisionRes.data
   }
 
-  if (promptType === 'post_evening') {
-    const { data } = await supabase
-      .from('evening_reviews')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('review_date', dateToUse)
-      .maybeSingle()
-    todayReview = data
+  // When client passes review/tasks for post_evening, use them directly to avoid DB timing/race
+  if (promptType === 'post_evening' && postEveningOverride) {
+    todayReview = postEveningOverride.todayReview
+    todayPlan = postEveningOverride.todayPlan || []
+  } else if (promptType === 'post_evening') {
+    const [reviewRes, tasksRes] = await Promise.all([
+      db
+        .from('evening_reviews')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('review_date', dateToUse)
+        .maybeSingle(),
+      db
+        .from('morning_tasks')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('plan_date', dateToUse)
+        .order('task_order', { ascending: true }),
+    ])
+    todayReview = reviewRes.data
+    todayPlan = tasksRes.data || []
   }
 
   if (promptType === 'weekly') {
@@ -310,19 +433,19 @@ async function getUserDataForPrompt(
     const weekEndStr = format(weekEnd, 'yyyy-MM-dd')
 
     const [tasksRes, decisionsRes, reviewsRes] = await Promise.all([
-      supabase
+      db
         .from('morning_tasks')
         .select('*')
         .eq('user_id', userId)
         .gte('plan_date', weekStartStr)
         .lte('plan_date', weekEndStr),
-      supabase
+      db
         .from('morning_decisions')
         .select('*')
         .eq('user_id', userId)
         .gte('plan_date', weekStartStr)
         .lte('plan_date', weekEndStr),
-      supabase
+      db
         .from('evening_reviews')
         .select('*')
         .eq('user_id', userId)
@@ -344,25 +467,25 @@ async function getUserDataForPrompt(
     const monthEndStr = format(monthEnd, 'yyyy-MM-dd')
 
     const [tasksRes, decisionsRes, reviewsRes, emergenciesRes] = await Promise.all([
-      supabase
+      db
         .from('morning_tasks')
         .select('*')
         .eq('user_id', userId)
         .gte('plan_date', monthStartStr)
         .lte('plan_date', monthEndStr),
-      supabase
+      db
         .from('morning_decisions')
         .select('*')
         .eq('user_id', userId)
         .gte('plan_date', monthStartStr)
         .lte('plan_date', monthEndStr),
-      supabase
+      db
         .from('evening_reviews')
         .select('*')
         .eq('user_id', userId)
         .gte('review_date', monthStartStr)
         .lte('review_date', monthEndStr),
-      supabase
+      db
         .from('emergencies')
         .select('*')
         .eq('user_id', userId)
@@ -384,159 +507,148 @@ async function getUserDataForPrompt(
     patterns,
     todayPlan,
     todayReview,
+    todayDecision,
     weekData,
     monthData,
     targetDate: dateToUse,
   }
 }
 
+const FIRST_DAY_MIRROR_RULES = `CRITICAL: User has NO prior history. ONLY use what's in TODAY'S or YESTERDAY'S entry. DO NOT say "I recall" or reference past conversations. DO NOT interpret what it "represents"—just observe. Be a mirror, not a coach. Notice: multiple entries at same timestamp? Tension named clearly (e.g. "gut yes, risk no")? What did they do differently than most?`
+
+type OnChunk = (chunk: string) => void
+
 /**
  * Generate Gentle Architect morning prompt (loop-aware)
  * (Short, calm, 3 sentences + 1 question max)
  */
-async function generateGentleArchitectPrompt(userData: UserData, userLang: ReturnType<typeof getUserLanguage>): Promise<string> {
+async function generateGentleArchitectPrompt(
+  userData: UserData,
+  userLang: ReturnType<typeof getUserLanguage>,
+  hasHistory: boolean,
+  onChunk?: OnChunk,
+  morningOverride?: MorningOverride | null
+): Promise<string> {
   const patterns = userData.patterns
-  
-  // Get yesterday's review relative to the morning we're generating for.
-  // When evening save triggers next day's morning prompt, todayPlan is empty but targetDate is set (e.g. Feb 15).
-  // Use userData.targetDate when available so we fetch yesterday (Feb 14) evening review, not the wrong day.
-  const targetDate = userData.targetDate 
-    || (userData.todayPlan && userData.todayPlan.length > 0 ? (userData.todayPlan[0] as any).plan_date : null) 
+  const targetDate = userData.targetDate
+    || (userData.todayPlan && userData.todayPlan.length > 0 ? (userData.todayPlan[0] as any).plan_date : null)
     || format(new Date(), 'yyyy-MM-dd')
-  
-  const yesterday = subDays(new Date(targetDate), 1)
-  const yesterdayStr = format(yesterday, 'yyyy-MM-dd')
-  const { data: yesterdayReview } = await supabase
-    .from('evening_reviews')
-    .select('wins, lessons, mood, energy')
-    .eq('user_id', userData.userId)
-    .eq('review_date', yesterdayStr)
-    .maybeSingle()
 
-  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Morning insight: max 100 words. STRUCTURE: (1) Observe something specific from yesterday (2) Reframe unexpectedly (3) One open question. BANNED: Needle Mover, Action Plan, Smart Constraints, BALANCED_STAGE, clichés. Use toNaturalStage for stage—never raw codes. Think with them, not at them.'
+  // When client passes yesterday's review (e.g. from evening save), use it to avoid DB timing/race
+  let yesterdayData: Record<string, unknown> | null = null
+  if (morningOverride?.yesterdayReview) {
+    yesterdayData = morningOverride.yesterdayReview as Record<string, unknown>
+  } else {
+    const yesterday = subDays(new Date(targetDate), 1)
+    const yesterdayStr = format(yesterday, 'yyyy-MM-dd')
+    const db = getServerSupabase()
+    const { data: yesterdayReview } = await db
+      .from('evening_reviews')
+      .select('wins, lessons, mood, energy')
+      .eq('user_id', userData.userId)
+      .eq('review_date', yesterdayStr)
+      .maybeSingle()
 
-  // Get user's goal and profile data for context
+    yesterdayData = yesterdayReview as Record<string, unknown> | null
+  }
+
+  const historyNote = hasHistory ? '' : `\n\n${FIRST_DAY_MIRROR_RULES}`
+  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Morning insight: max 100 words. STRUCTURE (internal only—do not output these as labels): OBSERVE (something specific from their data—quote their exact words) → VALIDATE (if low mood/energy or struggles) → REFRAME lightly → One open question. MUST use at least one of their exact phrases.' + NO_LABELS + ' BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes, clichés, "futures you imagine", "save the space", "keep the day open", "trading in futures", "the weight of only the top priority", abstract metaphors. Think with them, not at them.' + historyNote
+
   const userGoal = await getUserGoal(userData.userId)
   const profileData = await getUserProfileData(userData.userId)
+  const recentChallenges = await getRecentChallengesContext(userData.userId, targetDate)
   const displayName = profileData.preferredName || profileData.name
   const greeting = displayName ? `Good morning, ${displayName}` : 'Good morning'
   
-  const userPrompt = `Generate a personalized morning insight for a founder${displayName ? ` named ${displayName}` : ''}. The founder's goal is: ${userGoal || 'general clarity'}.${profileData.context ? '\n\nADDITIONAL CONTEXT ABOUT THIS FOUNDER:\n' + profileData.context : ''}
+  const contextBlock = hasHistory && profileData.context ? '\n\nCONTEXT ABOUT THIS FOUNDER (use to sound like you know them; reference struggles/fears when relevant):\n' + profileData.context : ''
+  const challengesBlock = hasHistory && recentChallenges ? '\n\nRECENT CHALLENGES / REPEATED LESSONS (reference when it deepens the insight):\n' + recentChallenges : ''
+  const hasYesterdayData = yesterdayData && (yesterdayData.wins || yesterdayData.lessons || yesterdayData.journal)
+  const userPrompt = `Generate a personalized morning insight for a founder${displayName ? ` named ${displayName}` : ''}. Goal: ${userGoal || 'clarity and sustainable progress'}.${contextBlock}${challengesBlock}
 
-VOICE: Think WITH them, not AT them. Show what they hadn't noticed. Structure: (1) Observe something specific (2) Reframe unexpectedly (3) One open question. Never use product terms or clichés. Aim for surprise, brevity, humanity.
+CRITICAL: USE THEIR EXACT PHRASES from yesterday's data below. ${hasYesterdayData ? 'Quote at least one phrase they wrote.' : 'If data is sparse, reference what they did record (mood/energy)—do NOT say "blank" or "nothing to reflect on".'}
+
+VOICE: Warm, specific, earned. USE THEIR EXACT PHRASES from yesterday's wins/lessons below—quote what they wrote. Validate emotional reality before reframing. Then reframe lightly. End with ONE question that shifts perspective. No product terms, no clichés, no abstract metaphors.
 
 YESTERDAY'S DATA:
-- Wins: ${yesterdayReview?.wins ? (typeof yesterdayReview.wins === 'string' && yesterdayReview.wins.startsWith('[') ? JSON.parse(yesterdayReview.wins).join('; ') : yesterdayReview.wins) : 'None recorded'}
-- Lessons: ${yesterdayReview?.lessons ? (typeof yesterdayReview.lessons === 'string' && yesterdayReview.lessons.startsWith('[') ? JSON.parse(yesterdayReview.lessons).join('; ') : yesterdayReview.lessons) : 'None recorded'}
-- Mood: ${yesterdayReview?.mood || 'Not recorded'}/5
-- Energy: ${yesterdayReview?.energy || 'Not recorded'}/5
+- Wins: ${(yesterdayData?.wins ? (typeof yesterdayData.wins === 'string' && yesterdayData.wins.startsWith('[') ? JSON.parse(yesterdayData.wins).join('; ') : yesterdayData.wins) : 'None recorded')}
+- Lessons: ${(yesterdayData?.lessons ? (typeof yesterdayData.lessons === 'string' && yesterdayData.lessons.startsWith('[') ? JSON.parse(yesterdayData.lessons).join('; ') : yesterdayData.lessons) : 'None recorded')}
+- Mood: ${yesterdayData?.mood ?? 'Not recorded'}/5
+- Energy: ${yesterdayData?.energy ?? 'Not recorded'}/5
 
 PATTERN CONTEXT (last 14 days):
 - Total tasks: ${patterns?.taskPatterns.totalTasks || 0}
 - Focus trend: ${patterns?.productivityPatterns.focusScoreTrend || 'steady'}
-- Stage (describe naturally, e.g. "in this season of balance"): ${toNaturalStage(userData.stage)}
+- Stage (use natural language only): ${toNaturalStage(userData.stage)}
 
-Follow STRUCTURE: Observe → Reframe → Question. Show what they hadn't noticed. Use stage naturally (e.g. "${toNaturalStage(userData.stage)}")—never raw codes. BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes, Keep shining.`
+Use stage naturally. BANNED: Needle Mover, Action Plan, Smart Constraints, raw stage codes, Keep shining.`
 
-  const aiResponse = await generateAIPrompt({
-    systemPrompt,
-    userPrompt,
-    model: getAIModel(),
-    maxTokens: 150,
-    temperature: 0.7,
-  })
-
-  if (aiResponse) return aiResponse
-
-  // Fallback template
-  if (!patterns) {
-    return [
-      'Good morning. Ready to turn yesterday into a better today?',
-      '',
-      'Start with one clear priority—what would genuinely move you forward if it were the only thing you finished?',
-      '',
-      `Today's focusing question: What one thing today would matter most?`,
-    ].join('\n')
-  }
-
-  let para1 = 'This is a meaningful turn.'
-  if (yesterdayReview?.wins) {
-    const winsText = typeof yesterdayReview.wins === 'string' && yesterdayReview.wins.startsWith('[') 
-      ? JSON.parse(yesterdayReview.wins).join('; ') 
-      : yesterdayReview.wins
-    para1 += ` Yesterday's wins ("${winsText}") tell you something about what's working.`
-  } else if (patterns.taskPatterns.totalTasks > 0) {
-    para1 += " Yesterday still contributed, even if it didn't feel perfect."
-  }
-
-  const focusTrend = patterns.productivityPatterns.focusScoreTrend || 'steady'
-  const line2 = `Over the last 14 days, you've generally followed through when one clear priority leads—today can follow that same pattern.`
-  const line3 = `Your focus has been ${focusTrend}. Yesterday is one more data point, not a verdict.`
-  const question = "What's the smallest change that would make today feel more intentional than yesterday?"
-
-  return [para1, '', line2, line3, '', question].join('\n')
+  const raw = await callAI(
+    { systemPrompt, userPrompt, maxTokens: 150, temperature: 0.7 },
+    onChunk
+  )
+  return filterInsightLabels(raw)
 }
 
 // Stub implementations for the other prompt types.
 // These are intentionally concise and pattern-focused.
 
-async function analyzeMorningPlan(userData: UserData, userLang: ReturnType<typeof getUserLanguage>): Promise<string> {
+async function analyzeMorningPlan(userData: UserData, userLang: ReturnType<typeof getUserLanguage>, hasHistory: boolean, onChunk?: OnChunk): Promise<string> {
   const totalTasks = userData.patterns?.taskPatterns.totalTasks ?? 0
-  const needleRate = userData.patterns?.taskPatterns.needleMoverRate ?? 0
+  const needleRate = userData.patterns?.taskPatterns.needleMoversRate ?? 0
   const todayPlan = userData.todayPlan || []
   const needleMoversToday = todayPlan.filter((t: any) => t.needle_mover).length
 
-  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Post-morning insight: max 100 words. STRUCTURE: Observe → Reframe → Question. BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes. Use natural stage language only. Think with them, not at them.'
+  console.log('[analyzeMorningPlan] todayPlan count:', todayPlan.length, 'targetDate:', userData.targetDate, 'descriptions:', todayPlan.map((t: any) => t.description).filter(Boolean))
+
+  const historyNote = hasHistory ? '' : `\n\n${FIRST_DAY_MIRROR_RULES}`
+  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Post-morning insight: max 100 words. STRUCTURE (internal only—do not output these as labels): OBSERVE (quote their exact task/decision text) → VALIDATE what they wrote → REFRAME lightly → One open question. MUST use at least one of their exact phrases from their tasks or decision. Address the specific tension they named.' + NO_LABELS + ' BANNED: Needle Mover, Action Plan, Smart Constraints, "top priority", "marked as top priority", stage codes, statistics, percentages, "futures you imagine", "save the space", "keep the day open", "the weight of only the top priority", abstract metaphors. Use qualitative observations only. Think with them, not at them.' + historyNote
 
   const profileData = await getUserProfileData(userData.userId)
   const displayName = profileData.preferredName || profileData.name
-  const userPrompt = `Generate a personalized plan review insight for a founder${displayName ? ` named ${displayName}` : ''} who just saved their morning plan.${profileData.context ? '\n\nADDITIONAL CONTEXT ABOUT THIS FOUNDER:\n' + profileData.context : ''}
+  const contextBlock = hasHistory && profileData.context ? '\n\nCONTEXT (use to sound like you know them; reference struggles/goals when relevant):\n' + profileData.context : ''
+  const taskDescriptions = todayPlan.map((t: any) => t.description).filter(Boolean)
+  const taskListForAI = taskDescriptions.length > 0
+    ? taskDescriptions.map((d: string) => `"${d}"`).join(', ')
+    : 'None recorded'
 
-VOICE: Think WITH them, not AT them. Show what they hadn't noticed—don't echo what they already know.
-STRUCTURE: (1) Observe something specific from their plan (2) Reframe it unexpectedly (3) End with one open question.
-EXAMPLE: "After two weeks of maintenance, you're finally moving again. But here's the thing — you're not abandoning rest to do it. You're learning to hold both. That's rarer than any launch."
-Never use product terms (Needle Mover, Action Plan, stage codes) or clichés (Keep shining). Aim for surprise, specificity, brevity.
+  const userPrompt = `Generate a personalized plan review for a founder${displayName ? ` named ${displayName}` : ''} who just saved their morning plan.${contextBlock}
+
+CRITICAL: You MUST reference their actual tasks or decision. ${taskDescriptions.length > 0 ? `They wrote these tasks: ${taskListForAI}. Quote at least one by name.` : 'They may have written only a decision below. Reference what they wrote—do NOT say "zero tasks", "blank slate", or "empty plan".'}
+
+VOICE: Warm, specific, earned. USE THEIR EXACT PHRASES from the data below—quote what they wrote. Address the specific tension they named (e.g. if they wrote "gut yes, risk no", name it back). Show what they hadn't noticed. End with ONE question that reframes. No product terms, no clichés, no abstract metaphors.
 
 TODAY'S PLAN:
 - Total tasks: ${todayPlan.length}
-- Tasks they marked as top priority: ${needleMoversToday}
-- Task descriptions: ${todayPlan.map((t: any) => t.description).join('; ') || 'None'}
+- Tasks they marked as most important: ${needleMoversToday}
+- Task descriptions: ${taskDescriptions.join('; ') || 'None'}
+${userData.todayDecision ? `
+TODAY'S DECISION:
+- Decision: ${userData.todayDecision.decision}
+- Decision type: ${userData.todayDecision.decision_type}
+- Why this decision: ${userData.todayDecision.why_this_decision || 'Not specified'}
+` : ''}
 
-PATTERN CONTEXT (last 14 days):
+${hasHistory ? `PATTERN CONTEXT (last 14 days):
 - Total tasks: ${totalTasks}
-- Share of tasks they treat as top priority: ${Math.round(needleRate * 100)}%
-- Stage (describe naturally): ${toNaturalStage(userData.stage)}
+- Share of tasks they treat as most important: ${Math.round(needleRate * 100)}%
+- Stage (natural language only): ${toNaturalStage(userData.stage)}
 
-Generate an insight that shows them something they hadn't seen. Reframe their situation unexpectedly. End with one open question. Make it feel like it came from a person, not a prompt.`
+` : ''}Generate an insight that shows them something they hadn't seen. Use warm, human language. Do NOT include any statistics or percentages. Speak like a wise friend, not a data analyst. End with one reframing question. Feel like a person who knows their journey, not a template.`
 
-  const aiResponse = await generateAIPrompt({
-    systemPrompt,
-    userPrompt,
-    model: getAIModel(),
-    maxTokens: 150,
-    temperature: 0.7,
-  })
-
-  if (aiResponse) return aiResponse
-
-  // Fallback template
-  const lines: string[] = []
-  lines.push('This is a clear, intentional plan.')
-  if (totalTasks > 0) {
-    lines.push(
-      `Over the last 14 days, you've tended to focus on what matters most—today's list fits that pattern.`
-    )
-  }
-  lines.push('If you removed or delegated just one non-essential task, where would you free the most attention?')
-  return lines.join('\n')
+  const raw = await callAI(
+    { systemPrompt, userPrompt, maxTokens: 150, temperature: 0.7 },
+    onChunk
+  )
+  return filterInsightLabels(raw)
 }
 
-async function reflectOnDay(userData: UserData, userLang: ReturnType<typeof getUserLanguage>): Promise<string> {
+async function reflectOnDay(userData: UserData, userLang: ReturnType<typeof getUserLanguage>, hasHistory: boolean, onChunk?: OnChunk): Promise<string> {
   const completionRate = userData.patterns?.taskPatterns.completionRate ?? 0
 
   // Get review data (already fetched for the target date in getUserDataForPrompt)
-  const todayReview = userData.todayReview
-  
+  const todayReview = userData.todayReview as Record<string, unknown> | null | undefined
+
   // Get tasks for the date (already fetched in getUserDataForPrompt)
   const tasks = userData.todayPlan || []
   const completedTasks = tasks.filter((t: any) => t.completed).length
@@ -547,59 +659,58 @@ async function reflectOnDay(userData: UserData, userLang: ReturnType<typeof getU
   let lessonsText = ''
   if (todayReview?.wins) {
     try {
-      const parsed = JSON.parse(todayReview.wins)
-      winsText = Array.isArray(parsed) ? parsed.filter(w => w?.trim()).join('; ') : todayReview.wins
+      const winsVal = todayReview.wins
+      const parsed = typeof winsVal === 'string' ? JSON.parse(winsVal) : winsVal
+      winsText = Array.isArray(parsed) ? parsed.filter((w: string) => w?.trim()).join('; ') : String(winsVal)
     } catch {
-      winsText = todayReview.wins
+      winsText = String(todayReview.wins)
     }
   }
   if (todayReview?.lessons) {
     try {
-      const parsed = JSON.parse(todayReview.lessons)
-      lessonsText = Array.isArray(parsed) ? parsed.filter(l => l?.trim()).join('; ') : todayReview.lessons
+      const lessonsVal = todayReview.lessons
+      const parsed = typeof lessonsVal === 'string' ? JSON.parse(lessonsVal) : lessonsVal
+      lessonsText = Array.isArray(parsed) ? parsed.filter((l: string) => l?.trim()).join('; ') : String(lessonsVal)
     } catch {
-      lessonsText = todayReview.lessons
+      lessonsText = String(todayReview.lessons)
     }
   }
 
-  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Evening insight: max 120 words. STRUCTURE: (1) Observe something specific from today (2) Reframe unexpectedly (3) One open question. BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes, clichés. Think with them, not at them.'
+  const historyNote = hasHistory ? '' : `\n\n${FIRST_DAY_MIRROR_RULES}`
+  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Evening insight: max 120 words. STRUCTURE (internal only—do not output these as labels): OBSERVE (quote their exact wins/lessons/journal) → VALIDATE emotional state if relevant → REFRAME lightly → One open question. MUST use at least one of their exact phrases from wins, lessons, or journal. Address what they actually wrote.' + NO_LABELS + ' BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes, clichés, "futures you imagine", "save the space", "keep the day open", "the weight of only the top priority", abstract metaphors. Think with them, not at them. Treat fear and exhaustion as part of growth.' + historyNote
 
   const profileData = await getUserProfileData(userData.userId)
   const displayName = profileData.preferredName || profileData.name
-  const userPrompt = `Generate a personalized evening reflection insight for a founder${displayName ? ` named ${displayName}` : ''}.${profileData.context ? '\n\nADDITIONAL CONTEXT ABOUT THIS FOUNDER:\n' + profileData.context : ''}
+  const contextBlock = hasHistory && profileData.context ? '\n\nCONTEXT (reference struggles/fears when relevant; validate as part of growth):\n' + profileData.context : ''
+  const hasEveningData = winsText || lessonsText || todayReview?.journal
+  const userPrompt = `Generate a personalized evening reflection for a founder${displayName ? ` named ${displayName}` : ''}.${contextBlock}
 
-VOICE: Think WITH them, not AT them. Show what they hadn't noticed. (1) Observe something specific (2) Reframe unexpectedly (3) One open question. Never use product terms or clichés. Surprise, brevity, humanity.
+CRITICAL: USE THEIR EXACT PHRASES from the data below. ${hasEveningData ? 'Quote at least one phrase from their wins, lessons, or journal.' : 'Reference what they did record (tasks, mood, energy)—do NOT say "blank", "nothing", or "empty reflection".'}
+
+VOICE: Warm, specific, earned. USE THEIR EXACT PHRASES from wins, lessons, or journal below—quote what they wrote. If mood or energy was low, validate first. Then reframe lightly. End with ONE question that reframes. No product terms, no clichés, no abstract metaphors.
 
 TODAY'S DATA:
 - Tasks planned: ${totalTasks}
 - Tasks completed: ${completedTasks}${totalTasks > 0 ? ` (${Math.round((completedTasks / totalTasks) * 100)}%)` : ''}
-- Top-priority tasks completed: ${tasks.filter(t => t.needle_mover && t.completed).length}
-- Mood: ${todayReview?.mood ? `${todayReview.mood}/5` : 'Not recorded'}
-- Energy: ${todayReview?.energy ? `${todayReview.energy}/5` : 'Not recorded'}
+- Top-priority tasks completed: ${tasks.filter((t: any) => t.needle_mover && t.completed).length}
+- Mood: ${todayReview?.mood != null ? `${todayReview.mood}/5` : 'Not recorded'}
+- Energy: ${todayReview?.energy != null ? `${todayReview.energy}/5` : 'Not recorded'}
 - Wins: ${winsText || 'None recorded'}
 - Lessons: ${lessonsText || 'None recorded'}
-- Journal: ${todayReview?.journal ? todayReview.journal.substring(0, 200) : 'None'}
+- Journal: ${todayReview?.journal ? String(todayReview.journal).substring(0, 200) : 'None'}
 
-PATTERN CONTEXT (last 14 days):
+${hasHistory ? `PATTERN CONTEXT (last 14 days):
 - Overall completion rate: ${Math.round(completionRate * 100)}%
 - Total tasks: ${userData.patterns?.taskPatterns.totalTasks ?? 0}
-- Stage (describe naturally, e.g. "in this season of balance"): ${toNaturalStage(userData.stage)}
+- Stage (natural language only): ${toNaturalStage(userData.stage)}
 
-Follow STRUCTURE: Observe → Reframe → Question. Do NOT use section headers or formulas—write as a wise friend would: one or two short paragraphs + one open question. If they had wins, celebrate specifically. If completion was low, frame as useful data, not failure. Use natural stage language (e.g. "${toNaturalStage(userData.stage)}")—never raw codes. BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes, Keep shining.`
+` : ''}Write as a wise friend: one or two short paragraphs + one open question. Use natural stage language only. BANNED: Needle Mover, Action Plan, Smart Constraints, raw stage codes, Keep shining.`
 
-  const aiResponse = await generateAIPrompt({
-    systemPrompt,
-    userPrompt,
-    model: getAIModel(),
-    maxTokens: 200,
-    temperature: 0.7,
-  })
-
-  if (aiResponse) return aiResponse
-
-  // Fallback to template if LLM fails
-  const completionRatePercent = Math.round(completionRate * 100)
-  return `This reflection is a meaningful checkpoint.\n\nIn the last couple of weeks you've completed about ${completionRatePercent}% of what you plan—today adds another data point to that pattern.\n\nIf you changed just one part tomorrow (planning, doing, or reflecting), which shift would reduce the most friction?`
+  const raw = await callAI(
+    { systemPrompt, userPrompt, maxTokens: 200, temperature: 0.7 },
+    onChunk
+  )
+  return filterInsightLabels(raw)
 }
 
 async function generateWeeklyInsight(userData: UserData, userLang: ReturnType<typeof getUserLanguage>): Promise<string> {
@@ -607,48 +718,58 @@ async function generateWeeklyInsight(userData: UserData, userLang: ReturnType<ty
   const weekData = userData.weekData || { tasks: [], decisions: [], reviews: [] }
   const weekTasks = weekData.tasks || []
   const weekReviews = weekData.reviews || []
+  const weekDecisions = weekData.decisions || []
 
-  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Weekly insight: max 150 words. STRUCTURE: Observe → Reframe → Question. BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes. Use natural stage language only. Think with them, not at them.'
+  // Extract raw content for quoting
+  const taskDescriptions = weekTasks.map((t: any) => t.description).filter(Boolean).join('; ')
+  const decisionTexts = weekDecisions.map((d: any) => `${d.decision}${d.why_this_decision ? ` (why: ${d.why_this_decision})` : ''}`).filter(Boolean).join('; ')
+  const winsList: string[] = []
+  const lessonsList: string[] = []
+  weekReviews.forEach((r: any) => {
+    if (r.wins) {
+      try {
+        const parsed = typeof r.wins === 'string' && r.wins.startsWith('[') ? JSON.parse(r.wins) : [r.wins]
+        if (Array.isArray(parsed)) winsList.push(...parsed.filter(Boolean).map((w: string) => w.trim()))
+      } catch {
+        winsList.push(r.wins)
+      }
+    }
+    if (r.lessons) {
+      try {
+        const parsed = typeof r.lessons === 'string' && r.lessons.startsWith('[') ? JSON.parse(r.lessons) : [r.lessons]
+        if (Array.isArray(parsed)) lessonsList.push(...parsed.filter(Boolean).map((l: string) => l.trim()))
+      } catch {
+        lessonsList.push(r.lessons)
+      }
+    }
+  })
 
-  const userPrompt = `Generate a personalized weekly insight for a founder.
+  const profileData = await getUserProfileData(userData.userId)
+  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Weekly insight: max 150 words. STRUCTURE (internal only—do not output these as labels): OBSERVE (quote specific wins/lessons/tasks from their week) → VALIDATE → REFRAME lightly → One open question. MUST use at least one of their exact phrases.' + NO_LABELS + ' BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes, "futures you imagine", "save the space", "keep the day open", "the weight of only the top priority", abstract metaphors. Think with them, not at them.'
 
-THIS WEEK'S DATA:
-- Tasks: ${weekTasks.length}
-- Decisions: ${weekData.decisions?.length || 0}
+  const hasWeekData = taskDescriptions || decisionTexts || winsList.length > 0 || lessonsList.length > 0
+  const userPrompt = `Generate a personalized weekly insight for a founder.${profileData.context ? '\n\nCONTEXT (reference struggles/goals when relevant):\n' + profileData.context : ''}
+
+CRITICAL: USE THEIR EXACT PHRASES from the data below. ${hasWeekData ? 'Quote at least one phrase they wrote.' : 'Reference what they did record—do NOT say "empty week" or "nothing to reflect on".'}
+
+THIS WEEK'S DATA (quote their exact words in your response):
+- Tasks they wrote: ${taskDescriptions || 'None'}
+- Decisions they wrote: ${decisionTexts || 'None'}
+- Wins they wrote: ${[...new Set(winsList)].slice(0, 10).join('; ') || 'None'}
+- Lessons they wrote: ${[...new Set(lessonsList)].slice(0, 10).join('; ') || 'None'}
 - Evening reviews: ${weekReviews.length}
 - Completion rate: ${patterns?.taskPatterns.completionRate ? Math.round(patterns.taskPatterns.completionRate * 100) : 0}%
-- Stage (describe naturally): ${toNaturalStage(userData.stage)}
+- Stage (natural language only): ${toNaturalStage(userData.stage)}
 
-PATTERN CONTEXT:
-- Focus trend: ${patterns?.productivityPatterns.focusScoreTrend || 'steady'}
-- Share of tasks they treat as top priority: ${patterns?.taskPatterns.needleMoverRate ? Math.round(patterns.taskPatterns.needleMoverRate * 100) : 0}%
+VOICE: Warm, specific. USE THEIR EXACT PHRASES from above—quote what they wrote. Show what they hadn't noticed. End with one question that reframes the week. No product terms, clichés, or abstract metaphors. Feel like a person who knows their journey.`
 
-VOICE: Think WITH them, not AT them. Show what they hadn't noticed. (1) Observe (2) Reframe unexpectedly (3) One open question. Never product terms or clichés. Surprise, brevity.
-
-Generate a weekly insight that shows them something they hadn't seen. End with one open question. Feel like a person, not a prompt.`
-
-  const aiResponse = await generateAIPrompt({
+  const raw = await generateAIPrompt({
     systemPrompt,
     userPrompt,
-    model: getAIModel(),
     maxTokens: 250,
     temperature: 0.7,
   })
-
-  if (aiResponse) return aiResponse
-
-  // Fallback template
-  const lines: string[] = []
-  lines.push('Weekly loop review.')
-  if (patterns) {
-    lines.push(
-      `Your week shows a consistent pattern in how you handle what matters most, routine work, and the unexpected—this is the current architecture of your days.`
-    )
-  }
-  lines.push(
-    'Looking at the past 7 days, which small structural change would most improve next week?'
-  )
-  return lines.join('\n')
+  return filterInsightLabels(raw)
 }
 
 async function generateMonthlyInsight(userData: UserData, userLang: ReturnType<typeof getUserLanguage>): Promise<string> {
@@ -663,7 +784,7 @@ async function generateMonthlyInsight(userData: UserData, userLang: ReturnType<t
   if (patterns) {
     totalTasks = patterns.taskPatterns.totalTasks
     completedTasks = Math.round(totalTasks * (patterns.taskPatterns.completionRate ?? 0))
-    totalDecisions = patterns.decisionPatterns.totalDecisions ?? 0
+    totalDecisions = patterns.decisionPatterns.total ?? 0
     emergenciesResolved = Math.round(
       (patterns.emergencyPatterns.total ?? 0) *
         (patterns.emergencyPatterns.resolutionRate ?? 0)
@@ -672,103 +793,66 @@ async function generateMonthlyInsight(userData: UserData, userLang: ReturnType<t
 
   const completionRate = totalTasks > 0 ? completedTasks / totalTasks : 0
 
-  const { data: profile } = await supabase
+  // Extract raw content for quoting
+  const monthTasks = monthData.tasks || []
+  const monthReviews = monthData.reviews || []
+  const monthEmergencies = monthData.emergencies || []
+  const taskDescriptions = monthTasks.slice(0, 15).map((t: any) => t.description).filter(Boolean).join('; ')
+  const winsList: string[] = []
+  const lessonsList: string[] = []
+  monthReviews.forEach((r: any) => {
+    if (r.wins) {
+      try {
+        const parsed = typeof r.wins === 'string' && r.wins.startsWith('[') ? JSON.parse(r.wins) : [r.wins]
+        if (Array.isArray(parsed)) winsList.push(...parsed.filter(Boolean).map((w: string) => w.trim()))
+      } catch {
+        winsList.push(r.wins)
+      }
+    }
+    if (r.lessons) {
+      try {
+        const parsed = typeof r.lessons === 'string' && r.lessons.startsWith('[') ? JSON.parse(r.lessons) : [r.lessons]
+        if (Array.isArray(parsed)) lessonsList.push(...parsed.filter(Boolean).map((l: string) => l.trim()))
+      } catch {
+        lessonsList.push(r.lessons)
+      }
+    }
+  })
+  const emergencyDescriptions = monthEmergencies.map((e: any) => e.description).filter(Boolean).join('; ')
+
+  const db = getServerSupabase()
+  const { data: profile } = await db
     .from('user_profiles')
     .select('longest_streak')
     .eq('id', userData.userId)
     .maybeSingle()
 
-  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Monthly insight: max 250 words. STRUCTURE: Observe → Reframe → Question. BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes. Use natural stage language only. Think with them, not at them.'
+  const profileData = await getUserProfileData(userData.userId)
+  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Monthly insight: max 250 words. STRUCTURE (internal only—do not output these as labels): OBSERVE (quote specific themes from their month) → VALIDATE → REFRAME lightly → One open question for next month. MUST use at least one of their exact phrases from tasks, wins, lessons, or emergencies.' + NO_LABELS + ' BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes, "futures you imagine", "save the space", "keep the day open", "the weight of only the top priority", abstract metaphors. Think with them, not at them.'
 
-  const userPrompt = `Generate a personalized monthly insight for a founder.
+  const hasMonthData = taskDescriptions || winsList.length > 0 || lessonsList.length > 0 || emergencyDescriptions
+  const userPrompt = `Generate a personalized monthly insight for a founder.${profileData.context ? '\n\nCONTEXT (reference struggles/goals when relevant):\n' + profileData.context : ''}
 
-THIS MONTH'S DATA:
-- Total tasks: ${totalTasks}
-- Completed: ${completedTasks} (${Math.round(completionRate * 100)}%)
-- Decisions: ${totalDecisions}
-- Emergencies resolved: ${emergenciesResolved}
-- Longest streak: ${profile?.longest_streak || 0} days
-- Stage (describe naturally): ${toNaturalStage(userData.stage)}
+CRITICAL: USE THEIR EXACT PHRASES from the data below. ${hasMonthData ? 'Quote at least one phrase they wrote.' : 'Reference what they did record—do NOT say "empty month" or "nothing to reflect on".'}
 
-PATTERN CONTEXT:
-- Focus trend: ${patterns?.productivityPatterns.focusScoreTrend || 'steady'}
-- Completion rate: ${Math.round((patterns?.taskPatterns.completionRate ?? 0) * 100)}%
-- Emergency resolution rate: ${Math.round((patterns?.emergencyPatterns.resolutionRate ?? 0) * 100)}%
+THIS MONTH'S DATA (quote their exact words in your response):
+- Tasks they wrote: ${taskDescriptions || 'None'}
+- Wins they wrote: ${[...new Set(winsList)].slice(0, 12).join('; ') || 'None'}
+- Lessons they wrote: ${[...new Set(lessonsList)].slice(0, 12).join('; ') || 'None'}
+- Emergencies they wrote: ${emergencyDescriptions || 'None'}
+- Total tasks: ${totalTasks}, Completed: ${completedTasks} (${Math.round(completionRate * 100)}%)
+- Longest streak: ${safeGet(profile, 'longest_streak', 0)} days
+- Stage (natural language only): ${toNaturalStage(userData.stage)}
 
-Follow STRUCTURE: Observe → Reframe → Question. Show what they hadn't noticed. Use natural stage language only—never raw codes. BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes. End with one open question for next month.`
+VOICE: USE THEIR EXACT PHRASES from above—quote what they wrote. Show what they hadn't noticed. End with one reframing question for next month. No product terms, clichés, or abstract metaphors.`
 
-  const aiResponse = await generateAIPrompt({
+  const raw = await generateAIPrompt({
     systemPrompt,
     userPrompt,
-    model: getAIModel(),
     maxTokens: 400,
     temperature: 0.7,
   })
-
-  if (aiResponse) return aiResponse
-
-  // Fallback template
-  const lines: string[] = []
-  lines.push('🎯 Monthly Founder Review')
-  lines.push('')
-  lines.push(
-    "This month wasn't just a blur of days—you've been running repeated loops of planning, acting, and reflecting. Let's see what your system actually produced."
-  )
-  lines.push('')
-  lines.push('Month in numbers:')
-  lines.push(`• ${totalTasks} total tasks`)
-  lines.push(`• ${completedTasks} completed (${Math.round(completionRate * 100)}%)`)
-  lines.push(`• ${totalDecisions} decisions recorded`)
-  lines.push(`• ${emergenciesResolved} fires extinguished`)
-  if (profile?.longest_streak) {
-    lines.push(`• ${profile.longest_streak} day streak (best so far)`)
-  }
-  lines.push('')
-  lines.push('Growth patterns this month:')
-  if (patterns?.productivityPatterns.focusScoreTrend === 'improving') {
-    lines.push('• Your focus score is trending upward—your loop is becoming more intentional.')
-  }
-  if ((patterns?.taskPatterns.completionRate ?? 0) > 0.7) {
-    lines.push(
-      `• Strong execution rate around ${Math.round((patterns?.taskPatterns.completionRate ?? 0) * 100)}%—most of what you plan actually happens.`
-    )
-  }
-  if ((patterns?.emergencyPatterns.resolutionRate ?? 0) > 0.8) {
-    lines.push(
-      `• High emergency resolution rate (${Math.round((patterns?.emergencyPatterns.resolutionRate ?? 0) * 100)}%)—you're not leaving many fires unattended.`
-    )
-  }
-  lines.push('')
-  lines.push('Monthly theme:')
-  if (userData.stage === 'FIRE_FIGHTING_STAGE') {
-    lines.push(
-      "• You're in a fire‑fighting season. Next month can gently shift toward designing systems that reduce your most common fires."
-    )
-  } else if (userData.stage === 'SYSTEM_BUILDING_STAGE') {
-    lines.push(
-      "• You're in system‑building mode. Strengthening a few key processes will compound the gains you're already creating."
-    )
-  } else {
-    lines.push(
-      "• You're in a more balanced phase. Staying aware of the patterns that work will keep things from quietly drifting."
-    )
-  }
-  lines.push('')
-  lines.push("Next month's structural options:")
-  if ((patterns?.emergencyPatterns.total ?? 0) > 0) {
-    lines.push('• Choose one recurring emergency source and design a simple safeguard around it.')
-  }
-  lines.push(
-    "• Decide on a \"minimum rhythm\": the smallest version of planning and reflecting you'll still do on hard days."
-  )
-  lines.push(
-    '• Pick one habit that anchors you to protect, even when everything else flexes.'
-  )
-  lines.push('')
-  lines.push(
-    "Next month's focusing question: If you only improved one part of your daily loop, which change would reduce the most friction?"
-  )
-  return lines.join('\n')
+  return filterInsightLabels(raw)
 }
 
 /**
@@ -779,7 +863,8 @@ export async function generateEmergencyInsight(
   userId: string,
   emergencyDescription: string,
   severity: 'hot' | 'warm' | 'contained',
-  promptDate?: string // Format: 'yyyy-MM-dd', defaults to today
+  promptDate?: string, // Format: 'yyyy-MM-dd', defaults to today
+  onChunk?: OnChunk
 ): Promise<string> {
   // Get user's current stage (same mechanism as other prompts)
   let stage = await getUserStage(userId)
@@ -792,24 +877,28 @@ export async function generateEmergencyInsight(
   const patterns = await analyzeUserPatterns(userId, 14)
   const totalEmergencies = patterns?.emergencyPatterns.total ?? 0
 
-  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Emergency insight: max 80 words. STRUCTURE: Observe → Reframe → Question. BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes. Calm, supportive, never judgmental. Think with them, not at them.'
+  const profileData = await getUserProfileData(userId)
+  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Emergency insight: max 80 words. STRUCTURE (internal only—do not output these as labels): OBSERVE (quote their exact fire description) → VALIDATE the weight → REFRAME lightly → One open question. MUST use a phrase from their fire description. Address what they actually wrote.' + NO_LABELS + ' BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes, "futures you imagine", "save the space", "keep the day open", "the weight of only the top priority", abstract metaphors. Calm, supportive, never judgmental. Think with them, not at them.'
 
-  const userPrompt = `Generate a personalized emergency insight for a founder who just logged a fire.
+  const userPrompt = `Generate a personalized emergency insight for a founder who just logged a fire.${profileData.context ? '\n\nCONTEXT (reference struggles when relevant):\n' + profileData.context : ''}
+
+CRITICAL: You MUST quote a phrase from their fire description below. Do not give generic advice—reference what they actually wrote.
 
 EMERGENCY DETAILS:
 - Description: ${emergencyDescription}
 - Severity: ${severity}
-- Stage (describe naturally): ${toNaturalStage(stage)}
+- Stage (natural language only): ${toNaturalStage(stage)}
 
 PATTERN CONTEXT (last 14 days):
 - Total emergencies: ${totalEmergencies}
 - Resolution rate: ${Math.round((patterns?.emergencyPatterns.resolutionRate ?? 0) * 100)}%
 
-Follow STRUCTURE: (1) Observe—acknowledge the fire appropriately for severity (2) Reframe—put it in context of their recent pattern (3) Question—one open question about what would help. Use natural stage language only. BANNED: product terms, stage codes. Supportive, never prescriptive.`
+VOICE: USE THEIR EXACT PHRASES from the fire description above—quote what they wrote. Acknowledge and validate the weight. Reframe lightly. End with one open question. Supportive, never prescriptive. No abstract metaphors.`
 
   const targetDate = promptDate || format(new Date(), 'yyyy-MM-dd')
   
-  const { data: existingPrompts } = await supabase
+  const db = getServerSupabase()
+  const { data: existingPrompts } = await db
     .from('personal_prompts')
     .select('generation_count')
     .eq('user_id', userId)
@@ -825,151 +914,36 @@ Follow STRUCTURE: (1) Observe—acknowledge the fire appropriately for severity 
   //   return latestPrompt.prompt_text
   // }
   
-  const aiResponse = await generateAIPrompt({
-    systemPrompt,
-    userPrompt,
-    model: getAIModel(),
-    maxTokens: 200,
-    temperature: 0.7,
-  })
+  const rawResponse = await callAI(
+    { systemPrompt, userPrompt, maxTokens: 200, temperature: 0.7 },
+    onChunk
+  )
+  const aiResponse = filterInsightLabels(rawResponse)
 
-  if (aiResponse) {
-    // Calculate generation count
-    let generationCount = 1
-    if (existingPrompts?.generation_count) {
-      generationCount = existingPrompts.generation_count + 1
-    }
-    
-    // Store AI-generated emergency insight in database
-    const insertData = {
-      user_id: userId,
-      prompt_text: aiResponse,
-      prompt_type: 'emergency',
-      stage_context: stage,
-      prompt_date: targetDate,
-      generation_count: generationCount,
-    }
-    
-    // Use server-side Supabase client for inserts (bypasses RLS)
-    const serverSupabase = getServerSupabase()
-    
-    console.log(`[SAVE INSIGHT] Attempting to save emergency insight to personal_prompts:`, {
-      table: 'personal_prompts',
-      userId,
-      promptType: 'emergency',
-      targetDate,
-      generationCount,
-      promptTextLength: aiResponse.length,
-      promptTextPreview: aiResponse.substring(0, 100),
-      timestamp: new Date().toISOString(),
-      usingServerClient: !!process.env.SUPABASE_SERVICE_ROLE_KEY
-    })
-    
-    const { data: insertedData, error: insertError } = await serverSupabase
-      .from('personal_prompts')
-      .insert(insertData)
-      .select()
-    
-    if (insertError) {
-      console.error('[SAVE INSIGHT] ❌ Emergency insight insert FAILED:', {
-        error: insertError,
-        code: insertError.code,
-        message: insertError.message,
-        details: insertError.details,
-        hint: insertError.hint,
-        insertData
-      })
-    } else {
-      console.log('[SAVE INSIGHT] ✅ Emergency insight insert SUCCEEDED:', {
-        insertedRows: insertedData?.length || 0,
-        insertedId: insertedData?.[0]?.id,
-        insertedData: insertedData?.[0]
-      })
-    }
-    
-    console.log(`[Emergency Insight] Generated emergency insight (generation ${generationCount}/3) for ${targetDate}`)
-    return aiResponse
-  }
+  console.log('[Personal Coaching] Emergency: AI insight generated successfully')
+  const existingCount = safeGet(existingPrompts, 'generation_count', 0) as number
+  const generationCount = existingCount > 0 ? existingCount + 1 : 1
 
-  // Fallback template
-  const lines: string[] = []
-  if (severity === 'hot') {
-    lines.push('This is a hot fire—right now is about stabilizing, not perfecting the system.')
-  } else if (severity === 'warm') {
-    lines.push('This is a warm fire—important, but you still have room to respond deliberately.')
-  } else {
-    lines.push('This fire is contained—good containment, and useful data for your loop.')
-  }
-
-  if (totalEmergencies > 0) {
-    if (totalEmergencies > 3) {
-      lines.push(
-        `You've logged ${totalEmergencies} emergencies in the last 14 days—this is starting to look like a pattern worth designing around.`
-      )
-    } else {
-      lines.push(
-        `This is one of ${totalEmergencies} emergencies in the last 14 days—use it as a concrete example, not a verdict on your system.`
-      )
-    }
-  } else {
-    lines.push('This is your first logged emergency in a while—treat it as a useful outlier to learn from.')
-  }
-
-  if (stage === 'FIRE_FIGHTING_STAGE') {
-    lines.push(
-      "Today's structural question: After you put this out, what is one small safeguard you could add so this exact fire is less likely to repeat?"
-    )
-  } else {
-    lines.push(
-      "Today's structural question: What is the simplest process or boundary that would turn this kind of fire into a routine, low-friction event next time?"
-    )
-  }
-
-  const fallbackInsight = lines.join('\n')
-  
-  // Store fallback insight in database
   const insertData = {
     user_id: userId,
-    prompt_text: fallbackInsight,
+    prompt_text: aiResponse,
     prompt_type: 'emergency',
     stage_context: stage,
     prompt_date: targetDate,
-    generation_count: 1,
+    generation_count: generationCount,
   }
-  
-  // Use server-side Supabase client for inserts (bypasses RLS)
+
   const serverSupabase = getServerSupabase()
-  
-  console.log(`[SAVE INSIGHT] Attempting to save emergency fallback insight to personal_prompts:`, {
-    table: 'personal_prompts',
-    userId,
-    promptType: 'emergency',
-    targetDate,
-    promptTextLength: fallbackInsight.length,
-    timestamp: new Date().toISOString(),
-    usingServerClient: !!process.env.SUPABASE_SERVICE_ROLE_KEY
-  })
-  
-  const { data: insertedData, error: insertError } = await serverSupabase
-    .from('personal_prompts')
-    .insert(insertData)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit personal_prompts
+  const { data: insertedData, error: insertError } = await (serverSupabase.from('personal_prompts') as any)
+    .insert(insertData as any)
     .select()
-  
+
   if (insertError) {
-    console.error('[SAVE INSIGHT] ❌ Emergency fallback insight insert FAILED:', {
-      error: insertError,
-      code: insertError.code,
-      message: insertError.message,
-      details: insertError.details,
-      hint: insertError.hint,
-      insertData
-    })
+    console.error('[SAVE INSIGHT] ❌ Emergency insight insert FAILED:', insertError)
   } else {
-    console.log('[SAVE INSIGHT] ✅ Emergency fallback insight insert SUCCEEDED:', {
-      insertedRows: insertedData?.length || 0,
-      insertedId: insertedData?.[0]?.id
-    })
+    console.log('[SAVE INSIGHT] ✅ Emergency insight insert SUCCEEDED:', insertedData?.[0]?.id)
   }
-  
-  return fallbackInsight
+
+  return aiResponse
 }

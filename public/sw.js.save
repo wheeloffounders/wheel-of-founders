@@ -1,0 +1,38 @@
+// Version: 2026.02.22.01 - Force fresh data always
+
+// Force immediate activation
+self.addEventListener('install', event => {
+  self.skipWaiting()
+})
+
+// Take control immediately
+self.addEventListener('activate', event => {
+  event.waitUntil(clients.claim())
+})
+
+self.addEventListener('fetch', event => {
+  // For API calls and Supabase requests - ALWAYS go to network first
+  if (event.request.url.includes('/api/') || 
+      event.request.url.includes('supabase.co')) {
+    
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          // Return fresh data
+          return response
+        })
+        .catch(() => {
+          // Only fall back to cache if offline
+          return caches.match(event.request)
+        })
+    )
+    return
+  }
+
+  // For everything else, use cache first
+  event.respondWith(
+    caches.match(event.request)
+      .then(response => response || fetch(event.request))
+  
+)
+})

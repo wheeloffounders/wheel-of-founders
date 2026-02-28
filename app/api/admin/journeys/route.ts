@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserSession } from '@/lib/auth'
 import { analyzeJourneys } from '@/lib/analytics/journeys'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * GET: Journey analysis for admin
  */

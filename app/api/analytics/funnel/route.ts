@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserSession } from '@/lib/auth'
 import { recordFunnelStep } from '@/lib/analytics/funnels'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * POST: Record a funnel step
  * Auth: optional. If logged in, userId is stored; otherwise anonymous (sessionId recommended).

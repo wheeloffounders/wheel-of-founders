@@ -1,0 +1,341 @@
+/**
+ * Batch weekly insight generation for cron jobs.
+ * Fetches user data for a week, generates insight, saves to personal_prompts and insight_history.
+ */
+import { getServerSupabase } from '@/lib/server-supabase'
+import { generateAIPrompt } from '@/lib/ai-client'
+import { checkUserHistory } from '@/lib/user-history'
+import { PARSE_INSTRUCTION } from '@/lib/insight-parse-instructions'
+
+interface WeekPayload {
+  weekStart: string
+  weekEnd: string
+  wins: string[]
+  lessons: string[]
+  favoriteWinIndices: number[]
+  keyLessonIndices: number[]
+  avgMood: number | null
+  avgEnergy: number | null
+  tasksCompleted: number
+  totalTasks: number
+  needleMoversCompleted: number
+  needleMoversTotal: number
+  primaryGoal: string | null
+}
+
+function parseWins(val: unknown, date: string): { text: string; date: string }[] {
+  const wins: { text: string; date: string }[] = []
+  if (!val) return wins
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val)
+      if (Array.isArray(parsed)) {
+        parsed.filter((s: string) => s?.trim()).forEach((s: string) => wins.push({ text: s, date }))
+      } else if (typeof parsed === 'string' && parsed.trim()) {
+        wins.push({ text: parsed, date })
+      }
+    } catch {
+      if (val.trim()) wins.push({ text: val, date })
+    }
+  }
+  return wins
+}
+
+function parseLessons(val: unknown, date: string): { text: string; date: string }[] {
+  const lessons: { text: string; date: string }[] = []
+  if (!val) return lessons
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val)
+      if (Array.isArray(parsed)) {
+        parsed.filter((s: string) => s?.trim()).forEach((s: string) => lessons.push({ text: s, date }))
+      } else if (typeof parsed === 'string' && parsed.trim()) {
+        lessons.push({ text: parsed, date })
+      }
+    } catch {
+      if (val.trim()) lessons.push({ text: val, date })
+    }
+  }
+  return lessons
+}
+
+function buildWeeklyPrompt(
+  payload: WeekPayload,
+  pastFeedback: { feedback_type: string; feedback_text: string | null }[],
+  lastWeekSelections: { favorite_win_indices: number[]; key_lesson_indices: number[] } | null,
+  lastWeekWins: string[],
+  lastWeekLessons: string[]
+): string {
+  const {
+    wins,
+    lessons,
+    favoriteWinIndices = [],
+    keyLessonIndices = [],
+    avgMood,
+    avgEnergy,
+    tasksCompleted,
+    totalTasks,
+    needleMoversCompleted,
+    needleMoversTotal,
+    primaryGoal,
+  } = payload
+
+  const taskPct = totalTasks > 0 ? Math.round((tasksCompleted / totalTasks) * 100) : 0
+
+  const winsBlock = wins.length > 0
+    ? wins
+        .map(
+          (w, i) =>
+            `- ${w}${favoriteWinIndices.includes(i) ? ' ⭐ (USER FOUND MEANING)' : ''}`
+        )
+        .join('\n')
+    : '(none recorded)'
+
+  const lessonsBlock = lessons.length > 0
+    ? lessons
+        .map(
+          (l, i) =>
+            `- ${l}${keyLessonIndices.includes(i) ? ' 🔑 (USER SAYS THIS MATTERS)' : ''}`
+        )
+        .join('\n')
+    : '(none recorded)'
+
+  const lastWeekBlock =
+    lastWeekSelections &&
+    (lastWeekSelections.favorite_win_indices.length > 0 || lastWeekSelections.key_lesson_indices.length > 0)
+      ? `\n\nLAST WEEK THEY FOUND MEANING IN: ${lastWeekSelections.favorite_win_indices.map((i) => lastWeekWins[i]).filter(Boolean).join('; ') || '(none)'}\nLAST WEEK THEY LEARNED FROM: ${lastWeekSelections.key_lesson_indices.map((i) => lastWeekLessons[i]).filter(Boolean).join('; ') || '(none)'}\nReference this when relevant - it shows what matters to them.`
+      : ''
+
+  const feedbackBlock =
+    pastFeedback.length > 0
+      ? `\n\nPAST FEEDBACK FROM THIS USER (use to improve - they've told you what matters):\n${pastFeedback
+          .slice(0, 5)
+          .map(
+            (f) =>
+              `- ${f.feedback_type}${f.feedback_text ? `: "${f.feedback_text}"` : ''}`
+          )
+          .join('\n')}`
+      : ''
+
+  return `You are Mrs. Deer, a warm, wise coach for founders.
+
+This user had the following week:
+
+GOAL: ${primaryGoal || '(not set)'}
+
+WINS (${wins.length} total):
+${winsBlock}
+
+LESSONS (${lessons.length} total):
+${lessonsBlock}
+
+MOOD: ${avgMood ?? '—'}/5
+ENERGY: ${avgEnergy ?? '—'}/5
+TASKS COMPLETED: ${tasksCompleted}/${totalTasks} (${taskPct}%)
+NEEDLE MOVERS: ${needleMoversCompleted}/${needleMoversTotal}
+${feedbackBlock}${lastWeekBlock}
+
+${PARSE_INSTRUCTION}
+
+Please generate a weekly insight that:
+
+1. FINDS 2-3 MEANINGFUL PATTERNS - Parse multi-thought entries into themes. Group by theme (app, family, growth, etc.). What connects their wins? What do their lessons tell you? Only connect ideas that genuinely relate.
+
+2. RESPECTS THEIR CHOICES - If they starred wins or marked lessons as key, acknowledge them. If they had last week's selections, reference what they found meaningful.
+
+3. CONNECTS TO THEIR GOAL - How does this week move them toward or away from their goal?
+
+4. OFFERS ONE SPECIFIC SUGGESTION - Based on their actual words, not generic advice.
+
+5. USE A WARM, WISE VOICE - Like someone who's sat with many founders. Validate before reframing.
+
+6. AVOID THESE PHRASES: "needle mover", "smart constraint", "action plan", "power list"
+
+OUTPUT FORMAT (required): Use markdown ## headers for section titles. Structure your response as exactly 4 sections with blank lines between them. Let the AI choose natural, warm titles based on the content (e.g. "The Balance You're Holding", "What's Driving You", "A Deeper Question", "One Small Experiment"). Use Observe/Validate/Reframe as internal structure only—do not use those words as titles.
+
+Example structure:
+## [Natural title for observation - 3-4 sentences]
+[Content]
+
+## [Natural title for validation - 2-3 sentences]
+[Content]
+
+## [Natural title for reframing - 2-3 sentences]
+[Content]
+
+## [Natural title for the experiment - the reframing question]
+[One specific question]
+
+Add a blank line between each section. Be specific. Use their words.`
+}
+
+/**
+ * Generate and save weekly insight for a user for the given week.
+ * Returns the insight text or null if skipped (no content) or failed.
+ */
+export async function generateWeeklyInsightForUser(
+  userId: string,
+  weekStart: string,
+  weekEnd: string
+): Promise<{ success: boolean; insight?: string; error?: string }> {
+  const db = getServerSupabase()
+
+  const [tasksRes, reviewsRes, selectionsRes, profileRes, feedbackRes] = await Promise.all([
+    db
+      .from('morning_tasks')
+      .select('plan_date, needle_mover, completed')
+      .eq('user_id', userId)
+      .gte('plan_date', weekStart)
+      .lte('plan_date', weekEnd),
+    db
+      .from('evening_reviews')
+      .select('review_date, mood, energy, wins, lessons')
+      .eq('user_id', userId)
+      .gte('review_date', weekStart)
+      .lte('review_date', weekEnd),
+    (db.from('weekly_insight_selections') as any)
+      .select('favorite_win_indices, key_lesson_indices')
+      .eq('user_id', userId)
+      .eq('week_start_date', weekStart)
+      .maybeSingle(),
+    db.from('user_profiles').select('primary_goal_text').eq('id', userId).maybeSingle(),
+    db
+      .from('weekly_insight_feedback')
+      .select('feedback_type, feedback_text')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(10),
+  ])
+
+  const tasks = (tasksRes.data ?? []) as { plan_date?: string; needle_mover?: boolean; completed?: boolean }[]
+  const reviews = (reviewsRes.data ?? []) as { review_date?: string; mood?: number; energy?: number; wins?: unknown; lessons?: unknown }[]
+  const selections = (selectionsRes.data as { favorite_win_indices?: number[]; key_lesson_indices?: number[] } | null) ?? null
+  const primaryGoal = (profileRes.data as { primary_goal_text?: string } | null)?.primary_goal_text ?? null
+  const pastFeedback = (feedbackRes.data ?? []) as { feedback_type: string; feedback_text: string | null }[]
+
+  const wins: string[] = []
+  const lessons: string[] = []
+  const moods: number[] = []
+  const energies: number[] = []
+
+  for (const r of reviews) {
+    const date = r.review_date || ''
+    const w = parseWins(r.wins, date)
+    const l = parseLessons(r.lessons, date)
+    wins.push(...w.map((x) => x.text))
+    lessons.push(...l.map((x) => x.text))
+    if (typeof r.mood === 'number') moods.push(r.mood)
+    if (typeof r.energy === 'number') energies.push(r.energy)
+  }
+
+  const needleMoversTotal = tasks.filter((t) => t.needle_mover).length
+  const needleMoversCompleted = tasks.filter((t) => t.needle_mover && t.completed).length
+  const tasksCompleted = tasks.filter((t) => t.completed).length
+  const totalTasks = tasks.length
+  const avgMood = moods.length > 0 ? Math.round(moods.reduce((a, b) => a + b, 0) / moods.length * 10) / 10 : null
+  const avgEnergy = energies.length > 0 ? Math.round(energies.reduce((a, b) => a + b, 0) / energies.length * 10) / 10 : null
+
+  if (wins.length === 0 && lessons.length === 0) {
+    return { success: false, error: 'No wins or lessons for week' }
+  }
+
+  const lastWeekStart = new Date(weekStart)
+  lastWeekStart.setDate(lastWeekStart.getDate() - 7)
+  const lastWeekStr = lastWeekStart.toISOString().slice(0, 10)
+  const lastWeekEnd = new Date(lastWeekStart)
+  lastWeekEnd.setDate(lastWeekEnd.getDate() + 6)
+  const lastWeekEndStr = lastWeekEnd.toISOString().slice(0, 10)
+
+  let lastWeekSelections: { favorite_win_indices: number[]; key_lesson_indices: number[] } | null = null
+  const lastWeekWins: string[] = []
+  const lastWeekLessons: string[] = []
+
+  const [lastSelRes, lastReviewsRes] = await Promise.all([
+    (db.from('weekly_insight_selections') as any)
+      .select('favorite_win_indices, key_lesson_indices')
+      .eq('user_id', userId)
+      .eq('week_start_date', lastWeekStr)
+      .maybeSingle(),
+    db
+      .from('evening_reviews')
+      .select('wins, lessons')
+      .eq('user_id', userId)
+      .gte('review_date', lastWeekStr)
+      .lte('review_date', lastWeekEndStr),
+  ])
+
+
+  ;((lastReviewsRes.data ?? []) as { wins?: unknown; lessons?: unknown }[]).forEach((r) => {
+    try {
+      const w = typeof r.wins === 'string' ? JSON.parse(r.wins) : r.wins
+      const l = typeof r.lessons === 'string' ? JSON.parse(r.lessons) : r.lessons
+      if (Array.isArray(w)) lastWeekWins.push(...w.filter(Boolean))
+      if (Array.isArray(l)) lastWeekLessons.push(...l.filter(Boolean))
+    } catch {
+      if (typeof r.wins === 'string' && r.wins) lastWeekWins.push(r.wins)
+      if (typeof r.lessons === 'string' && r.lessons) lastWeekLessons.push(r.lessons)
+    }
+  })
+
+  const payload: WeekPayload = {
+    weekStart,
+    weekEnd,
+    wins,
+    lessons,
+    favoriteWinIndices: selections?.favorite_win_indices ?? [],
+    keyLessonIndices: selections?.key_lesson_indices ?? [],
+    avgMood,
+    avgEnergy,
+    tasksCompleted,
+    totalTasks,
+    needleMoversCompleted,
+    needleMoversTotal,
+    primaryGoal,
+  }
+
+  const userPrompt = buildWeeklyPrompt(
+    payload,
+    pastFeedback,
+    lastWeekSelections ? { favorite_win_indices: lastWeekSelections.favorite_win_indices ?? [], key_lesson_indices: lastWeekSelections.key_lesson_indices ?? [] } : null,
+    lastWeekWins,
+    lastWeekLessons
+  )
+
+  const { hasHistory } = await checkUserHistory(userId)
+  const MRS_DEER_RULES = `You are Mrs. Deer, a warm, wise coach for founders. You've sat with many founders. You validate before reframing. You think with them, not at them.`
+  const historyNote = hasHistory ? '' : ' CRITICAL: User has NO prior history. ONLY use what they wrote this week. DO NOT say "I recall" or invent context. Be a mirror, not a coach.'
+
+  try {
+    const insight = await generateAIPrompt({
+      systemPrompt: `${MRS_DEER_RULES}\n\nWeekly insight: max 350 words. Output exactly 4 sections with ## markdown headers and blank lines between sections. Let AI choose warm, natural titles. BANNED: needle mover, action plan, smart constraint, power list. Use natural language only.${historyNote}`,
+      userPrompt,
+      maxTokens: 2000,
+      temperature: 0.7,
+    })
+
+    await (db.from('personal_prompts') as any).insert({
+      user_id: userId,
+      prompt_text: insight,
+      prompt_type: 'weekly',
+      prompt_date: weekStart,
+      stage_context: null,
+      generation_count: 1,
+    })
+
+    await (db.from('insight_history') as any).upsert(
+      {
+        user_id: userId,
+        insight_type: 'weekly',
+        period_start: weekStart,
+        period_end: weekEnd,
+        insight_text: insight,
+      },
+      { onConflict: 'user_id,insight_type,period_start,period_end' }
+    )
+
+    return { success: true, insight }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    return { success: false, error: msg }
+  }
+}

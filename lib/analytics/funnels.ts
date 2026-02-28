@@ -23,13 +23,15 @@ export async function recordFunnelStep(
     ...(options?.metadata ?? {}),
     ...(options?.sessionId ? { session_id: options.sessionId } : {}),
   }
-  const { error } = await db.from('funnel_events').insert({
+  const payload = {
     user_id: options?.userId ?? null,
     funnel_name: funnelName,
     step_name: stepName,
     step_number: stepNumber,
     metadata: Object.keys(meta).length > 0 ? meta : null,
-  })
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit funnel_events
+  const { error } = await (db.from('funnel_events') as any).insert(payload as any)
   if (error) {
     console.error('[analytics/funnels] recordFunnelStep failed:', error)
   }
@@ -51,10 +53,17 @@ export async function getFunnelAnalysis(
     .eq('funnel_name', funnelName)
     .gte('completed_at', since)
 
-  if (!rows || rows.length === 0) return []
+  type FunnelEventRow = {
+    step_number?: number | null
+    step_name?: string | null
+    user_id?: string | null
+  }
+  const eventRows = (rows as FunnelEventRow[] | null) ?? []
+
+  if (eventRows.length === 0) return []
 
   const byStep = new Map<number, { name: string; users: Set<string> }>()
-  for (const r of rows) {
+  for (const r of eventRows) {
     const stepNum = r.step_number ?? 0
     const stepName = r.step_name ?? `Step ${stepNum}`
     if (!byStep.has(stepNum)) byStep.set(stepNum, { name: stepName, users: new Set() })

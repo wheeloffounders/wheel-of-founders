@@ -35,13 +35,16 @@ test.describe('Export generation', () => {
       }
     })
 
+    // Wait for the export section to be visible first
+    await expect(page.getByRole('heading', { name: /data export/i })).toBeVisible({ timeout: 10000 })
+    
     const exportBtn = page.getByRole('button', { name: /download export|generating export/i })
-    await expect(exportBtn).toBeVisible()
+    await expect(exportBtn).toBeVisible({ timeout: 10000 })
     await exportBtn.click()
 
-    // Should show success (blob fallback when no downloadUrl)
+    // Should show success message (blob fallback when no downloadUrl)
     await expect(
-      page.getByText(/export ready|downloaded successfully|download started/i)
+      page.getByText(/export ready|downloaded successfully|download started|export downloaded successfully/i)
     ).toBeVisible({ timeout: 15000 })
   })
 

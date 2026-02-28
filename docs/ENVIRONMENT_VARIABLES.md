@@ -87,6 +87,8 @@ Use the printed `whsec_...` as `STRIPE_WEBHOOK_SECRET` in `.env.local`.
 1. [MailerLite](https://www.mailerlite.com) → **Integrations** → **API**.
 2. Create/generate an API key → `MAILERLITE_API_KEY`.
 3. **Subscribers** → **Groups** → create or pick a group for new signups → copy **Group ID** from URL or group settings → `MAILERLITE_GROUP_ACTIVE`.
+4. For launch countdown signups: create a "Launch Notifications" group → `MAILERLITE_GROUP_LAUNCH` (optional; falls back to `MAILERLITE_GROUP_ACTIVE`).
+4. For launch countdown page signups: create a "Launch Notifications" group → copy Group ID → `MAILERLITE_GROUP_LAUNCH` (optional; falls back to `MAILERLITE_GROUP_ACTIVE` if unset).
 4. For transactional (welcome emails, etc.):
    - Either use [MailerSend](https://www.mailersend.com) (same ecosystem) and get an API key → `MAILERLITE_TRANSACTIONAL_API_KEY`,
    - Or use Resend (see below) and set `RESEND_API_KEY` instead.
@@ -115,11 +117,31 @@ Use the printed `whsec_...` as `STRIPE_WEBHOOK_SECRET` in `.env.local`.
 1. [OpenRouter](https://openrouter.ai) → **Keys** → create API key.
 2. Set `OPENROUTER_API_KEY=sk-or-...`.
 3. Set `NEXT_PUBLIC_SITE_URL` to your app URL (e.g. `http://localhost:3000` or production URL). OpenRouter may use this as referrer.
-4. Optional: `OPENROUTER_MODEL` to force a model (e.g. `openai/gpt-4o-mini`).
+4. **Recommended for production (Vercel):** Set `OPENROUTER_MODEL` so the same model is used everywhere. If unset, the app defaults to `deepseek/deepseek-chat`, which can sometimes ignore prompt rules (e.g. "BANNED: Needle Mover, Smart Constraints") and produce generic or off-brand phrasing.
+
+### OPENROUTER_MODEL — supported values
+
+Use **exactly** one of these (case-sensitive):
+
+| Model ID | Notes |
+|----------|--------|
+| `anthropic/claude-3.5-sonnet` | Strong instruction-following; best for Mrs. Deer tone |
+| `anthropic/claude-3.5-haiku` | Faster, good quality |
+| `openai/gpt-4o-mini` | Good balance of cost and quality |
+| `deepseek/deepseek-chat` | Default when unset; works globally, may occasionally use product terms |
+| `google/gemini-1.5-flash` | Fast, works in most regions |
+| `google/gemini-pro` | Legacy |
+| `cohere/command-r-plus` | Works globally |
+| `mistralai/mistral-7b-instruct` | Lightweight |
+| `meta-llama/llama-3-8b-instruct` | Open model |
+
+**Example (local):** `OPENROUTER_MODEL=anthropic/claude-3.5-sonnet`  
+**Vercel:** Add the same variable in Project → Settings → Environment Variables (Production and Preview if you want).
 
 ### Common issues
 
 - **403 / region**: Some models are restricted by region. The app has fallbacks (e.g. DeepSeek, Gemini); ensure `OPENROUTER_API_KEY` is valid.
+- **"Smart Constraints" or "Needle Mover" in AI output**: Usually means `OPENROUTER_MODEL` is unset on Vercel (so default model is used) or the chosen model is not following the BANNED list. Set `OPENROUTER_MODEL` to e.g. `anthropic/claude-3.5-sonnet` and redeploy.
 
 ---
 

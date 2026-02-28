@@ -8,7 +8,7 @@ test.describe('Evening Flow', () => {
       return
     }
     await expect(
-      page.getByRole('heading', { name: /evening|review|journal/i }).first()
+      page.getByRole('heading', { name: /evening review|today's reflection|wins & lessons/i }).first()
     ).toBeVisible({ timeout: 10000 })
   })
 })

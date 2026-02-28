@@ -1,5 +1,5 @@
 import { getServerSupabase } from '@/lib/server-supabase'
-import { generateAIPrompt } from '@/lib/ai-client'
+import { generateAIPrompt, AIError } from '@/lib/ai-client'
 
 const PATTERN_TYPES = ['struggle', 'win', 'theme', 'pain_point', 'goal'] as const
 
@@ -11,12 +11,14 @@ export async function extractPatternsFromText(
 ) {
   if (!text?.trim()) return
   const supabase = getServerSupabase()
-  await supabase.from('pattern_extraction_queue').insert({
+  const payload = {
     user_id: userId,
     source_table: sourceTable,
     source_id: sourceId,
     content: text.trim(),
-  })
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit pattern_extraction_queue
+  await (supabase.from('pattern_extraction_queue') as any).insert(payload as any)
 }
 
 export async function processPatternQueue(batchSize = 50) {
@@ -29,7 +31,17 @@ export async function processPatternQueue(batchSize = 50) {
     .order('created_at', { ascending: true })
     .limit(batchSize)
 
-  for (const item of queue || []) {
+  type QueueItemRow = {
+    id: string
+    user_id?: string | null
+    source_table?: string | null
+    source_id?: string | null
+    content?: string | null
+    processed?: boolean | null
+  }
+  const queueItems = (queue as QueueItemRow[] | null) ?? []
+
+  for (const item of queueItems) {
     try {
       const patterns = await generateAIPrompt({
         systemPrompt: `You are an analyst. Extract key themes from a founder's reflection text. Return ONLY a valid JSON array of objects. Each object must have: "type" (one of: struggle, win, theme, pain_point, goal) and "text" (short phrase, no quotes). Example: [{"type":"struggle","text":"prioritization"},{"type":"win","text":"shipped feature"}]`,
@@ -37,14 +49,6 @@ export async function processPatternQueue(batchSize = 50) {
         maxTokens: 500,
         temperature: 0.3,
       })
-
-      if (!patterns) {
-        await supabase
-          .from('pattern_extraction_queue')
-          .update({ processed: true })
-          .eq('id', item.id)
-        continue
-      }
 
       const raw = patterns.replace(/^[\s\S]*?\[/, '[').replace(/\][\s\S]*$/, ']')
       let extracted: Array<{ type?: string; text?: string }> = []
@@ -62,22 +66,26 @@ export async function processPatternQueue(batchSize = 50) {
         const type = p.type && PATTERN_TYPES.includes(p.type as (typeof PATTERN_TYPES)[number]) ? p.type : 'theme'
         const text = (p.text && String(p.text).trim()) || null
         if (!text) continue
-        await supabase.from('user_patterns').insert({
+        const patternPayload = {
           user_id: item.user_id,
           pattern_type: type,
           pattern_text: text,
           source_table: item.source_table,
           source_id: item.source_id,
           detected_at: new Date().toISOString(),
-        })
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit user_patterns
+        await (supabase.from('user_patterns') as any).insert(patternPayload as any)
       }
 
-      await supabase
-        .from('pattern_extraction_queue')
-        .update({ processed: true })
-        .eq('id', item.id)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit pattern_extraction_queue
+      await (supabase.from('pattern_extraction_queue') as any).update({ processed: true }).eq('id', item.id)
     } catch (error) {
+      if (error instanceof AIError) {
+        console.error('[AI ERROR] Pattern extraction failed:', error.message, { model: error.model, status: error.status })
+      }
       console.error('Pattern extraction failed for queue item:', item.id, error)
+      throw error
     }
   }
 }

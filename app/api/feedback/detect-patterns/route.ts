@@ -11,6 +11,9 @@ import {
 
 const MIN_DAYS_SINCE_PROMPT = 7
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /** GET: Detect behavior or journal-theme patterns. Returns one pattern for adaptive coaching (no feedback form). */
 export async function GET() {
   try {
@@ -23,13 +26,17 @@ export async function GET() {
     const userId = session.user.id
     const startDate = format(subDays(new Date(), 14), 'yyyy-MM-dd')
 
-    const { data: prefs } = await db
+    const { data: prefsData } = await db
       .from('feedback_trigger_preferences')
       .select('pattern_prompted_at')
       .eq('user_id', userId)
       .maybeSingle()
 
-    const promptedAt = (prefs?.pattern_prompted_at as Record<string, string>) || {}
+    type FeedbackPatternPrefsRow = {
+      pattern_prompted_at?: Record<string, string> | null
+    }
+    const prefs = prefsData as FeedbackPatternPrefsRow | null
+    const promptedAt = prefs?.pattern_prompted_at || {}
 
     const wasShownRecently = (key: string) => {
       const t = promptedAt[key]
@@ -45,14 +52,16 @@ export async function GET() {
       .eq('user_id', userId)
       .gte('plan_date', startDate)
 
+    type TaskRow = { plan_date?: string; completed?: boolean; needle_mover?: boolean | null }
     const tasksByDay = new Map<string, { total: number; completed: number; withNeedleMover: number }>()
-    for (const t of tasks || []) {
-      const date = t.plan_date
+    for (const t of (tasks || []) as TaskRow[]) {
+      const date = t.plan_date ?? ''
+      if (!date) continue
       if (!tasksByDay.has(date)) tasksByDay.set(date, { total: 0, completed: 0, withNeedleMover: 0 })
       const row = tasksByDay.get(date)!
       row.total++
-      if ((t as { completed?: boolean }).completed) row.completed++
-      if ((t as { needle_mover?: boolean | null }).needle_mover === true) row.withNeedleMover++
+      if (t.completed) row.completed++
+      if (t.needle_mover === true) row.withNeedleMover++
     }
     const tasksByDayArr = Array.from(tasksByDay.entries())
       .map(([plan_date, v]) => ({ plan_date, ...v }))
@@ -66,15 +75,25 @@ export async function GET() {
       .gte('review_date', startDate)
       .order('review_date', { ascending: false })
 
-    const reviewsForThemes = (reviews || []).map((r) => ({
-      journal: r.journal,
-      wins: r.wins,
-      lessons: r.lessons,
+    type ReviewRowForPatterns = {
+      review_date?: string
+      journal?: string | null
+      wins?: string | null
+      lessons?: string | null
+      mood?: number | null
+      energy?: number | null
+    }
+    const reviewList = (reviews || []) as ReviewRowForPatterns[]
+
+    const reviewsForThemes = reviewList.map((r) => ({
+      journal: r.journal ?? '',
+      wins: r.wins ?? '',
+      lessons: r.lessons ?? '',
     }))
-    const reviewsByDay = (reviews || []).map((r) => ({
-      review_date: r.review_date,
-      mood: r.mood,
-      energy: r.energy,
+    const reviewsByDay = reviewList.map((r) => ({
+      review_date: r.review_date ?? '',
+      mood: r.mood ?? null,
+      energy: r.energy ?? null,
     }))
 
     // 1. Behavior patterns first (adapt UI / offer simplifications)

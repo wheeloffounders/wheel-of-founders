@@ -31,12 +31,20 @@ export async function getExperimentResults(): Promise<ExperimentSummary[]> {
     .order('created_at', { ascending: false })
     .limit(20)
 
-  if (!experiments || experiments.length === 0) return []
+  type ExperimentRow = {
+    id: string
+    name?: string | null
+    status?: string | null
+    variants?: string[] | null
+  }
+  const expRows = (experiments as ExperimentRow[] | null) ?? []
+
+  if (expRows.length === 0) return []
 
   const results: ExperimentSummary[] = []
 
-  for (const exp of experiments) {
-    const variants = (exp.variants as string[] | null) ?? ['control', 'test']
+  for (const exp of expRows) {
+    const variants = (exp.variants ?? null) ?? ['control', 'test']
 
     const { data: assignments } = await db
       .from('experiment_assignments')
@@ -45,7 +53,8 @@ export async function getExperimentResults(): Promise<ExperimentSummary[]> {
 
     const assignCount: Record<string, number> = {}
     for (const v of variants) assignCount[v] = 0
-    for (const a of assignments ?? []) {
+    type AssignmentRow = { variant?: string | null }
+    for (const a of (assignments as AssignmentRow[] | null) ?? []) {
       const v = a.variant ?? 'control'
       assignCount[v] = (assignCount[v] ?? 0) + 1
     }
@@ -56,7 +65,8 @@ export async function getExperimentResults(): Promise<ExperimentSummary[]> {
       .eq('experiment_id', exp.id)
 
     const eventCount: Record<string, Record<string, number>> = {}
-    for (const e of events ?? []) {
+    type EventRow = { variant?: string | null; event_type?: string | null }
+    for (const e of (events as EventRow[] | null) ?? []) {
       const v = e.variant ?? 'control'
       const t = e.event_type ?? 'unknown'
       if (!eventCount[v]) eventCount[v] = {}
@@ -87,19 +97,39 @@ export async function getFullExperiments(): Promise<ExperimentFull[]> {
     .order('created_at', { ascending: false })
     .limit(50)
 
-  if (!rows || rows.length === 0) return []
+  type ExperimentFullRow = {
+    id: string
+    name?: string | null
+    description?: string | null
+    status?: string | null
+    variants?: string[] | null
+    start_date?: string | null
+    end_date?: string | null
+    traffic_allocation?: Record<string, number> | null
+    target_metric?: string | null
+    created_at?: string | null
+    updated_at?: string | null
+  }
+  const fullRows = (rows as ExperimentFullRow[] | null) ?? []
+
+  if (fullRows.length === 0) return []
 
   const results: ExperimentFull[] = []
-  for (const exp of rows) {
-    const variants = (exp.variants as string[] | null) ?? ['control', 'test']
+  for (const exp of fullRows) {
+    const variants = (exp.variants ?? null) ?? ['control', 'test']
     const { data: assignments } = await db.from('experiment_assignments').select('variant').eq('experiment_id', exp.id)
     const assignCount: Record<string, number> = {}
     for (const v of variants) assignCount[v] = 0
-    for (const a of assignments ?? []) assignCount[a.variant ?? 'control'] = (assignCount[a.variant ?? 'control'] ?? 0) + 1
+    type AssignmentRow = { variant?: string | null }
+    for (const a of (assignments as AssignmentRow[] | null) ?? []) {
+      const key = a.variant ?? 'control'
+      assignCount[key] = (assignCount[key] ?? 0) + 1
+    }
 
     const { data: events } = await db.from('experiment_events').select('variant, event_type').eq('experiment_id', exp.id)
     const eventCount: Record<string, Record<string, number>> = {}
-    for (const e of events ?? []) {
+    type EventRow = { variant?: string | null; event_type?: string | null }
+    for (const e of (events as EventRow[] | null) ?? []) {
       const v = e.variant ?? 'control'
       const t = e.event_type ?? 'unknown'
       if (!eventCount[v]) eventCount[v] = {}
@@ -141,21 +171,19 @@ export async function createExperiment(input: {
   const variants = input.variants ?? ['control', 'test']
   const traffic = input.traffic_allocation ?? Object.fromEntries(variants.map((v) => [v, 100 / variants.length]))
 
-  const { data, error } = await db
-    .from('experiments')
-    .insert({
-      name: input.name,
-      description: input.description ?? null,
-      status: 'draft',
-      variants,
-      traffic_allocation: traffic,
-      target_metric: input.target_metric ?? null,
-      start_date: input.start_date ?? null,
-      end_date: input.end_date ?? null,
-      updated_at: new Date().toISOString(),
-    })
-    .select()
-    .single()
+  const payload = {
+    name: input.name,
+    description: input.description ?? null,
+    status: 'draft',
+    variants,
+    traffic_allocation: traffic,
+    target_metric: input.target_metric ?? null,
+    start_date: input.start_date ?? null,
+    end_date: input.end_date ?? null,
+    updated_at: new Date().toISOString(),
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit experiments
+  const { data, error } = await (db.from('experiments') as any).insert(payload as any).select().single()
 
   if (error) throw error
   return data
@@ -179,7 +207,8 @@ export async function updateExperiment(
 ) {
   const db = getServerSupabase()
   const payload: Record<string, unknown> = { ...updates, updated_at: new Date().toISOString() }
-  const { data, error } = await db.from('experiments').update(payload).eq('id', id).select().single()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit experiments
+  const { data, error } = await (db.from('experiments') as any).update(payload).eq('id', id).select().single()
   if (error) throw error
   return data
 }

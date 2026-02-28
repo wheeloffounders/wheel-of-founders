@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * Health check endpoint for monitoring and load balancers.
  * GET /api/health returns status, timestamp, and optional DB check.

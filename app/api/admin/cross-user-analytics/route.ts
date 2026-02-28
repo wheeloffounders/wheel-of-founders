@@ -5,6 +5,9 @@ import { cookies } from 'next/headers'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { subDays, format, parseISO, eachDayOfInterval } from 'date-fns'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 function anonymizeUserId(userId: string): string {
   let h = 0
   for (let i = 0; i < userId.length; i++) {
@@ -33,12 +36,13 @@ async function requireAdmin(req: NextRequest): Promise<{ ok: true; userId: strin
     if (userError) return { ok: false, reason: `Invalid token: ${userError.message}` }
     if (!user?.id) return { ok: false, reason: 'No user from token' }
     const db = getServerSupabase()
-    const { data: profile, error: profileError } = await db
+    const { data: profileData, error: profileError } = await db
       .from('user_profiles')
       .select('is_admin')
       .eq('id', user.id)
       .maybeSingle()
     if (profileError) return { ok: false, reason: `user_profiles: ${profileError.message}` }
+    const profile = profileData as { is_admin?: boolean } | null
     if (!profile?.is_admin) return { ok: false, reason: `User ${user.id} is_admin=false` }
     return { ok: true, userId: user.id }
   }
@@ -60,12 +64,13 @@ async function requireAdmin(req: NextRequest): Promise<{ ok: true; userId: strin
   if (sessionError) return { ok: false, reason: `getSession: ${sessionError.message}` }
   if (!session?.user?.id) return { ok: false, reason: 'No session' }
 
-  const { data: profile, error: profileError } = await authClient
+  const { data: profileData, error: profileError } = await authClient
     .from('user_profiles')
     .select('is_admin')
     .eq('id', session.user.id)
     .maybeSingle()
   if (profileError) return { ok: false, reason: `user_profiles: ${profileError.message}` }
+  const profile = profileData as { is_admin?: boolean } | null
   if (!profile?.is_admin) return { ok: false, reason: `User ${session.user.id} is_admin=false` }
   return { ok: true, userId: session.user.id }
 }
@@ -118,7 +123,8 @@ export async function GET(req: NextRequest) {
       .gte('detected_at', startTs)
       .lte('detected_at', endTs)
 
-    const list = patterns || []
+    type PatternRow = { user_id?: string; pattern_text?: string; pattern_type?: string; detected_at?: string }
+    const list = (patterns || []) as PatternRow[]
 
     const byTextType = new Map<string, number>()
     const struggles: { text: string; count: number }[] = []
@@ -144,11 +150,12 @@ export async function GET(req: NextRequest) {
     const struggleCounts = new Map<string, number>()
     const winCounts = new Map<string, number>()
     for (const p of list) {
-      if (p.pattern_type === 'struggle') {
-        struggleCounts.set(p.pattern_text, (struggleCounts.get(p.pattern_text) || 0) + 1)
+      const text = p.pattern_text ?? ''
+      if (p.pattern_type === 'struggle' && text) {
+        struggleCounts.set(text, (struggleCounts.get(text) || 0) + 1)
       }
-      if (p.pattern_type === 'win') {
-        winCounts.set(p.pattern_text, (winCounts.get(p.pattern_text) || 0) + 1)
+      if (p.pattern_type === 'win' && text) {
+        winCounts.set(text, (winCounts.get(text) || 0) + 1)
       }
     }
 
@@ -175,7 +182,7 @@ export async function GET(req: NextRequest) {
 
     const allThemes = new Map<string, number>()
     for (const p of list) {
-      const t = p.pattern_text.trim().toLowerCase()
+      const t = (p.pattern_text ?? '').trim().toLowerCase()
       if (t) allThemes.set(t, (allThemes.get(t) || 0) + 1)
     }
     const wordCloudThemes = Array.from(allThemes.entries())

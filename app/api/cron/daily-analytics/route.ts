@@ -2,6 +2,9 @@ import { getServerSupabase } from '@/lib/server-supabase'
 import { processPatternQueue } from '@/lib/analytics/pattern-extractor'
 import { format } from 'date-fns'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * Daily analytics cron: process pattern queue, compute and upsert daily_stats.
  * Vercel Cron: 0 3 * * * (daily at 3 AM).
@@ -29,10 +32,11 @@ export async function GET(request: Request) {
 
   const morningUserIds = new Set<string>()
   const eveningUserIds = new Set<string>()
+  type UserIdRow = { user_id?: string }
   const { data: morningRows } = await db.from('morning_tasks').select('user_id').gte('plan_date', today).lte('plan_date', today)
-  ;(morningRows || []).forEach((r) => morningUserIds.add(r.user_id))
+  ;((morningRows || []) as UserIdRow[]).forEach((r) => { if (r.user_id) morningUserIds.add(r.user_id) })
   const { data: eveningRows } = await db.from('evening_reviews').select('user_id').eq('review_date', today)
-  ;(eveningRows || []).forEach((r) => eveningUserIds.add(r.user_id))
+  ;((eveningRows || []) as UserIdRow[]).forEach((r) => { if (r.user_id) eveningUserIds.add(r.user_id) })
 
   const activeUserIds = new Set([...morningUserIds, ...eveningUserIds])
   const active_users = activeUserIds.size
@@ -93,24 +97,21 @@ export async function GET(request: Request) {
   }
   const avg_focus_score = focusCount > 0 ? focusSum / focusCount : 0
 
-  await db
-    .from('daily_stats')
-    .upsert(
-      {
-        date: today,
-        active_users,
-        new_users,
-        morning_plan_rate,
-        evening_review_rate,
-        needle_mover_usage_rate,
-        avg_tasks_completed,
-        avg_focus_score,
-        top_struggles,
-        top_wins,
-        created_at: new Date().toISOString(),
-      },
-      { onConflict: 'date' }
-    )
+  const dailyPayload = {
+    date: today,
+    active_users,
+    new_users,
+    morning_plan_rate,
+    evening_review_rate,
+    needle_mover_usage_rate,
+    avg_tasks_completed,
+    avg_focus_score,
+    top_struggles,
+    top_wins,
+    created_at: new Date().toISOString(),
+  }
+  // Supabase DB types omit daily_stats; cast to satisfy type checker
+  await db.from('daily_stats').upsert(dailyPayload as any, { onConflict: 'date' })
 
   return Response.json({ success: true, date: today })
 }

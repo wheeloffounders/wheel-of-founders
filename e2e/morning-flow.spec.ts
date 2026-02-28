@@ -11,9 +11,15 @@ test.describe('Morning Flow', () => {
     if (page.url().includes('/login')) {
       test.skip(true, 'Requires authentication')
     }
-    await expect(
-      page.getByRole('heading', { name: /power list|morning|decisions/i }).first()
-    ).toBeVisible({ timeout: 10000 })
+    // Check for main heading first (h1)
+    const mainHeading = page.getByRole('heading', { name: /morning plan/i }).first()
+    await expect(mainHeading).toBeVisible({ timeout: 10000 })
+    
+    // Also check for section headings (h2) - at least one should be visible
+    const sectionHeadings = page.getByRole('heading', { name: /today's focus|decision log|power list/i })
+    const count = await sectionHeadings.count()
+    // At least one section heading should exist (either editing mode or viewing mode)
+    expect(count).toBeGreaterThan(0)
   })
 
   test('can add a task when authenticated', async ({ page }) => {

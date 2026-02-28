@@ -23,6 +23,8 @@ export interface FeatureAccess {
   videoTemplates: boolean        // Video template library (Pro+)
   yearlyReport: boolean          // Yearly insight report
   fiveYearTrends: boolean        // 5-year trends (Pro+)
+  // Batch AI insights from analysis engine
+  aiInsights: boolean
 }
 
 export interface UserProfile {
@@ -62,12 +64,18 @@ export const getFeatureAccess = (user: UserProfile | null | undefined): FeatureA
     videoTemplates: isBeta || isPro || isProPlus,
     yearlyReport: isBeta || isPro || isProPlus,
     fiveYearTrends: isBeta || isPro || isProPlus,
+    aiInsights: isBeta || isPro || isProPlus,
   }
 }
 
 // Helper to check specific features
 export const canAccess = (user: UserProfile | null | undefined, feature: keyof FeatureAccess): boolean => {
-  return getFeatureAccess(user)[feature]
+  const access = getFeatureAccess(user)[feature]
+  // viewableHistoryDays is a number, not boolean - convert to boolean
+  if (feature === 'viewableHistoryDays') {
+    return typeof access === 'number' ? access > 0 : Boolean(access)
+  }
+  return Boolean(access)
 }
 
 // Helper to get user's tier display name

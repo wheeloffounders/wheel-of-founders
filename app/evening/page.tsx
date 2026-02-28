@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { format, isToday } from 'date-fns'
-import { Moon, Heart, Award, Lightbulb, AlertCircle, Check, Mountain, Plus, X } from 'lucide-react'
+import { Moon, Heart, Award, Lightbulb, AlertCircle, Check, Mountain, Plus, X, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth' // Add getUserSession
 import { CelebrationModal } from '@/components/CelebrationModal'
@@ -17,46 +18,46 @@ import { DateSelector } from '@/components/DateSelector'
 import { useUserLanguage } from '@/lib/use-user-language'
 import { trackEvent } from '@/lib/analytics'
 import { trackFunnelStep } from '@/lib/analytics/track-funnel'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
+import { colors, typography, spacing } from '@/lib/design-tokens'
+import { LoadingWithRetry } from '@/components/LoadingWithRetry'
+import { ConfirmModal } from '@/components/ConfirmModal'
+import { useStreamingInsight } from '@/lib/hooks/useStreamingInsight'
+import { StreamingIndicator } from '@/components/StreamingIndicator'
 
 const MOOD_OPTIONS = [
-  { value: 1, label: 'Tough', emoji: '😞' },
-  { value: 2, label: 'Meh', emoji: '😕' },
-  { value: 3, label: 'Okay', emoji: '😐' },
-  { value: 4, label: 'Good', emoji: '🙂' },
   { value: 5, label: 'Great', emoji: '😊' },
+  { value: 4, label: 'Good', emoji: '🙂' },
+  { value: 3, label: 'Okay', emoji: '😐' },
+  { value: 2, label: 'Tough', emoji: '😞' },
+  { value: 1, label: 'Rough', emoji: '😫' },
 ]
 
 const ENERGY_OPTIONS = [
-  { value: 1, label: 'Drained' },
-  { value: 2, label: 'Low' },
-  { value: 3, label: 'Neutral' },
-  { value: 4, label: 'Energized' },
-  { value: 5, label: 'Peak' },
+  { value: 5, label: 'Very High', emoji: '🔋🔋🔋🔋🔋' },
+  { value: 4, label: 'High', emoji: '🔋🔋🔋🔋' },
+  { value: 3, label: 'Medium', emoji: '🔋🔋🔋' },
+  { value: 2, label: 'Low', emoji: '🔋🔋' },
+  { value: 1, label: 'Very Low', emoji: '🔋' },
 ]
 
 interface Task {
   id: string
   description: string
   completed: boolean
+  needle_mover?: boolean
 }
 
 export default function EveningPage() {
   const router = useRouter()
   const lang = useUserLanguage() // Personalized language
+  
+  // All hooks must be at the top level - no conditional calls
   const [userTier, setUserTier] = useState<string>('beta')
   const [aiCoachMessage, setAiCoachMessage] = useState<string | null>(null)
   const [aiCoachTrigger, setAiCoachTrigger] = useState<'evening_after' | null>(null)
-  useEffect(() => {
-    const checkAuth = async () => {
-      const session = await getUserSession()
-      if (!session) {
-        router.push('/login')
-        return
-      }
-      setUserTier(session.user.tier || 'beta')
-    }
-    checkAuth()
-  }, [router]) // Add router to dependency array
   const [journal, setJournal] = useState('')
   const [mood, setMood] = useState<number | null>(null)
   const [energy, setEnergy] = useState<number | null>(null)
@@ -71,14 +72,11 @@ export default function EveningPage() {
   const [hasCelebratedToday, setHasCelebratedToday] = useState(false)
   const [showStreakCelebration, setShowStreakCelebration] = useState(false)
   const [currentStreak, setCurrentStreak] = useState(0)
-  const [reviewDate, setReviewDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const [retryTrigger, setRetryTrigger] = useState(0)
+  // Fix hydration: initialize with empty string, set in useEffect
+  const [reviewDate, setReviewDate] = useState<string>('')
   const funnelStepRef = useRef<Set<number>>(new Set())
-
-  const fireFunnelStep = useCallback((step: number, name: string) => {
-    if (funnelStepRef.current.has(step)) return
-    funnelStepRef.current.add(step)
-    trackFunnelStep('evening_flow', name, step)
-  }, [])
+  const prefersReducedMotion = useReducedMotion()
   const [detectedPattern, setDetectedPattern] = useState<{
     kind: 'behavior' | 'coaching'
     patternType: string
@@ -87,6 +85,16 @@ export default function EveningPage() {
     ctaLabel?: string
     context?: string
   } | null>(null)
+  const [confirmDeleteWin, setConfirmDeleteWin] = useState<number | null>(null)
+  const [confirmDeleteLesson, setConfirmDeleteLesson] = useState<number | null>(null)
+
+  const { insight: streamingInsight, isStreaming, error: streamingError, startStream } = useStreamingInsight()
+
+  const fireFunnelStep = useCallback((step: number, name: string) => {
+    if (funnelStepRef.current.has(step)) return
+    funnelStepRef.current.add(step)
+    trackFunnelStep('evening_flow', name, step)
+  }, [])
 
   const checkPatternDetection = useCallback(async () => {
     try {
@@ -100,9 +108,36 @@ export default function EveningPage() {
     }
   }, [])
 
+  // Show streaming errors in the coach message
+  useEffect(() => {
+    if (streamingError && aiCoachTrigger === 'evening_after') {
+      setAiCoachMessage(`[AI ERROR] ${streamingError}`)
+    }
+  }, [streamingError, aiCoachTrigger])
+
+  // Initialize reviewDate on client side to avoid hydration mismatch
+  useEffect(() => {
+    if (reviewDate === '') {
+      setReviewDate(format(new Date(), 'yyyy-MM-dd'))
+    }
+  }, [])
+
+  // Auth check useEffect
+  useEffect(() => {
+    const checkAuth = async () => {
+      const session = await getUserSession()
+      if (!session) {
+        router.push('/login')
+        return
+      }
+      setUserTier(session.user.tier || 'beta')
+    }
+    checkAuth()
+  }, [router])
+
   // Check if celebration has already been shown for today (per-device)
   useEffect(() => {
-    if (typeof window === 'undefined') return
+    if (typeof window === 'undefined' || !reviewDate) return
     const key = `evening_celebration_shown_${reviewDate}`
     const value = window.localStorage.getItem(key)
     if (value === 'true') {
@@ -111,6 +146,7 @@ export default function EveningPage() {
   }, [reviewDate])
 
   useEffect(() => {
+    if (!reviewDate) return // Wait for reviewDate to be initialized
     const fetchTodayReviewAndTasks = async () => {
       setLoading(true) // Set loading to true here
       const session = await getUserSession()
@@ -138,18 +174,26 @@ export default function EveningPage() {
               
               const { data, error } = await supabase
                 .from('personal_prompts')
-                .select('prompt_text, prompt_type, prompt_date, generated_at')
+                .select('id, prompt_text, prompt_type, prompt_date, generated_at')
                 .eq('user_id', session.user.id)
                 .eq('prompt_type', 'post_evening')
-                .eq('prompt_date', reviewDate) // EXACT date match - no date range fallback
+                .eq('prompt_date', reviewDate)
                 .order('generated_at', { ascending: false })
                 .limit(1)
                 .maybeSingle()
-              
+
+              console.log('🔍 Loading post_evening insight:', {
+                user_id: session.user.id,
+                prompt_type: 'post_evening',
+                prompt_date: reviewDate,
+                found: !!data,
+                id: (data as { id?: string })?.id,
+                error: error?.message,
+              })
               if (error) {
                 console.error(`[Evening Page Load] Error loading post_evening insight for ${reviewDate}:`, error)
               } else if (data) {
-                console.log(`[Evening Page Load] Evening insight found for ${reviewDate}:`, data.prompt_text?.substring(0, 50))
+                console.log(`[Evening Page Load] Evening insight found for ${reviewDate}:`, (data as { prompt_text?: string }).prompt_text?.substring(0, 50))
               } else {
                 console.log(`[Evening Page Load] No evening insight found for ${reviewDate}`)
               }
@@ -250,6 +294,7 @@ export default function EveningPage() {
             id: (t as { id: string }).id,
             description: (t as { description?: string }).description ?? '',
             completed: (t as { completed?: boolean }).completed ?? false,
+            needle_mover: (t as { needle_mover?: boolean }).needle_mover ?? false,
           }))
         )
       } else {
@@ -260,7 +305,7 @@ export default function EveningPage() {
     }
 
     fetchTodayReviewAndTasks()
-  }, [reviewDate])
+  }, [reviewDate, checkPatternDetection, fireFunnelStep, retryTrigger])
 
   const toggleTaskCompleted = async (taskId: string, currentCompleted: boolean) => {
     const session = await getUserSession()
@@ -303,6 +348,62 @@ export default function EveningPage() {
           metadata: task ? { is_needle_mover: !!(task as { needle_mover?: boolean }).needle_mover } : undefined,
         }),
       }).catch(() => {})
+    }
+  }
+
+  const handleDeleteWinConfirm = async () => {
+    const index = confirmDeleteWin
+    if (index === null || index < 0 || index >= wins.length) return
+    setConfirmDeleteWin(null)
+
+    const newWins = wins.filter((_, i) => i !== index)
+    const winsToSave = newWins.length > 0 ? newWins : ['']
+    setWins(winsToSave)
+
+    const session = await getUserSession()
+    if (!session) return
+
+    const winsFiltered = winsToSave.filter((w) => w.trim()).length > 0
+      ? JSON.stringify(winsToSave.filter((w) => w.trim()))
+      : null
+
+    const { error: updateError } = await supabase
+      .from('evening_reviews')
+      .update({ wins: winsFiltered })
+      .eq('review_date', reviewDate)
+      .eq('user_id', session.user.id)
+
+    if (updateError) {
+      window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to delete win. Please try again.', type: 'error' } }))
+      setWins(wins) // Revert on error
+    }
+  }
+
+  const handleDeleteLessonConfirm = async () => {
+    const index = confirmDeleteLesson
+    if (index === null || index < 0 || index >= lessons.length) return
+    setConfirmDeleteLesson(null)
+
+    const newLessons = lessons.filter((_, i) => i !== index)
+    const lessonsToSave = newLessons.length > 0 ? newLessons : ['']
+    setLessons(lessonsToSave)
+
+    const session = await getUserSession()
+    if (!session) return
+
+    const lessonsFiltered = lessonsToSave.filter((l) => l.trim()).length > 0
+      ? JSON.stringify(lessonsToSave.filter((l) => l.trim()))
+      : null
+
+    const { error: updateError } = await supabase
+      .from('evening_reviews')
+      .update({ lessons: lessonsFiltered })
+      .eq('review_date', reviewDate)
+      .eq('user_id', session.user.id)
+
+    if (updateError) {
+      window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to delete lesson. Please try again.', type: 'error' } }))
+      setLessons(lessons) // Revert on error
     }
   }
 
@@ -387,27 +488,72 @@ export default function EveningPage() {
       let insightGenerated = false
       
       if (features.dailyPostEveningPrompt) {
+        setAiCoachTrigger('evening_after')
         try {
-          console.log('🟡 Generating post-evening insight...')
-          const res = await fetch('/api/personal-coaching', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ promptType: 'post_evening', userId: session.user.id, promptDate: reviewDate }),
-          })
-          if (res.ok) {
-            const data = await res.json()
-            if (data.prompt) {
-              console.log('✅ Post-evening insight generated')
-              setAiCoachMessage(data.prompt)
-              setAiCoachTrigger('evening_after')
+          const winsForApi = wins.filter((w) => w.trim()).length > 0 ? JSON.stringify(wins.filter((w) => w.trim())) : null
+          const lessonsForApi = lessons.filter((l) => l.trim()).length > 0 ? JSON.stringify(lessons.filter((l) => l.trim())) : null
+          console.log('🔵 STEP 1: Evening review saved, starting post_evening stream...')
+          await startStream(
+            {
+              promptType: 'post_evening',
+              userId: session.user.id,
+              promptDate: reviewDate,
+              accessToken: session?.access_token,
+              postEveningOverride: {
+                todayReview: {
+                  wins: winsForApi,
+                  lessons: lessonsForApi,
+                  journal: journal.trim() || null,
+                  mood: mood ?? null,
+                  energy: energy ?? null,
+                },
+                todayPlan: morningTasks.map((t) => ({
+                  description: t.description,
+                  completed: t.completed,
+                  needle_mover: t.needle_mover ?? false,
+                })),
+              },
+            },
+            async (fullPrompt) => {
               insightGenerated = true
+              setAiCoachMessage(fullPrompt)
+              const { data: existing } = await supabase
+                .from('personal_prompts')
+                .select('id, generation_count')
+                .eq('user_id', session.user.id)
+                .eq('prompt_type', 'post_evening')
+                .eq('prompt_date', reviewDate)
+                .maybeSingle()
+
+              const genCount = existing ? ((existing as { generation_count?: number }).generation_count ?? 1) + 1 : 1
+
+              const { data: saved, error: upsertErr } = await supabase
+                .from('personal_prompts')
+                .upsert(
+                  {
+                    user_id: session.user.id,
+                    prompt_type: 'post_evening',
+                    prompt_date: reviewDate,
+                    prompt_text: fullPrompt,
+                    stage_context: null,
+                    generation_count: genCount,
+                    generated_at: new Date().toISOString(),
+                  },
+                  { onConflict: 'user_id,prompt_type,prompt_date' }
+                )
+                .select()
+
+              if (upsertErr) {
+                console.error('❌ CRITICAL - Post-evening insight save failed:', upsertErr)
+                window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to save evening insight. Please try again.', type: 'error' } }))
+              } else {
+                console.log('✅ Post-evening insight SAVED, id:', (saved as { id?: string }[])?.[0]?.id)
+                window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Evening insight saved', type: 'success' } }))
+              }
             }
-          } else {
-            const errorData = await res.json().catch(() => ({}))
-            console.error('❌ API error:', res.status, errorData)
-          }
+          )
         } catch (error) {
-          console.error('❌ Failed to load post-evening AI prompt:', error)
+          console.error('🔵 STEP FAIL: Exception streaming post-evening insight:', error)
         }
         
         // Generate next day's morning prompt (invitation to plan — shown before user saves morning plan)
@@ -415,21 +561,77 @@ export default function EveningPage() {
           const tomorrow = new Date(reviewDate)
           tomorrow.setDate(tomorrow.getDate() + 1)
           const nextDay = format(tomorrow, 'yyyy-MM-dd')
-          console.log('[EVENING SAVE] Calling generateProPlusPrompt:', { type: 'morning', date: nextDay, reviewDate })
+          console.log('🔵 STEP 6: Calling morning insight API for next day:', nextDay)
           const morningRes = await fetch('/api/personal-coaching', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ promptType: 'morning', userId: session.user.id, promptDate: nextDay }),
+            headers: {
+              'Content-Type': 'application/json',
+              ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }),
+            },
+            body: JSON.stringify({
+              promptType: 'morning',
+              userId: session.user.id,
+              promptDate: nextDay,
+              morningOverride: {
+                yesterdayReview: {
+                  wins: winsFiltered,
+                  lessons: lessonsFiltered,
+                  journal: journal.trim() || null,
+                  mood: mood ?? null,
+                  energy: energy ?? null,
+                },
+              },
+            }),
           })
+          console.log('🔵 STEP 7: Morning API response status:', morningRes.status)
           const morningData = await morningRes.json().catch(() => ({}))
+          console.log('🔵 STEP 8: Morning API response:', { hasPrompt: !!morningData.prompt, hasError: !!morningData.error })
           if (morningRes.ok && morningData.prompt) {
-            console.log('[EVENING SAVE] ✅ Next day morning prompt generated for', nextDay, '(length:', morningData.prompt?.length, 'chars)')
+            console.log('🔵 STEP 9: Morning insight received, length:', morningData.prompt.length)
+
+            const { data: existingMorning } = await supabase
+              .from('personal_prompts')
+              .select('id, generation_count')
+              .eq('user_id', session.user.id)
+              .eq('prompt_type', 'morning')
+              .eq('prompt_date', nextDay)
+              .maybeSingle()
+
+            const morningGenCount = existingMorning ? ((existingMorning as { generation_count?: number }).generation_count ?? 1) + 1 : 1
+
+            const { data: morningSaved, error: morningUpsertErr } = await supabase
+              .from('personal_prompts')
+              .upsert(
+                {
+                  user_id: session.user.id,
+                  prompt_type: 'morning',
+                  prompt_date: nextDay,
+                  prompt_text: morningData.prompt,
+                  stage_context: null,
+                  generation_count: morningGenCount,
+                  generated_at: new Date().toISOString(),
+                },
+                { onConflict: 'user_id,prompt_type,prompt_date' }
+              )
+              .select()
+
+            if (morningUpsertErr) {
+              console.error('❌ CRITICAL - Morning insight save failed:', morningUpsertErr)
+              window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to save morning insight. Please try again.', type: 'error' } }))
+            } else {
+              console.log('✅ Morning insight SAVED for', nextDay, 'id:', (morningSaved as { id?: string }[])?.[0]?.id)
+              window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Morning insight saved for tomorrow', type: 'success' } }))
+            }
+          } else if (morningData?.aiError) {
+            console.error('🔵 STEP 9 FAIL: Morning AI error:', morningData.error, 'model:', morningData.model, 'status:', morningData.status)
           } else {
-            console.error('[EVENING SAVE] ❌ Morning prompt failed:', morningRes.status, morningData?.error || morningData)
+            console.error('🔵 STEP 9 FAIL: Morning prompt failed:', morningRes.status, morningData?.error || morningData)
           }
         } catch (error) {
-          console.error('[EVENING SAVE] ❌ Failed to generate next day morning prompt:', error)
+          console.error('🔵 STEP FAIL: Exception generating morning prompt:', error)
         }
+      } else {
+        console.log('🔵 SKIP: dailyPostEveningPrompt not enabled for user tier:', session.user.tier)
       }
 
       // Check for Mrs. Deer pattern feedback after saving (new reflection may trigger pattern)
@@ -467,7 +669,7 @@ export default function EveningPage() {
         // Only redirect if no insight was generated
         if (!insightGenerated) {
           console.log('⚠️ No insight generated, redirecting to dashboard')
-          router.push('/')
+          router.push('/dashboard')
         } else {
           console.log('✅ Insight generated, staying on page to display it')
           setError(null)
@@ -487,185 +689,245 @@ export default function EveningPage() {
 
   if (loading) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-8">
-        <p className="text-gray-500">Loading...</p>
+      <div className="max-w-3xl mx-auto px-4 md:px-5 py-8">
+        <LoadingWithRetry
+          message="Reflecting on your day..."
+          onRetry={() => setRetryTrigger((t) => t + 1)}
+          timeoutMs={8000}
+        />
       </div>
     )
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold text-[#152b50] dark:text-[#E2E8F0] mb-2 flex items-center gap-2">
-        <Moon className="w-8 h-8 text-[#152b50]" />
-        Evening Review
-      </h1>
-      <p className="text-gray-600 dark:text-gray-400 mb-4">
-        {isToday(new Date(reviewDate)) ? format(new Date(reviewDate), 'EEEE, MMMM d, yyyy') : `Review for ${format(new Date(reviewDate), 'MMMM d, yyyy')}`}
-      </p>
-      <DateSelector selectedDate={reviewDate} onDateChange={setReviewDate} maxDaysBack={30} className="mb-6" />
+    <div 
+      className="max-w-3xl mx-auto px-4 md:px-5 py-8 transition-all duration-200"
+      style={{ paddingTop: spacing['3xl'], paddingBottom: spacing['2xl'] }}
+    >
+      {/* Header with Mrs. Deer - responsive: avatar above on mobile, left on desktop */}
+      <div className="mb-8" style={{ marginBottom: spacing['2xl'] }}>
+        <div className="flex flex-col md:flex-row md:items-start gap-4 mb-4">
+          <div className="flex justify-center md:justify-start">
+            <MrsDeerAvatar expression="empathetic" size="mobile" className="md:hidden" />
+            <MrsDeerAvatar expression="empathetic" size="large" className="hidden md:block" />
+          </div>
+          <div className="flex-1 text-center md:text-left">
+            <h1 
+              className="font-bold mb-2 text-[#152B50] dark:text-white"
+              style={{ 
+                fontSize: typography.pageTitle.fontSize, 
+                fontWeight: typography.pageTitle.fontWeight,
+                lineHeight: typography.pageTitle.lineHeight,
+              }}
+            >
+              Evening Review
+            </h1>
+            <p className="mb-4 text-gray-600 dark:text-gray-300">
+              {isToday(new Date(reviewDate)) ? format(new Date(reviewDate), 'EEEE, MMMM d, yyyy') : `Review for ${format(new Date(reviewDate), 'MMMM d, yyyy')}`}
+            </p>
+          </div>
+        </div>
+        <DateSelector selectedDate={reviewDate} onDateChange={setReviewDate} maxDaysBack={30} className="mb-6" />
+      </div>
 
       {/* Today's Journey: What You Accomplished */}
-      <section className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-6 border-l-4 border-[#22c55e] dark:border-[#22c55e]/70">
-        <h2 className="text-xl font-semibold text-[#152b50] dark:text-[#E2E8F0] mb-2 flex items-center gap-2">
-          <Mountain className="w-5 h-5 text-[#22c55e]" />
-          {isToday(new Date(reviewDate)) ? lang.eveningTitle : `Journey for ${format(new Date(reviewDate), 'MMMM d')}: ${lang.eveningTitle.split(': ')[1] || 'What You Accomplished'}`}
-        </h2>
-        <p className="text-gray-500 dark:text-gray-300 text-sm mb-4">
-          Celebrate what you moved forward today—every step counts.
-        </p>
+      <Card highlighted className="mb-8" style={{ marginBottom: spacing['2xl'], borderLeft: `3px solid ${colors.emerald.DEFAULT}` }}>
+        <CardHeader style={{ padding: spacing['xl'] }}>
+          <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
+            <Mountain className="w-5 h-5" style={{ color: colors.emerald.DEFAULT }} />
+            {isToday(new Date(reviewDate)) ? lang.eveningTitle : `Journey for ${format(new Date(reviewDate), 'MMMM d')}: ${lang.eveningTitle.split(': ')[1] || 'What You Accomplished'}`}
+          </CardTitle>
+          <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
+            Celebrate what you moved forward today—every step counts.
+          </p>
+        </CardHeader>
+        <CardContent style={{ padding: spacing['xl'] }}>
 
         {morningTasks.length === 0 ? (
-          <p className="text-gray-500 text-sm italic">
+          <p className="text-sm italic text-gray-600 dark:text-gray-300">
             No priorities planned for today. That&apos;s okay—you showed up and that matters.
           </p>
         ) : (
           <ul className="space-y-4">
-            {morningTasks.map((task) => (
-              <li
-                key={task.id}
-                className={`flex items-start gap-4 rounded-xl p-4 transition-all duration-300 ${
-                  task.completed
-                    ? 'bg-emerald-50/60 opacity-90'
-                    : 'bg-gray-50/50 hover:bg-gray-50'
-                } ${justCompletedId === task.id ? 'animate-pulse' : ''}`}
-              >
-                <button
-                  type="button"
-                  onClick={() => toggleTaskCompleted(task.id, task.completed)}
-                  className={`flex-shrink-0 mt-0.5 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
-                    task.completed
-                      ? 'bg-emerald-500 text-white shadow-sm'
-                      : 'border-2 border-gray-300 text-transparent hover:border-[#152b50]'
-                  }`}
-                  aria-label={task.completed ? 'Mark as incomplete' : 'Mark as complete'}
+            {morningTasks.map((task, index) => (
+                <motion.li
+                  key={task.id}
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: index * 0.1 }}
+                  className={`flex items-start gap-4 rounded-xl p-4 transition-all duration-300 ${
+                    justCompletedId === task.id ? 'animate-pulse' : ''
+                  } ${task.completed ? 'bg-emerald-50 dark:bg-emerald-900/30' : 'bg-gray-50 dark:bg-gray-700'}`}
                 >
-                  {task.completed && <Check className="w-4 h-4 stroke-[2.5]" />}
-                </button>
+                  <motion.button
+                    type="button"
+                    onClick={() => toggleTaskCompleted(task.id, task.completed)}
+                    className="flex-shrink-0 mt-0.5 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300"
+                    style={{
+                      backgroundColor: task.completed ? colors.emerald.DEFAULT : 'transparent',
+                      borderWidth: task.completed ? '0' : '2px',
+                      borderColor: colors.neutral.border,
+                      color: task.completed ? '#FFFFFF' : 'transparent',
+                    }}
+                    whileHover={prefersReducedMotion ? undefined : { scale: 1.1 }}
+                    whileTap={prefersReducedMotion ? undefined : { scale: 0.9 }}
+                    aria-label={task.completed ? 'Mark as incomplete' : 'Mark as complete'}
+                  >
+                    {task.completed && (
+                      <motion.div
+                        initial={prefersReducedMotion ? false : { scale: 0, rotate: -180 }}
+                        animate={{ scale: 1, rotate: 0 }}
+                        transition={{ type: 'spring', stiffness: 300 }}
+                      >
+                        <Check className="w-4 h-4 stroke-[2.5]" />
+                      </motion.div>
+                    )}
+                  </motion.button>
                 <div className="flex-1 min-w-0">
                   <span
-                    className={`text-lg ${
-                      task.completed
-                        ? 'text-emerald-800/90'
-                        : 'text-gray-900 dark:text-[#E2E8F0]'
-                    }`}
+                    className={`text-lg ${task.completed ? 'text-emerald-600' : 'text-gray-900 dark:text-white'}`}
                   >
                     {task.description}
                   </span>
                   {task.completed && (
-                    <p className="mt-1 text-sm text-emerald-600 dark:text-emerald-300 font-medium">
+                    <p className="mt-1 text-sm font-medium" style={{ color: colors.emerald.DEFAULT }}>
                       ✓ Priority completed with intention
                     </p>
                   )}
                 </div>
-              </li>
+              </motion.li>
             ))}
           </ul>
         )}
-      </section>
+        </CardContent>
+      </Card>
 
       {/* Emotional Check-in */}
-      <section className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-6 border-l-4 border-[#ef725c] dark:border-[#ef725c]/70">
-        <h2 className="text-xl font-semibold text-[#152b50] dark:text-[#E2E8F0] mb-2 flex items-center gap-2">
-          <Heart className="w-5 h-5 text-[#ef725c]" />
-          How You&apos;re Feeling
-        </h2>
-        <p className="text-gray-500 dark:text-gray-300 text-sm mb-4">
-          A gentle check-in—no judgment, just awareness.
-        </p>
+      <Card highlighted className="mb-8" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
+            <Heart className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
+            How You&apos;re Feeling
+          </CardTitle>
+          <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
+            A gentle check-in—no judgment, just awareness.
+          </p>
+        </CardHeader>
+        <CardContent>
 
         <div className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              How was your mood today?
+            <label className="block text-sm font-medium mb-4 text-gray-900 dark:text-white">
+              Mood (How are you feeling?)
             </label>
-            <div className="flex flex-wrap gap-2">
-              {MOOD_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => {
-                    fireFunnelStep(2, 'journal_engaged')
-                    fireFunnelStep(2, 'journal_engaged')
-                    setMood(opt.value)
-                  }}
-                  className={`px-4 py-2 rounded-lg font-medium transition ${
-                    mood === opt.value
-                      ? 'bg-[#ef725c] text-white'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  {opt.emoji} {opt.label}
-                </button>
-              ))}
+            <div className="flex flex-wrap gap-3">
+              {MOOD_OPTIONS.map((opt) => {
+                const isSelected = mood === opt.value
+                return (
+                  <motion.button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => {
+                      fireFunnelStep(2, 'journal_engaged')
+                      setMood(opt.value)
+                    }}
+                    className={`min-h-[48px] px-4 rounded-xl flex items-center gap-2 text-sm font-medium transition-all ${isSelected ? 'text-[#EF725C] bg-[#FFF0EC] dark:bg-[#2D1F1C]' : 'text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-700'} border-2`}
+                    style={{
+                      borderColor: isSelected ? colors.coral.DEFAULT : 'transparent',
+                    }}
+                    whileHover={prefersReducedMotion ? undefined : { scale: 1.02 }}
+                    whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <span className="text-lg">{opt.emoji}</span>
+                    {opt.label}
+                  </motion.button>
+                )
+              })}
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Energy level now?
+            <label className="block text-sm font-medium mb-4 text-gray-900 dark:text-white">
+              Energy (How&apos;s your energy?)
             </label>
-            <div className="flex flex-wrap gap-2">
-              {ENERGY_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => {
-                    fireFunnelStep(2, 'journal_engaged')
-                    fireFunnelStep(2, 'journal_engaged')
-                    setEnergy(opt.value)
-                  }}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
-                    energy === opt.value
-                      ? 'bg-[#152b50] text-white'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+            <div className="flex flex-wrap gap-3">
+              {ENERGY_OPTIONS.map((opt) => {
+                const isSelected = energy === opt.value
+                return (
+                  <motion.button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => {
+                      fireFunnelStep(2, 'journal_engaged')
+                      setEnergy(opt.value)
+                    }}
+                    className={`min-h-[48px] px-4 rounded-xl flex items-center gap-2 text-sm font-medium transition-all border-2 ${isSelected ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/30' : 'text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-700'}`}
+                    style={{
+                      borderColor: isSelected ? colors.amber.DEFAULT : 'transparent',
+                    }}
+                    whileHover={prefersReducedMotion ? undefined : { scale: 1.02 }}
+                    whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <span className="text-lg">{opt.emoji}</span>
+                    {opt.label}
+                  </motion.button>
+                )
+              })}
             </div>
           </div>
         </div>
-      </section>
+        </CardContent>
+      </Card>
 
       {/* Journal */}
-      <section className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-6 border-l-4 border-[#152b50] dark:border-[#152b50]/70">
-        <h2 className="text-xl font-semibold text-[#152b50] dark:text-[#E2E8F0] mb-2 flex items-center gap-2">
-          <Lightbulb className="w-5 h-5 text-[#152b50]" />
-          Today&apos;s Reflection
-        </h2>
-        <p className="text-gray-500 dark:text-gray-300 text-sm mb-4">
-          What matters most from today? What would you carry forward?
-        </p>
-
+      <Card className="mb-8 bg-gray-50 dark:bg-gray-800" style={{ marginBottom: spacing['2xl'], borderLeft: `4px solid ${colors.navy.DEFAULT}` }}>
+        <CardHeader style={{ padding: spacing['xl'] }}>
+          <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
+            <Lightbulb className="w-5 h-5" style={{ color: colors.navy.DEFAULT }} />
+            Today&apos;s Reflection
+          </CardTitle>
+          <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
+            What matters most from today? What would you carry forward?
+          </p>
+        </CardHeader>
+        <CardContent style={{ padding: spacing['xl'] }}>
         <SpeechToTextInput
           as="textarea"
           value={journal}
           onChange={(e) => {
             fireFunnelStep(2, 'journal_engaged')
-            fireFunnelStep(2, 'journal_engaged')
             setJournal(e.target.value)
           }}
           placeholder="How did today go? What stood out? What would you do differently?"
-          rows={4}
-          className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#152b50] focus:border-transparent resize-none text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+          rows={5}
+          className="w-full px-6 py-4 rounded-lg focus:ring-2 focus:ring-offset-2 resize-none transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+          style={{
+            borderColor: colors.neutral.border,
+            fontSize: '16px',
+            lineHeight: '1.6',
+          }}
         />
-      </section>
+        </CardContent>
+      </Card>
 
       {/* Wins & Lessons */}
-      <section className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-6 border-l-4 border-[#152b50] dark:border-[#152b50]/70">
-        <h2 className="text-xl font-semibold text-[#152b50] dark:text-[#E2E8F0] mb-2 flex items-center gap-2">
-          <Award className="w-5 h-5 text-[#ef725c]" />
-          Wins & Lessons
-        </h2>
-        <p className="text-gray-500 dark:text-gray-300 text-sm mb-4">
-          Celebrate what worked. Honor what you&apos;d carry forward.
-        </p>
-
-        <div className="space-y-6">
-          {/* Wins Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8" style={{ marginBottom: spacing['2xl'] }}>
+        {/* Wins Card */}
+        <Card className="mb-0" style={{ borderLeft: `4px solid ${colors.emerald.DEFAULT}` }}>
+          <CardHeader style={{ padding: spacing['xl'] }}>
+            <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
+              <Award className="w-5 h-5" style={{ color: colors.emerald.DEFAULT }} />
+              Wins
+            </CardTitle>
+            <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
+              Celebrate what worked today
+            </p>
+          </CardHeader>
+          <CardContent style={{ padding: spacing['xl'] }}>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium mb-3 text-gray-900 dark:text-white">
               What went well?
             </label>
             <div className="space-y-3">
@@ -683,37 +945,51 @@ export default function EveningPage() {
                     }}
                     placeholder="Celebrate your wins—big or small..."
                     rows={2}
-                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#152b50] focus:border-transparent resize-none text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+                    className="flex-1 px-4 py-2 rounded-lg focus:ring-2 focus:ring-offset-2 resize-none transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+                    style={{
+                      borderColor: colors.neutral.border,
+                    }}
                   />
-                  {wins.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newWins = wins.filter((_, i) => i !== index)
-                        setWins(newWins.length > 0 ? newWins : [''])
-                      }}
-                      className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                      aria-label="Remove win"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteWin(index)}
+                    className="p-2 transition-colors text-gray-500 dark:text-gray-400 hover:text-red-500 flex-shrink-0"
+                    aria-label="Delete win"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               ))}
               <button
                 type="button"
                 onClick={() => setWins([...wins, ''])}
-                className="flex items-center gap-2 text-sm text-[#152b50] dark:text-[#E2E8F0] hover:text-[#ef725c] transition-colors"
+                className="flex items-center gap-2 text-sm transition-colors"
+                style={{ color: colors.navy.DEFAULT }}
+                onMouseEnter={(e) => e.currentTarget.style.color = colors.coral.DEFAULT}
+                onMouseLeave={(e) => e.currentTarget.style.color = colors.navy.DEFAULT}
               >
                 <Plus className="w-4 h-4" />
                 Add more wins
               </button>
             </div>
           </div>
+        </CardContent>
+      </Card>
 
-          {/* Lessons Section */}
+        {/* Lessons Card */}
+        <Card className="mb-0" style={{ borderLeft: `4px solid ${colors.amber.DEFAULT}` }}>
+          <CardHeader style={{ padding: spacing['xl'] }}>
+            <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
+              <Lightbulb className="w-5 h-5" style={{ color: colors.amber.DEFAULT }} />
+              Lessons
+            </CardTitle>
+            <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
+              What you&apos;d carry forward
+            </p>
+          </CardHeader>
+          <CardContent style={{ padding: spacing['xl'] }}>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium mb-3 text-gray-900 dark:text-white">
               What would you do differently?
             </label>
             <div className="space-y-3">
@@ -731,62 +1007,77 @@ export default function EveningPage() {
                     }}
                     placeholder="Gentle lessons to carry forward..."
                     rows={2}
-                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#152b50] focus:border-transparent resize-none text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+                    className="flex-1 px-4 py-2 rounded-lg focus:ring-2 focus:ring-offset-2 resize-none transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+                    style={{
+                      borderColor: colors.neutral.border,
+                    }}
                   />
-                  {lessons.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newLessons = lessons.filter((_, i) => i !== index)
-                        setLessons(newLessons.length > 0 ? newLessons : [''])
-                      }}
-                      className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                      aria-label="Remove lesson"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteLesson(index)}
+                    className="p-2 transition-colors text-gray-500 dark:text-gray-400 hover:text-red-500 flex-shrink-0"
+                    aria-label="Delete lesson"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               ))}
               <button
                 type="button"
                 onClick={() => setLessons([...lessons, ''])}
-                className="flex items-center gap-2 text-sm text-[#152b50] dark:text-[#E2E8F0] hover:text-[#ef725c] transition-colors"
+                className="flex items-center gap-2 text-sm transition-colors"
+                style={{ color: colors.navy.DEFAULT }}
+                onMouseEnter={(e) => e.currentTarget.style.color = colors.coral.DEFAULT}
+                onMouseLeave={(e) => e.currentTarget.style.color = colors.navy.DEFAULT}
               >
                 <Plus className="w-4 h-4" />
                 Add more lessons
               </button>
             </div>
           </div>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
+      </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-500/60 rounded-lg flex items-center gap-2 text-red-700 dark:text-red-200">
+        <div className="mb-4 p-4 rounded-lg flex items-center gap-2 transition-all duration-200" style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', borderWidth: '1px', color: '#B91C1C' }}>
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
           {error}
         </div>
       )}
 
-      <button
+      <Button
         type="button"
         onClick={handleSave}
         disabled={saving}
-        className="w-full py-4 px-6 bg-[#152b50] text-white text-lg font-semibold rounded-xl hover:bg-[#1a3565] disabled:opacity-70 disabled:cursor-not-allowed transition"
+        isLoading={saving}
+        variant="primary"
+        size="lg"
+        className="w-full"
       >
         {saving ? 'Completing...' : 'Complete my day'}
-      </button>
+      </Button>
+
+      {/* Loading: Mrs. Deer reflecting after save */}
+      {saving && (
+        <div className="mt-4 p-4 rounded-lg border-2 flex items-center gap-3 mb-6 bg-amber-50 dark:bg-amber-950/30 border-amber-500 dark:border-amber-600">
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-amber-700 dark:border-amber-400 flex-shrink-0" />
+          <p className="text-amber-800 dark:text-amber-200 font-medium">Mrs. Deer, your AI companion is reflecting on your input...</p>
+        </div>
+      )}
 
       {/* Mrs. Deer AI Coach - Evening Reflection Insight (permanent, always shown if exists) */}
-      {aiCoachMessage && aiCoachTrigger && (
-        <AICoachPrompt
-          message={aiCoachMessage}
-          trigger={aiCoachTrigger}
-          onClose={() => {
-            // Insights are permanent - don't actually close them
-            // This handler is kept for component compatibility but does nothing
-          }}
-        />
+      {aiCoachTrigger === 'evening_after' && (aiCoachMessage || isStreaming || streamingError) && (
+        <>
+          {isStreaming && <StreamingIndicator className="mb-4" />}
+          <AICoachPrompt
+            message={isStreaming ? (streamingInsight || '...') : (streamingError ? `[AI ERROR] ${streamingError}` : aiCoachMessage!)}
+            trigger={aiCoachTrigger}
+            onClose={() => {
+              // Insights are permanent - don't actually close them
+            }}
+          />
+        </>
       )}
 
       {/* Mrs. Deer adaptive prompt - behavior or coaching pattern (no feedback form) */}
@@ -803,6 +1094,30 @@ export default function EveningPage() {
           }}
         />
       )}
+
+      {/* Delete Win Confirmation */}
+      <ConfirmModal
+        isOpen={confirmDeleteWin !== null}
+        title="Delete win?"
+        message="Are you sure you want to delete this win?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleDeleteWinConfirm}
+        onCancel={() => setConfirmDeleteWin(null)}
+      />
+
+      {/* Delete Lesson Confirmation */}
+      <ConfirmModal
+        isOpen={confirmDeleteLesson !== null}
+        title="Delete lesson?"
+        message="Are you sure you want to delete this lesson?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleDeleteLessonConfirm}
+        onCancel={() => setConfirmDeleteLesson(null)}
+      />
 
       <CelebrationModal
         isOpen={showCelebration}

@@ -1,0 +1,311 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSessionFromRequest } from '@/lib/server-auth'
+import { getServerSupabase } from '@/lib/server-supabase'
+import { isDevelopment, isAdmin } from '@/lib/admin'
+import { generateAIPrompt, AIError } from '@/lib/ai-client'
+import { checkUserHistory } from '@/lib/user-history'
+import { PARSE_INSTRUCTION } from '@/lib/insight-parse-instructions'
+import { processWeeklyInsightJob } from '@/lib/process-weekly-insight'
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
+const MRS_DEER_RULES = `You are Mrs. Deer, a warm, wise coach for founders. You've sat with many founders. You validate before reframing. You think with them, not at them.`
+
+interface GenerateBody {
+  weekStart: string
+  weekEnd: string
+  wins: string[]
+  lessons: string[]
+  favoriteWinIndices?: number[]
+  keyLessonIndices?: number[]
+  avgMood: number | null
+  avgEnergy: number | null
+  tasksCompleted: number
+  totalTasks: number
+  needleMoversCompleted: number
+  needleMoversTotal: number
+  primaryGoal: string | null
+}
+
+function buildWeeklyPrompt(
+  body: GenerateBody,
+  pastFeedback: { feedback_type: string; feedback_text: string | null }[],
+  lastWeekSelections: { favorite_win_indices: number[]; key_lesson_indices: number[] } | null,
+  lastWeekWins: string[],
+  lastWeekLessons: string[]
+): string {
+  const {
+    wins,
+    lessons,
+    favoriteWinIndices = [],
+    keyLessonIndices = [],
+    avgMood,
+    avgEnergy,
+    tasksCompleted,
+    totalTasks,
+    needleMoversCompleted,
+    needleMoversTotal,
+    primaryGoal,
+  } = body
+
+  const taskPct = totalTasks > 0 ? Math.round((tasksCompleted / totalTasks) * 100) : 0
+
+  const winsBlock = wins.length > 0
+    ? wins
+        .map(
+          (w, i) =>
+            `- ${w}${favoriteWinIndices.includes(i) ? ' ⭐ (USER FOUND MEANING)' : ''}`
+        )
+        .join('\n')
+    : '(none recorded)'
+
+  const lessonsBlock = lessons.length > 0
+    ? lessons
+        .map(
+          (l, i) =>
+            `- ${l}${keyLessonIndices.includes(i) ? ' 🔑 (USER SAYS THIS MATTERS)' : ''}`
+        )
+        .join('\n')
+    : '(none recorded)'
+
+  const lastWeekBlock =
+    lastWeekSelections &&
+    (lastWeekSelections.favorite_win_indices.length > 0 || lastWeekSelections.key_lesson_indices.length > 0)
+      ? `\n\nLAST WEEK THEY FOUND MEANING IN: ${lastWeekSelections.favorite_win_indices.map((i) => lastWeekWins[i]).filter(Boolean).join('; ') || '(none)'}\nLAST WEEK THEY LEARNED FROM: ${lastWeekSelections.key_lesson_indices.map((i) => lastWeekLessons[i]).filter(Boolean).join('; ') || '(none)'}\nReference this when relevant - it shows what matters to them.`
+      : ''
+
+  const feedbackBlock =
+    pastFeedback.length > 0
+      ? `\n\nPAST FEEDBACK FROM THIS USER (use to improve - they've told you what matters):\n${pastFeedback
+          .slice(0, 5)
+          .map(
+            (f) =>
+              `- ${f.feedback_type}${f.feedback_text ? `: "${f.feedback_text}"` : ''}`
+          )
+          .join('\n')}`
+      : ''
+
+  return `You are Mrs. Deer, a warm, wise coach for founders.
+
+This user had the following week:
+
+GOAL: ${primaryGoal || '(not set)'}
+
+WINS (${wins.length} total):
+${winsBlock}
+
+LESSONS (${lessons.length} total):
+${lessonsBlock}
+
+MOOD: ${avgMood ?? '—'}/5
+ENERGY: ${avgEnergy ?? '—'}/5
+TASKS COMPLETED: ${tasksCompleted}/${totalTasks} (${taskPct}%)
+NEEDLE MOVERS: ${needleMoversCompleted}/${needleMoversTotal}
+${feedbackBlock}${lastWeekBlock}
+
+${PARSE_INSTRUCTION}
+
+Please generate a weekly insight that:
+
+1. FINDS 2-3 MEANINGFUL PATTERNS - Parse multi-thought entries into themes. Group by theme (app, family, growth, etc.). What connects their wins? What do their lessons tell you? Only connect ideas that genuinely relate.
+
+2. RESPECTS THEIR CHOICES - If they starred wins or marked lessons as key, acknowledge them. If they had last week's selections, reference what they found meaningful.
+
+3. CONNECTS TO THEIR GOAL - How does this week move them toward or away from their goal?
+
+4. OFFERS ONE SPECIFIC SUGGESTION - Based on their actual words, not generic advice.
+
+5. USE A WARM, WISE VOICE - Like someone who's sat with many founders. Validate before reframing.
+
+6. AVOID THESE PHRASES: "needle mover", "smart constraint", "action plan", "power list"
+
+OUTPUT FORMAT (required): Use markdown ## headers for section titles. Structure your response as exactly 4 sections with blank lines between them. Let the AI choose natural, warm titles based on the content (e.g. "The Balance You're Holding", "What's Driving You", "A Deeper Question", "One Small Experiment"). Use Observe/Validate/Reframe as internal structure only—do not use those words as titles.
+
+Example structure:
+## [Natural title for observation - 3-4 sentences]
+[Content]
+
+## [Natural title for validation - 2-3 sentences]
+[Content]
+
+## [Natural title for reframing - 2-3 sentences]
+[Content]
+
+## [Natural title for the experiment - the reframing question]
+[One specific question]
+
+Add a blank line between each section. Be specific. Use their words.`
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const session = await getServerSessionFromRequest(req)
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Allow in development OR if user is admin
+    // Allow in development, preview, OR if user is admin
+    const isDev = process.env.NODE_ENV === 'development'
+    const isPreview = process.env.VERCEL_ENV === 'preview'
+    const isUserAdmin = await isAdmin(session.user.id)
+    
+    if (!isDev && !isPreview && !isUserAdmin) {
+      console.warn('[weekly-insight] Generate called in production by non-admin:', session.user.id)
+      return NextResponse.json({ error: 'On-demand generation is disabled in production. Insights are pre-generated weekly.' }, { status: 403 })
+    }
+    const body = (await req.json()) as GenerateBody
+    const {
+      weekStart,
+      weekEnd,
+      wins,
+      lessons,
+      favoriteWinIndices = [],
+      keyLessonIndices = [],
+      avgMood,
+      avgEnergy,
+      tasksCompleted,
+      totalTasks,
+      needleMoversCompleted,
+      needleMoversTotal,
+      primaryGoal,
+    } = body
+
+    if (!weekStart || !weekEnd) {
+      return NextResponse.json({ error: 'weekStart and weekEnd required' }, { status: 400 })
+    }
+
+    const db = getServerSupabase()
+
+    // Fetch past feedback
+    const { data: pastFeedback } = await db
+      .from('weekly_insight_feedback')
+      .select('feedback_type, feedback_text')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    // Fetch last week's selections and wins/lessons (for "last week you found meaning in...")
+    const lastWeekStart = new Date(weekStart)
+    lastWeekStart.setDate(lastWeekStart.getDate() - 7)
+    const lastWeekStr = lastWeekStart.toISOString().slice(0, 10)
+    const lastWeekEnd = new Date(lastWeekStart)
+    lastWeekEnd.setDate(lastWeekEnd.getDate() + 6)
+    const lastWeekEndStr = lastWeekEnd.toISOString().slice(0, 10)
+
+    const [lastWeekSelectionsRes, lastWeekReviewsRes] = await Promise.all([
+      (db.from('weekly_insight_selections') as any)
+        .select('favorite_win_indices, key_lesson_indices')
+        .eq('user_id', session.user.id)
+        .eq('week_start_date', lastWeekStr)
+        .maybeSingle(),
+      db
+        .from('evening_reviews')
+        .select('wins, lessons')
+        .eq('user_id', session.user.id)
+        .gte('review_date', lastWeekStr)
+        .lte('review_date', lastWeekEndStr),
+    ])
+
+    const lastWeekSelections = lastWeekSelectionsRes.data
+    const lastWeekWins: string[] = []
+    const lastWeekLessons: string[] = []
+    ;(lastWeekReviewsRes.data ?? []).forEach((r: { wins?: unknown; lessons?: unknown }) => {
+      try {
+        const w = typeof r.wins === 'string' ? JSON.parse(r.wins) : r.wins
+        const l = typeof r.lessons === 'string' ? JSON.parse(r.lessons) : r.lessons
+        if (Array.isArray(w)) lastWeekWins.push(...w.filter(Boolean))
+        if (Array.isArray(l)) lastWeekLessons.push(...l.filter(Boolean))
+      } catch {
+        if (typeof r.wins === 'string' && r.wins) lastWeekWins.push(r.wins)
+        if (typeof r.lessons === 'string' && r.lessons) lastWeekLessons.push(r.lessons)
+      }
+    })
+
+    const userPrompt = buildWeeklyPrompt(
+      body,
+      pastFeedback ?? [],
+      lastWeekSelections,
+      lastWeekWins,
+      lastWeekLessons
+    )
+
+    const { hasHistory } = await checkUserHistory(session.user.id)
+    console.log(`[weekly-insight] User hasHistory=${hasHistory}, template=${hasHistory ? 'pattern' : 'mirror'}`)
+
+    const historyNote = hasHistory ? '' : ' CRITICAL: User has NO prior history. ONLY use what they wrote this week. DO NOT say "I recall" or invent context. Be a mirror, not a coach.'
+    const systemPrompt = `${MRS_DEER_RULES}
+
+Weekly insight: max 350 words. Output exactly 4 sections with ## markdown headers and blank lines between sections. Let AI choose warm, natural titles (e.g. "The Balance You're Holding", "What's Driving You", "A Deeper Question", "One Small Experiment"). BANNED: needle mover, action plan, smart constraint, power list. Use natural language only.${historyNote}`
+
+    // Create a job record
+    const { data: job, error: jobError } = await (db.from('insight_jobs') as any)
+      .insert({
+        user_id: session.user.id,
+        type: 'weekly',
+        week_start: weekStart,
+        status: 'pending',
+      })
+      .select()
+      .single()
+
+    if (jobError) throw jobError
+    const jobData = job as { id: string }
+    if (!jobData?.id) throw new Error('Failed to create job')
+
+    // Start background processing (don't await)
+    processWeeklyInsightJob({
+      jobId: jobData.id,
+      userId: session.user.id,
+      weekStart,
+      weekEnd,
+      wins,
+      lessons,
+      favoriteWinIndices,
+      keyLessonIndices,
+      avgMood,
+      avgEnergy,
+      tasksCompleted,
+      totalTasks,
+      needleMoversCompleted,
+      needleMoversTotal,
+      primaryGoal,
+      pastFeedback: pastFeedback ?? [],
+      lastWeekSelections,
+      lastWeekWins,
+      lastWeekLessons,
+      userPrompt,
+      systemPrompt,
+      hasHistory
+    }).catch(error => {
+      console.error('[weekly-insight] Background job failed:', error)
+    })
+
+    // Return immediately with job ID
+    return NextResponse.json({
+      jobId: jobData.id,
+      status: 'processing',
+      message: 'Insight generation started. This may take up to 30 seconds.',
+    })
+  } catch (error) {
+    console.error('[weekly-insight] Error:', error)
+    if (error instanceof AIError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          aiError: true,
+          model: error.model,
+          status: error.status,
+          statusText: error.statusText,
+          openRouterError: error.openRouterError,
+        },
+        { status: 502 }
+      )
+    }
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to generate weekly insight' },
+      { status: 500 }
+    )
+  }
+}

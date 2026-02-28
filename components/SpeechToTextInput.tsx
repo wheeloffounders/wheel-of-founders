@@ -19,11 +19,11 @@ type SpeechToTextInputProps = (BaseInputProps | BaseTextareaProps) & {
 }
 
 // Detect Web Speech API support (Chrome, Safari, Edge)
-function getSpeechRecognition(): typeof SpeechRecognition | null {
+function getSpeechRecognition(): any | null {
   if (typeof window === 'undefined') return null
-  const SpeechRecognition = (window as unknown as { SpeechRecognition?: typeof globalThis.SpeechRecognition }).SpeechRecognition
-  const webkit = (window as unknown as { webkitSpeechRecognition?: typeof globalThis.SpeechRecognition }).webkitSpeechRecognition
-  return SpeechRecognition ?? webkit ?? null
+  const w = window as any
+  const SpeechRecognition = w.SpeechRecognition || w.webkitSpeechRecognition
+  return SpeechRecognition ?? null
 }
 
 export default function SpeechToTextInput({
@@ -92,7 +92,7 @@ export default function SpeechToTextInput({
     recognition.interimResults = true
     recognition.lang = 'en-US'
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
+    recognition.onresult = (event: any) => {
       let final = ''
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i]
@@ -105,7 +105,7 @@ export default function SpeechToTextInput({
       }
     }
 
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+    recognition.onerror = (event: any) => {
       if (event.error === 'not-allowed' || event.error === 'aborted') {
         setIsListening(false)
       }
@@ -137,6 +137,20 @@ export default function SpeechToTextInput({
     }
   }, [])
 
+  const MAX_TEXTAREA_HEIGHT = 300
+
+  const resizeTextarea = useCallback((el: HTMLTextAreaElement | null) => {
+    if (!el) return
+    el.style.height = 'auto'
+    const h = Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)
+    el.style.height = h + 'px'
+    el.style.overflowY = el.scrollHeight > MAX_TEXTAREA_HEIGHT ? 'auto' : 'hidden'
+  }, [])
+
+  useEffect(() => {
+    if (isTextarea && inputRef.current) resizeTextarea(inputRef.current as HTMLTextAreaElement)
+  }, [value, isTextarea, resizeTextarea])
+
   const inputClassName = `pr-10 ${className}`.trim()
   const commonProps = {
     ref: inputRef as React.RefObject<HTMLInputElement & HTMLTextAreaElement>,
@@ -147,10 +161,27 @@ export default function SpeechToTextInput({
     ...rest,
   }
 
+  const restTextarea = rest as React.TextareaHTMLAttributes<HTMLTextAreaElement>
+  const textareaProps = isTextarea
+    ? {
+        ...(commonProps as React.TextareaHTMLAttributes<HTMLTextAreaElement>),
+        rows: restTextarea.rows ?? 1,
+        style: { resize: 'none', overflowY: 'hidden' as const, ...(restTextarea.style as object) },
+        onInput: (e: React.FormEvent<HTMLTextAreaElement>) => {
+          const target = e.target as HTMLTextAreaElement
+          resizeTextarea(target)
+          // Call onChange instead of onInput
+          if (restTextarea.onChange) {
+            restTextarea.onChange(e as any)
+          }
+        },
+      }
+    : commonProps
+
   return (
     <div className="relative inline-block w-full">
       {isTextarea ? (
-        <textarea {...(commonProps as React.TextareaHTMLAttributes<HTMLTextAreaElement>)} />
+        <textarea {...(textareaProps as React.TextareaHTMLAttributes<HTMLTextAreaElement>)} />
       ) : (
         <input {...(commonProps as React.InputHTMLAttributes<HTMLInputElement>)} />
       )}
@@ -163,7 +194,7 @@ export default function SpeechToTextInput({
           className={`absolute right-2 ${isTextarea ? 'top-2' : 'top-1/2 -translate-y-1/2'} p-2 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-[#152b50] focus:ring-offset-1 ${
             isListening
               ? 'bg-[#ef725c] text-white animate-pulse'
-              : 'text-gray-500 hover:text-[#ef725c] hover:bg-gray-100 dark:hover:bg-gray-700'
+              : 'text-gray-500 dark:text-gray-500 hover:text-[#ef725c] hover:bg-gray-50 dark:bg-gray-900'
           } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
           aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
         >

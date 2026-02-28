@@ -1,41 +1,49 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { format, subDays } from 'date-fns'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { format, startOfWeek, endOfWeek, isSunday, addDays } from 'date-fns'
 import {
   Calendar,
   Target,
-  Flame,
   Heart,
-  Zap,
   Copy,
   Check,
-  TrendingUp,
   Award,
   Lightbulb,
-  Shield,
+  Sparkles,
+  ThumbsUp,
+  ThumbsDown,
+  MessageCircle,
+  Loader2,
 } from 'lucide-react'
-import { InfoTooltip } from '@/components/InfoTooltip'
-import { useRouter } from 'next/navigation' // Add useRouter
 import { supabase } from '@/lib/supabase'
-import { getUserSession } from '@/lib/auth' // Add getUserSession
-import { ACTION_PLAN_OPTIONS_2, ActionPlanOption2 } from '@/app/morning/page' // Import new action plan options
-import { calculateStreak } from '@/lib/streak'
+import { getUserSession } from '@/lib/auth'
+import { getFeatureAccess } from '@/lib/features'
 import { trackEvent } from '@/lib/analytics'
-
-interface WeekStats {
-  tasksTotal: number
-  needleMovers: number
-  firesTotal: number
-  firesResolved: number
-  avgMood: number | null
-  avgEnergy: number | null
-  actionMix: Record<ActionPlanOption2, number> // Use ActionPlanOption2 here
-  decisions: number
-  wins: string[]
-  lessons: string[]
-  dateRange: { start: string; end: string }
-}
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
+import { MrsDeerMessageBubble } from '@/components/MrsDeerMessageBubble'
+import { MarkdownText } from '@/components/MarkdownText'
+import { MoodChart } from '@/components/weekly/MoodChart'
+import {
+  getPaceAssessment,
+  generateProgressInsight,
+  generateCelebrationQuote,
+  detectPatternForQuestion,
+  detectAllTopicPatterns,
+  type WinWithDate,
+  type LessonWithDate,
+  type DayData,
+} from '@/lib/weekly-analysis'
+import { WinReflection } from '@/components/weekly/WinReflection'
+import { LessonInput } from '@/components/weekly/LessonInput'
+import { PatternQuestion } from '@/components/weekly/PatternQuestion'
+import { GoalProgress } from '@/components/weekly/GoalProgress'
+import { CelebrationHeader } from '@/components/weekly/CelebrationHeader'
+import { InsightNavigation } from '@/components/InsightNavigation'
+import { colors } from '@/lib/design-tokens'
 
 const MOOD_LABELS: Record<number, string> = {
   1: 'Tough',
@@ -45,78 +53,166 @@ const MOOD_LABELS: Record<number, string> = {
   5: 'Great',
 }
 
+interface WeeklyData {
+  dateRange: { start: string; end: string }
+  daysCompleted: number
+  daysInWeek: number
+  isWeekComplete: boolean
+  tasksTotal: number
+  tasksCompleted: number
+  needleMoversTotal: number
+  needleMoversCompleted: number
+  proactivePct: number
+  firesTotal: number
+  firesResolved: number
+  decisions: number
+  avgMood: number | null
+  avgEnergy: number | null
+  actionMix: Record<string, number>
+  wins: string[]
+  lessons: string[]
+  winsWithDate: WinWithDate[]
+  lessonsWithDate: LessonWithDate[]
+  dayData: DayData[]
+  eveningInsights: { date: string; text: string }[]
+  weeklyPrompt: string | null
+  primaryGoal: string | null
+  canRegenerateInsights: boolean
+}
+
+function parseWins(val: unknown, date: string): WinWithDate[] {
+  const wins: WinWithDate[] = []
+  if (!val) return wins
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val)
+      if (Array.isArray(parsed)) {
+        parsed.filter((s: string) => s?.trim()).forEach((s: string) => wins.push({ text: s, date }))
+      } else if (typeof parsed === 'string' && parsed.trim()) {
+        wins.push({ text: parsed, date })
+      }
+    } catch {
+      if (val.trim()) wins.push({ text: val, date })
+    }
+  }
+  return wins
+}
+
+function parseLessons(val: unknown, date: string): LessonWithDate[] {
+  const lessons: LessonWithDate[] = []
+  if (!val) return lessons
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val)
+      if (Array.isArray(parsed)) {
+        parsed.filter((s: string) => s?.trim()).forEach((s: string) => lessons.push({ text: s, date }))
+      } else if (typeof parsed === 'string' && parsed.trim()) {
+        lessons.push({ text: parsed, date })
+      }
+    } catch {
+      if (val.trim()) lessons.push({ text: val, date })
+    }
+  }
+  return lessons
+}
+
+// FORCE SUNDAY MODE FOR TESTING - REMOVE AFTER VERIFYING
+const FORCE_SUNDAY_MODE = true
+
 export default function WeeklyPage() {
-  const router = useRouter() // Initialize useRouter
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [loading, setLoading] = useState(true)
+  const [periods, setPeriods] = useState<string[]>([])
+  const [data, setData] = useState<WeeklyData | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [favoriteWinIndices, setFavoriteWinIndices] = useState<number[]>([])
+  const [keyLessonIndices, setKeyLessonIndices] = useState<number[]>([])
+  const [generating, setGenerating] = useState(false)
+  const [insightFeedback, setInsightFeedback] = useState<'helpful' | 'not_quite_right' | 'custom' | null>(null)
+  const [customFeedbackText, setCustomFeedbackText] = useState('')
+  const [feedbackSent, setFeedbackSent] = useState(false)
+  const [weeklyPromptOverride, setWeeklyPromptOverride] = useState<string | null>(null)
+  const [generateError, setGenerateError] = useState<string | null>(null)
 
   useEffect(() => {
     const checkAuth = async () => {
       const session = await getUserSession()
-      if (!session) {
-        router.push('/login')
-        return
-      }
+      if (!session) router.push('/login')
     }
     checkAuth()
-  }, [router]) // Add router to dependency array
+  }, [router])
 
-  const [stats, setStats] = useState<WeekStats>({
-    tasksTotal: 0,
-    needleMovers: 0,
-    firesTotal: 0,
-    firesResolved: 0,
-    avgMood: null,
-    avgEnergy: null,
-    actionMix: {}, // Initialize actionMix as an empty object
-    decisions: 0,
-    wins: [],
-    lessons: [],
-    dateRange: { start: '', end: '' },
-  })
-  const [loading, setLoading] = useState(true)
-  const [copied, setCopied] = useState(false)
-  const [currentStreak, setCurrentStreak] = useState(0)
-  const [longestStreak, setLongestStreak] = useState(0)
-  const shareRef = useRef<HTMLDivElement>(null)
+  const weekStartParam = searchParams?.get('weekStart')
+  const effectiveWeekStart = weekStartParam && /^\d{4}-\d{2}-\d{2}$/.test(weekStartParam)
+    ? weekStartParam
+    : format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
 
   useEffect(() => {
     const fetchWeekData = async () => {
-      setLoading(true) // Ensure loading state is set
+      setLoading(true)
       const session = await getUserSession()
       if (!session) {
         setLoading(false)
         return
       }
 
-      const endDate = new Date()
-      const startDate = subDays(endDate, 6)
-      const startStr = format(startDate, 'yyyy-MM-dd')
-      const endStr = format(endDate, 'yyyy-MM-dd')
+      const features = getFeatureAccess({
+        tier: session.user.tier,
+        pro_features_enabled: session.user.pro_features_enabled,
+      })
 
-      const [tasksRes, emergenciesRes, reviewsRes, decisionsRes] = await Promise.all([
+      const weekStart = new Date(effectiveWeekStart)
+      const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
+      const startStr = format(weekStart, 'yyyy-MM-dd')
+      const endStr = format(weekEnd, 'yyyy-MM-dd')
+      const now = new Date()
+      const isWeekComplete = isSunday(now) || weekEnd < now
+
+      const daysInWeek = 7
+      let daysCompleted = 0
+      const weekStartDate = new Date(weekStart)
+      for (let d = new Date(weekStartDate); d <= now && d <= weekEnd; d = addDays(d, 1)) {
+        daysCompleted++
+      }
+
+      const [tasksRes, emergenciesRes, reviewsRes, decisionsRes, promptsRes, profileRes] = await Promise.all([
         supabase
           .from('morning_tasks')
-          .select('needle_mover, action_plan') // Use action_plan
+          .select('plan_date, needle_mover, completed, is_proactive, action_plan')
           .gte('plan_date', startStr)
           .lte('plan_date', endStr)
-          .eq('user_id', session.user.id), // Filter by user_id
+          .eq('user_id', session.user.id),
         supabase
           .from('emergencies')
           .select('resolved')
           .gte('fire_date', startStr)
           .lte('fire_date', endStr)
-          .eq('user_id', session.user.id), // Filter by user_id
+          .eq('user_id', session.user.id),
         supabase
           .from('evening_reviews')
-          .select('mood, energy, wins, lessons')
+          .select('review_date, mood, energy, wins, lessons')
           .gte('review_date', startStr)
           .lte('review_date', endStr)
-          .eq('user_id', session.user.id), // Filter by user_id
+          .eq('user_id', session.user.id),
         supabase
           .from('morning_decisions')
           .select('id')
           .gte('plan_date', startStr)
           .lte('plan_date', endStr)
-          .eq('user_id', session.user.id), // Filter by user_id
+          .eq('user_id', session.user.id),
+        features.personalWeeklyInsight
+          ? supabase
+              .from('personal_prompts')
+              .select('prompt_text, prompt_date, generated_at')
+              .eq('user_id', session.user.id)
+              .eq('prompt_type', 'weekly')
+              .eq('prompt_date', startStr)
+              .order('generated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+        supabase.from('user_profiles').select('primary_goal_text, is_admin').eq('id', session.user.id).maybeSingle(),
       ])
 
       const tasks = tasksRes.data ?? []
@@ -124,389 +220,690 @@ export default function WeeklyPage() {
       const reviews = reviewsRes.data ?? []
       const decisions = decisionsRes.data ?? []
 
-      const needleMovers = tasks.filter((t) => t.needle_mover).length
-      const firesResolved = emergencies.filter((e) => e.resolved).length
-      const moods = reviews
-        .map((r) => r.mood)
-        .filter((m): m is number => m != null)
-      const energies = reviews
-        .map((r) => r.energy)
-        .filter((e): e is number => e != null)
-      
-      // Use actionMix for consistency with dashboard
-      const actionMix: Record<string, number> = {};
-      tasks.forEach((t) => {
-        const p = t.action_plan || 'my_zone'; // Default to my_zone if somehow null
-        actionMix[p] = (actionMix[p] || 0) + 1;
-      });
+      const needleMoversTotal = tasks.filter((t) => t.needle_mover).length
+      const needleMoversCompleted = tasks.filter((t) => t.needle_mover && t.completed).length
+      const proactiveCount = tasks.filter((t) => t.is_proactive === true).length
+      const proactivePct = tasks.length > 0 ? Math.round((proactiveCount / tasks.length) * 100) : 0
 
-      // Parse wins and lessons: handle both JSON arrays (new format) and strings (old format)
+      const actionMix: Record<string, number> = {}
+      tasks.forEach((t) => {
+        const p = (t.action_plan || 'my_zone') as string
+        actionMix[p] = (actionMix[p] || 0) + 1
+      })
+
+      const moods = reviews.map((r) => r.mood).filter((m): m is number => m != null)
+      const energies = reviews.map((r) => r.energy).filter((e): e is number => e != null)
+      const avgMood = moods.length > 0 ? Math.round(moods.reduce((a, b) => a + b, 0) / moods.length * 10) / 10 : null
+      const avgEnergy = energies.length > 0 ? Math.round(energies.reduce((a, b) => a + b, 0) / energies.length * 10) / 10 : null
+
+      const winsWithDate: WinWithDate[] = []
+      const lessonsWithDate: LessonWithDate[] = []
       const wins: string[] = []
       const lessons: string[] = []
-      
+
       reviews.forEach((r) => {
-        // Parse wins
-        if (r.wins) {
-          if (typeof r.wins === 'string') {
-            try {
-              const parsed = JSON.parse(r.wins)
-              if (Array.isArray(parsed)) {
-                wins.push(...parsed.filter((w: string) => w?.trim()))
-              } else if (parsed.trim()) {
-                // Old format: single string
-                wins.push(parsed)
-              }
-            } catch {
-              // Not JSON, treat as old format string
-              if (r.wins.trim()) {
-                wins.push(r.wins)
-              }
-            }
-          }
-        }
-        
-        // Parse lessons
-        if (r.lessons) {
-          if (typeof r.lessons === 'string') {
-            try {
-              const parsed = JSON.parse(r.lessons)
-              if (Array.isArray(parsed)) {
-                lessons.push(...parsed.filter((l: string) => l?.trim()))
-              } else if (parsed.trim()) {
-                // Old format: single string
-                lessons.push(parsed)
-              }
-            } catch {
-              // Not JSON, treat as old format string
-              if (r.lessons.trim()) {
-                lessons.push(r.lessons)
-              }
-            }
-          }
+        const date = (r as { review_date?: string }).review_date || ''
+        const w = parseWins((r as { wins?: unknown }).wins, date)
+        const l = parseLessons((r as { lessons?: unknown }).lessons, date)
+        winsWithDate.push(...w)
+        lessonsWithDate.push(...l)
+        wins.push(...w.map((x) => x.text))
+        lessons.push(...l.map((x) => x.text))
+      })
+
+      const reviewByDate = new Map<string | undefined, (typeof reviews)[0]>()
+      reviews.forEach((r) => reviewByDate.set((r as { review_date?: string }).review_date, r))
+
+      const tasksByDate = new Map<string, (typeof tasks)[0][]>()
+      tasks.forEach((t) => {
+        const d = (t as { plan_date?: string }).plan_date
+        if (d) {
+          if (!tasksByDate.has(d)) tasksByDate.set(d, [])
+          tasksByDate.get(d)!.push(t)
         }
       })
 
-      // Fetch streak data
-      const streakData = await calculateStreak(session.user.id)
-      setCurrentStreak(streakData.currentStreak)
-      setLongestStreak(streakData.longestStreak)
+      const eveningInsights: { date: string; text: string }[] = []
+      if (features.dailyPostEveningPrompt) {
+        const { data: eveningPrompts } = await supabase
+          .from('personal_prompts')
+          .select('prompt_text, prompt_date')
+          .eq('user_id', session.user.id)
+          .eq('prompt_type', 'post_evening')
+          .gte('prompt_date', startStr)
+          .lte('prompt_date', endStr)
+          .order('generated_at', { ascending: false })
+        const seen = new Set<string>()
+        ;(eveningPrompts ?? []).forEach((p) => {
+          const d = (p as { prompt_date?: string }).prompt_date
+          if (d && !seen.has(d)) {
+            seen.add(d)
+            eveningInsights.push({ date: d, text: (p as { prompt_text?: string }).prompt_text || '' })
+          }
+        })
+      }
 
-      setStats({
+      const dayData: DayData[] = []
+      for (let d = new Date(weekStart); d <= weekEnd; d = addDays(d, 1)) {
+        const dateStr = format(d, 'yyyy-MM-dd')
+        const dayTasks = tasksByDate.get(dateStr) ?? []
+        const review = reviewByDate.get(dateStr)
+        const nm = dayTasks.filter((t) => t.needle_mover).length
+        const nmDone = dayTasks.filter((t) => t.needle_mover && t.completed).length
+        const eveningInsight = eveningInsights.find((e) => e.date === dateStr)?.text ?? null
+        const dayWins = winsWithDate.filter((w) => w.date === dateStr).map((w) => w.text)
+        const dayLessons = lessonsWithDate.filter((l) => l.date === dateStr).map((l) => l.text)
+        dayData.push({
+          date: dateStr,
+          needleMovers: nm,
+          needleMoversCompleted: nmDone,
+          mood: (review as { mood?: number })?.mood ?? null,
+          energy: (review as { energy?: number })?.energy ?? null,
+          wins: dayWins,
+          lessons: dayLessons,
+          eveningInsight,
+        })
+      }
+
+      const primaryGoal = (profileRes.data as { primary_goal_text?: string } | null)?.primary_goal_text ?? null
+      const isAdmin = (profileRes.data as { is_admin?: boolean } | null)?.is_admin === true
+      const canRegenerate = process.env.NODE_ENV === 'development' || isAdmin
+
+      setData({
+        dateRange: { start: startStr, end: endStr },
+        daysCompleted,
+        daysInWeek,
+        isWeekComplete,
         tasksTotal: tasks.length,
-        needleMovers,
+        tasksCompleted: tasks.filter((t) => (t as { completed?: boolean }).completed).length,
+        needleMoversTotal,
+        needleMoversCompleted,
+        proactivePct,
         firesTotal: emergencies.length,
-        firesResolved,
-        avgMood:
-          moods.length > 0
-            ? Math.round(moods.reduce((a, b) => a + b, 0) / moods.length * 10) / 10
-            : null,
-        avgEnergy:
-          energies.length > 0
-            ? Math.round(energies.reduce((a, b) => a + b, 0) / energies.length * 10) / 10
-            : null,
-        actionMix: actionMix, // Corrected to use actionMix
+        firesResolved: emergencies.filter((e) => e.resolved).length,
         decisions: decisions.length,
+        avgMood,
+        avgEnergy,
+        actionMix,
         wins,
         lessons,
-        dateRange: { start: startStr, end: endStr },
+        winsWithDate,
+        lessonsWithDate,
+        dayData,
+        eveningInsights,
+        weeklyPrompt: (promptsRes.data as { prompt_text?: string } | null)?.prompt_text ?? null,
+        primaryGoal,
+        canRegenerateInsights: canRegenerate,
       })
       setLoading(false)
-      trackEvent('weekly_page_view', { date_range: `${startStr} to ${endStr}` })
+      trackEvent('weekly_page_view', { date_range: `${startStr} to ${endStr}`, is_week_complete: isWeekComplete })
     }
 
     fetchWeekData()
-  }, [])
+  }, [effectiveWeekStart])
+
+  useEffect(() => {
+    const fetchPeriods = async () => {
+      const session = await getUserSession()
+      if (!session) return
+      try {
+        const { data: { session: supabaseSession } } = await supabase.auth.getSession()
+        const headers: Record<string, string> = {}
+        if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
+        const res = await fetch(`/api/insights/periods?type=weekly&current=${effectiveWeekStart}`, { headers })
+        const json = await res.json()
+        if (json.periods) setPeriods(json.periods)
+      } catch {
+        // ignore
+      }
+    }
+    fetchPeriods()
+  }, [effectiveWeekStart])
+
+  useEffect(() => {
+    if (!data?.dateRange?.start) return
+    const fetchSelections = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+      const res = await fetch(`/api/weekly-insight/selections?weekStart=${data.dateRange.start}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (res.ok) {
+        const json = await res.json()
+        setFavoriteWinIndices(json.favoriteWinIndices ?? [])
+        setKeyLessonIndices(json.keyLessonIndices ?? [])
+      }
+    }
+    fetchSelections()
+  }, [data?.dateRange?.start])
+
+  const saveSelections = async (favorites: number[], keys: number[]) => {
+    if (!data?.dateRange?.start) return
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return
+    await fetch('/api/weekly-insight/selections', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        weekStart: data.dateRange.start,
+        favoriteWinIndices: favorites,
+        keyLessonIndices: keys,
+      }),
+    })
+  }
+
+  const handleToggleFavoriteWin = (index: number) => {
+    const next = favoriteWinIndices.includes(index)
+      ? favoriteWinIndices.filter((i) => i !== index)
+      : [...favoriteWinIndices, index].sort((a, b) => a - b)
+    setFavoriteWinIndices(next)
+    saveSelections(next, keyLessonIndices)
+  }
+
+  const handleToggleKeyLesson = (index: number) => {
+    const next = keyLessonIndices.includes(index)
+      ? keyLessonIndices.filter((i) => i !== index)
+      : [...keyLessonIndices, index].sort((a, b) => a - b)
+    setKeyLessonIndices(next)
+    saveSelections(favoriteWinIndices, next)
+  }
+
+  const handleGenerateInsight = async () => {
+    if (!data) return
+    const session = await getUserSession()
+    const features = session ? getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled }) : null
+    if (!features?.personalWeeklyInsight) return
+
+    setGenerating(true)
+    setGenerateError(null)
+
+    try {
+      const { data: { session: supabaseSession } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (supabaseSession?.access_token) {
+        headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
+      }
+
+      const res = await fetch('/api/weekly-insight/generate', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          weekStart: data.dateRange.start,
+          weekEnd: data.dateRange.end,
+          wins: data.wins,
+          lessons: data.lessons,
+          favoriteWinIndices,
+          keyLessonIndices,
+          avgMood: data.avgMood,
+          avgEnergy: data.avgEnergy,
+          tasksCompleted: data.tasksCompleted,
+          totalTasks: data.tasksTotal,
+          needleMoversCompleted: data.needleMoversCompleted,
+          needleMoversTotal: data.needleMoversTotal,
+          primaryGoal: data.primaryGoal,
+        }),
+      })
+
+      const result = await res.json()
+
+      if (result.jobId) {
+        setGenerateError('Insight generation started. This will take about 30 seconds. Check back soon!')
+        setGenerating(false)
+
+        const checkStatus = setInterval(async () => {
+          try {
+            const { data: { session: authSession } } = await supabase.auth.getSession()
+            const statusHeaders: Record<string, string> = {}
+            if (authSession?.access_token) {
+              statusHeaders['Authorization'] = `Bearer ${authSession.access_token}`
+            }
+            const statusRes = await fetch(`/api/weekly-insight/status?jobId=${result.jobId}`, { headers: statusHeaders })
+            const status = await statusRes.json()
+
+            if (status.status === 'completed') {
+              clearInterval(checkStatus)
+              window.location.reload()
+            } else if (status.status === 'failed') {
+              clearInterval(checkStatus)
+              setGenerateError(status.error || 'Generation failed')
+            }
+          } catch {
+            clearInterval(checkStatus)
+            setGenerateError('Failed to check generation status')
+          }
+        }, 2000)
+      } else if (result.prompt) {
+        setWeeklyPromptOverride(result.prompt)
+        setGenerateError(null)
+        setGenerating(false)
+        trackEvent('weekly_insight_generated', { week_start: data.dateRange.start })
+      } else if (result.aiError) {
+        setGenerateError(result.error || 'AI service error')
+        setGenerating(false)
+      } else {
+        setGenerateError(result.error || 'Failed to start generation')
+        setGenerating(false)
+      }
+    } catch (err) {
+      console.error('[weekly] Generate error:', err)
+      setGenerateError(err instanceof Error ? err.message : 'Failed to generate')
+      setGenerating(false)
+    }
+  }
+
+  // No auto-generate: insights are pre-generated by cron. Users see pre-generated or placeholder.
+
+  const handleInsightFeedback = async (type: 'helpful' | 'not_quite_right' | 'custom') => {
+    if (!data || feedbackSent) return
+    if (type === 'custom' && !customFeedbackText.trim()) return
+    setInsightFeedback(type)
+    try {
+      const { data: { session: supabaseSession } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (supabaseSession?.access_token) {
+        headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
+      }
+      const res = await fetch('/api/weekly-insight/feedback', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          weekStart: data.dateRange.start,
+          feedbackType: type,
+          feedbackText: type === 'custom' ? customFeedbackText.trim() : undefined,
+        }),
+      })
+      if (res.ok) {
+        setFeedbackSent(true)
+        trackEvent('weekly_insight_feedback', { type })
+      }
+    } catch (err) {
+      console.error('[weekly] Feedback error:', err)
+    }
+  }
+
+  const displayPrompt = weeklyPromptOverride ?? data?.weeklyPrompt ?? null
 
   const handleCopySummary = async () => {
-    if (!stats) return
+    if (!data) return
     const text = [
       `📊 Wheel of Founders — Weekly Summary`,
-      `${format(new Date(stats.dateRange.start), 'MMM d')} – ${format(new Date(stats.dateRange.end), 'MMM d, yyyy')}`,
+      `${format(new Date(data.dateRange.start), 'MMM d')} – ${format(new Date(data.dateRange.end), 'MMM d, yyyy')}`,
       ``,
-      `✅ Tasks: ${stats.tasksTotal} | Needle Movers: ${stats.needleMovers}`,
-      `🔥 Fires: ${stats.firesTotal} (${stats.firesResolved} resolved)`,
-      stats.avgMood != null ? `😊 Avg Mood: ${MOOD_LABELS[Math.round(stats.avgMood)] || stats.avgMood}/5` : '',
-      stats.avgEnergy != null ? `⚡ Avg Energy: ${stats.avgEnergy}/5` : '',
-      stats.decisions > 0 ? `🎯 Decisions: ${stats.decisions}` : '',
-      stats.wins.length > 0 ? `\nWins:\n${stats.wins.map((w) => `• ${w}`).join('\n')}` : '',
-      stats.lessons.length > 0 ? `\nLessons:\n${stats.lessons.map((l) => `• ${l}`).join('\n')}` : '',
+      `✅ Needle Movers: ${data.needleMoversCompleted}/${data.needleMoversTotal}`,
+      `🔥 Fires: ${data.firesTotal} (${data.firesResolved} resolved)`,
+      data.avgMood != null ? `😊 Avg Mood: ${MOOD_LABELS[Math.round(data.avgMood)] || data.avgMood}/5` : '',
+      data.avgEnergy != null ? `🔋 Avg Energy: ${data.avgEnergy}/5` : '',
+      data.decisions > 0 ? `🎯 Decisions: ${data.decisions}` : '',
+      data.wins.length > 0 ? `\nWins:\n${data.wins.map((w) => `• ${w}`).join('\n')}` : '',
+      data.lessons.length > 0 ? `\nLessons:\n${data.lessons.map((l) => `• ${l}`).join('\n')}` : '',
     ]
       .filter(Boolean)
       .join('\n')
-
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      // fallback ignored
+      /* ignore */
     }
   }
 
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8">
-        <p className="text-gray-500">Loading weekly insights...</p>
+        <div className="flex flex-col items-center justify-center gap-4 py-16">
+          <MrsDeerAvatar expression="thoughtful" size="large" />
+          <p className="text-sm text-gray-600 dark:text-white">
+            Mrs. Deer, your AI companion is reflecting on your week...
+          </p>
+          <div className="flex gap-1">
+            <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: colors.coral.DEFAULT }} />
+            <span className="w-2 h-2 rounded-full animate-pulse delay-100" style={{ backgroundColor: colors.coral.DEFAULT }} />
+            <span className="w-2 h-2 rounded-full animate-pulse delay-200" style={{ backgroundColor: colors.coral.DEFAULT }} />
+          </div>
+        </div>
       </div>
     )
   }
 
-  const needlePct =
-    stats.tasksTotal > 0
-      ? Math.round((stats.needleMovers / stats.tasksTotal) * 100)
-      : 0
-  const firesResolvedPct =
-    stats.firesTotal > 0
-      ? Math.round((stats.firesResolved / stats.firesTotal) * 100)
-      : 0
+  if (!data) return null
+
+  const needlePct = data.needleMoversTotal > 0 ? Math.round((data.needleMoversCompleted / data.needleMoversTotal) * 100) : 0
+  const pace = getPaceAssessment(data.needleMoversCompleted, data.needleMoversTotal, data.daysCompleted, data.daysInWeek)
+
+  const bestDayData = data.dayData
+    .filter((d) => d.needleMoversCompleted > 0)
+    .sort((a, b) => b.needleMoversCompleted - a.needleMoversCompleted)[0]
+  const bestDayName = bestDayData ? format(new Date(bestDayData.date), 'EEEE') : null
+
+  const moodChartDays = data.dayData.map((d) => ({
+    date: d.date,
+    dayName: format(new Date(d.date), 'EEE'),
+    mood: d.mood,
+    energy: d.energy,
+    needleMovers: d.needleMoversCompleted,
+  }))
+
+  const patternForQuestion = detectPatternForQuestion(data.winsWithDate, data.lessonsWithDate)
+  const allTopics = detectAllTopicPatterns(data.winsWithDate, data.lessonsWithDate)
+
+  const goalProgressItems = data.wins.slice(0, 3)
+  const goalMissing = data.primaryGoal && data.primaryGoal.toLowerCase().includes('business')
+    ? 'Still no paid users'
+    : null
+  const goalMrsDeerQuestion = data.primaryGoal && data.primaryGoal.toLowerCase().includes('business')
+    ? "You moved the needle on community but not on revenue. What's one small step toward paid users you could take next week?"
+    : "What's one small step toward your goal you could take next week?"
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-[#152b50] mb-1 flex items-center gap-2">
-            <Calendar className="w-8 h-8 text-[#ef725c]" />
-            Weekly Insights
-          </h1>
-          <p className="text-gray-600">
-            {format(new Date(stats.dateRange.start), 'MMM d')} –{' '}
-            {format(new Date(stats.dateRange.end), 'MMM d, yyyy')}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={handleCopySummary}
-          className="flex items-center gap-2 px-4 py-2 bg-[#152b50] text-white rounded-lg font-medium hover:bg-[#1a3565] transition shrink-0"
-        >
-          {copied ? (
-            <>
-              <Check className="w-4 h-4" />
-              Copied!
-            </>
-          ) : (
-            <>
-              <Copy className="w-4 h-4" />
-              Copy Summary
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* Infographic Card */}
-      <div
-        ref={shareRef}
-        className="bg-white rounded-2xl shadow-xl overflow-hidden border-2 border-[#152b50]"
-      >
-        {/* Banner */}
-        <div className="bg-[#152b50] text-white px-6 py-4">
-          <h2 className="text-xl font-bold text-[#ef725c]">Wheel of Founders</h2>
-          <p className="text-white/80 text-sm">
-            Weekly Summary •{' '}
-            {format(new Date(stats.dateRange.start), 'MMM d')} –{' '}
-            {format(new Date(stats.dateRange.end), 'MMM d')}
-          </p>
-        </div>
-
-        <div className="p-6 space-y-6">
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatBlock
-              icon={<Target className="w-6 h-6 text-green-500" />}
-              label="Needle Movers"
-              value={`${stats.needleMovers}/${stats.tasksTotal}`}
-              sub={stats.tasksTotal > 0 ? `${needlePct}%` : undefined}
-            />
-            <StatBlock
-              icon={<Shield className="w-6 h-6 text-blue-500" />}
-              label="Founder Actions"
-              value={stats.tasksTotal > 0 ? 'Tracked' : '—'}
-              sub={
-                Object.keys(stats.actionMix).length > 0
-                  ? Object.entries(stats.actionMix)
-                      .map(([k, v]) => `${ACTION_PLAN_OPTIONS_2.find(opt => opt.value === k)?.label || k}: ${v}`)
-                      .join(' | ') || undefined
-                  : undefined
-              }
-            />
-            <StatBlock
-              icon={<Flame className="w-6 h-6 text-orange-500" />}
-              label="Fires Fought"
-              value={stats.firesTotal.toString()}
-              sub={
-                stats.firesTotal > 0
-                  ? `${stats.firesResolved} resolved (${firesResolvedPct}%)`
-                  : undefined
-              }
-            />
-            <StatBlock
-              icon={<TrendingUp className="w-6 h-6 text-purple-500" />}
-              label="Decisions"
-              value={stats.decisions.toString()}
-            />
+      <div className="flex flex-col gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold mb-1 flex items-center gap-2 text-[#152B50] dark:text-white">
+              <Calendar className="w-8 h-8" style={{ color: colors.coral.DEFAULT }} />
+              Weekly Insights
+            </h1>
+            <p className="text-sm mt-1 text-gray-600 dark:text-white">
+              {(data.isWeekComplete || FORCE_SUNDAY_MODE)
+                ? 'Week complete'
+                : `${data.daysCompleted} days completed · ${data.daysInWeek - data.daysCompleted} days left`}
+            </p>
           </div>
-
-          {/* Streak Stats */}
-          {(currentStreak > 0 || longestStreak > 0) && (
-            <div className="bg-gradient-to-r from-[#ef725c]/10 to-[#152b50]/10 rounded-lg p-4 border border-[#ef725c]/20">
-              <div className="flex items-center gap-2 mb-2">
-                <Flame className="w-5 h-5 text-[#ef725c]" />
-                <h3 className="text-sm font-semibold text-gray-700">Streak Stats</h3>
-              </div>
-              <div className="flex flex-wrap gap-4">
-                {currentStreak > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-600 text-sm">Current:</span>
-                    <span className="text-lg font-bold text-[#ef725c]">{currentStreak} days</span>
-                  </div>
-                )}
-                {longestStreak > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-600 text-sm">Best:</span>
-                    <span className="text-lg font-bold text-[#152b50]">{longestStreak} days</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Mood & Energy */}
-          {(stats.avgMood != null || stats.avgEnergy != null) && (
-            <div className="flex flex-wrap gap-4">
-              {stats.avgMood != null && (
-                <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 rounded-lg relative">
-                  <span className="absolute -top-1 -right-1">
-                    <InfoTooltip text="Average of your daily mood ratings (1–5) from Evening Reviews this week." />
-                  </span>
-                  <Heart className="w-5 h-5 text-[#ef725c]" />
-                  <span className="text-gray-700">
-                    Avg Mood:{' '}
-                    <strong className="text-[#152b50]">
-                      {MOOD_LABELS[Math.round(stats.avgMood)]} ({stats.avgMood}/5)
-                    </strong>
-                  </span>
-                </div>
-              )}
-              {stats.avgEnergy != null && (
-                <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg relative">
-                  <span className="absolute -top-1 -right-1">
-                    <InfoTooltip text="Average of your daily energy levels (1–5) from Evening Reviews this week." />
-                  </span>
-                  <Zap className="w-5 h-5 text-[#152b50]" />
-                  <span className="text-gray-700">
-                    Avg Energy:{' '}
-                    <strong className="text-[#152b50]">{stats.avgEnergy}/5</strong>
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Founder Action Mix */}
-          {Object.keys(stats.actionMix).length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-2">
-                <Shield className="w-4 h-4 text-blue-500" />
-                Founder Action Mix
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(stats.actionMix)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([key, count]) => (
-                    <span
-                      key={key}
-                      className="px-3 py-1 bg-[#152b50]/10 text-[#152b50] rounded-full text-sm font-medium"
-                    >
-                      {ACTION_PLAN_OPTIONS_2.find(opt => opt.value === key)?.emoji} {ACTION_PLAN_OPTIONS_2.find(opt => opt.value === key)?.label}: {count}
-                    </span>
-                  ))}
-              </div>
-            </div>
-          )}
-
-          {/* Wins */}
-          {stats.wins.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-2">
-                <Award className="w-4 h-4 text-[#ef725c]" />
-                Wins This Week
-              </h3>
-              <ul className="space-y-1 text-gray-800">
-                {stats.wins.map((w, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span className="text-[#ef725c]">•</span>
-                    <span>{w}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Lessons */}
-          {stats.lessons.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-2">
-                <Lightbulb className="w-4 h-4 text-[#152b50]" />
-                Lessons for Next Week
-              </h3>
-              <ul className="space-y-1 text-gray-800">
-                {stats.lessons.map((l, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span className="text-[#152b50]">•</span>
-                    <span>{l}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <Button variant="outline" onClick={handleCopySummary} className="gap-2 shrink-0">
+            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            {copied ? 'Copied!' : 'Copy Summary'}
+          </Button>
         </div>
-
-        {/* Footer */}
-        <div className="bg-gray-50 px-6 py-3 text-center text-sm text-gray-500">
-          wheeloffounders.com • Your daily founder coaching companion
-        </div>
+        <InsightNavigation
+          type="weekly"
+          currentPeriod={data.dateRange.start}
+          periods={periods.length > 0 ? periods : [data.dateRange.start]}
+          onNavigate={(period) => router.push(`/weekly?weekStart=${period}`)}
+        />
       </div>
 
-      {stats.tasksTotal === 0 &&
-        stats.firesTotal === 0 &&
-        stats.wins.length === 0 &&
-        stats.lessons.length === 0 &&
-        !stats.avgMood &&
-        !stats.avgEnergy && (
-          <p className="mt-6 text-center text-gray-500">
-            No data for this week yet. Start your Morning Plan and Evening Reviews
-            to build your insights.
+      {/* Before Sunday: Progress Snapshot */}
+      {!(data.isWeekComplete || FORCE_SUNDAY_MODE) && (
+        <Card highlighted className="mb-8" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
+              <Target className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
+              Week in Progress
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                Needle Movers: {data.needleMoversCompleted}/{data.needleMoversTotal} ({needlePct}%)
+              </p>
+              <p className="text-sm text-gray-600 dark:text-white">
+                Pace: {pace}
+              </p>
+              {bestDayName && (
+                <p className="text-sm mt-1 text-gray-900 dark:text-white">
+                  Your best day so far: {bestDayName} ({bestDayData?.needleMoversCompleted ?? 0})
+                </p>
+              )}
+            </div>
+            <MrsDeerMessageBubble expression="thoughtful">
+              <p className="leading-relaxed text-gray-900 dark:text-white">
+                {generateProgressInsight(data.needleMoversCompleted, data.needleMoversTotal, bestDayName)}
+              </p>
+            </MrsDeerMessageBubble>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sunday: Full Analysis - Insight first, then wins/lessons */}
+      {(data.isWeekComplete || FORCE_SUNDAY_MODE) && (
+        <div className="space-y-8">
+          <CelebrationHeader
+            quote={generateCelebrationQuote(data.wins, data.lessons)}
+            dateRange={`${format(new Date(data.dateRange.start), 'MMM d')} – ${format(new Date(data.dateRange.end), 'MMM d, yyyy')}`}
+          />
+
+          {/* 1. Mrs. Deer, your AI companion's insight FIRST (auto-generated or from cron) */}
+          {(displayPrompt || (data.wins.length > 0 || data.lessons.length > 0)) && (
+            <Card highlighted className="mb-8 bg-amber-50 dark:bg-amber-900/30" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4">
+                  <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
+                    <Sparkles className="w-6 h-6" style={{ color: colors.amber.DEFAULT }} />
+                    Mrs. Deer, your AI companion&apos;s Weekly Reflection
+                  </CardTitle>
+                  {data.canRegenerateInsights && (
+                    <button
+                      type="button"
+                      onClick={handleGenerateInsight}
+                      disabled={generating}
+                      aria-label="Refresh insight"
+                      className="text-sm px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50"
+                      style={{ backgroundColor: colors.coral.DEFAULT, color: 'white' }}
+                    >
+                      {generating ? '…' : '↻ Refresh Insight'}
+                    </button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {displayPrompt ? (
+                  <>
+                    <div className="flex flex-col gap-4">
+                      <div className="flex justify-start">
+                        <MrsDeerAvatar expression="thoughtful" size="large" />
+                      </div>
+                      <MarkdownText className="leading-relaxed text-gray-900 dark:text-gray-100 dark:text-gray-100">
+                        {displayPrompt}
+                      </MarkdownText>
+                    </div>
+                    {!feedbackSent ? (
+                      <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-gray-200 dark:border-gray-700 dark:border-gray-700">
+                        <span className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mr-2">Was this helpful?</span>
+                        <button
+                          type="button"
+                          onClick={() => handleInsightFeedback('helpful')}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 dark:border-gray-700 text-sm font-medium hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 transition"
+                        >
+                          <ThumbsUp className="w-4 h-4" />
+                          Yes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInsightFeedback('not_quite_right')}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 dark:border-gray-700 text-sm font-medium hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 transition"
+                        >
+                          <ThumbsDown className="w-4 h-4" />
+                          Not quite
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInsightFeedback(insightFeedback === 'custom' ? null : 'custom')}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition ${insightFeedback === 'custom' ? 'border-[#EF725C] bg-[#FFF0EC] dark:bg-[#1E293B]' : 'border-gray-200 dark:border-gray-700 dark:border-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'}`}
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                          Actually...
+                        </button>
+                        {insightFeedback === 'custom' && (
+                          <div className="w-full mt-2 flex gap-2">
+                            <input
+                              type="text"
+                              value={customFeedbackText}
+                              onChange={(e) => setCustomFeedbackText(e.target.value)}
+                              placeholder="What I really learned was..."
+                              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
+                            />
+                            <Button
+                              size="sm"
+                              onClick={() => handleInsightFeedback('custom')}
+                              disabled={!customFeedbackText.trim()}
+                            >
+                              Send
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 pt-2">Thanks for your feedback! It helps Mrs. Deer, your AI companion get better.</p>
+                    )}
+                  </>
+                ) : generateError ? (
+                  <div className={`rounded-lg p-4 border ${
+                    generateError.includes('started')
+                      ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+                      : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                  }`}>
+                    <p className={`text-sm ${generateError.includes('started') ? 'text-blue-800 dark:text-blue-200' : 'font-medium text-red-800 dark:text-red-200'}`}>
+                      {generateError.includes('started') ? '' : 'AI insight failed'}
+                    </p>
+                    <p className={`text-sm mt-1 ${generateError.includes('started') ? 'text-blue-800 dark:text-blue-200' : 'text-red-700 dark:text-red-300 font-mono'}`}>
+                      {generateError}
+                    </p>
+                    {!generateError.includes('started') && (
+                      <button
+                        type="button"
+                        onClick={handleGenerateInsight}
+                        className="mt-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                        disabled={generating}
+                      >
+                        Try again
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                    {generating ? (
+                      <div className="flex flex-col items-center gap-4 w-full py-4">
+                        <MrsDeerAvatar expression="thoughtful" size="large" />
+                        <p className="text-sm text-gray-600 dark:text-white text-center">
+                          {generateError?.includes('started')
+                            ? 'Your insight is being generated in the background. You can navigate away and come back later.'
+                            : 'Mrs. Deer, your AI companion is reflecting on your week...'}
+                        </p>
+                        <div className="flex gap-1">
+                          <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: colors.coral.DEFAULT }} />
+                          <span className="w-2 h-2 rounded-full animate-pulse delay-100" style={{ backgroundColor: colors.coral.DEFAULT }} />
+                          <span className="w-2 h-2 rounded-full animate-pulse delay-200" style={{ backgroundColor: colors.coral.DEFAULT }} />
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-gray-600 dark:text-gray-400 text-sm">
+                        Your weekly reflection will appear here. It&apos;s generated every Monday for the previous week.
+                        {data.canRegenerateInsights && ' Use the refresh button above to generate it now.'}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {(patternForQuestion || allTopics.length > 0) && (
+            <Card className="mb-8">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
+                  <Sparkles className="w-5 h-5" style={{ color: colors.amber.DEFAULT }} />
+                  Patterns Mrs. Deer, your AI companion noticed
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <MrsDeerMessageBubble expression="thoughtful">
+                  <PatternQuestion pattern={patternForQuestion} allTopics={allTopics} />
+                </MrsDeerMessageBubble>
+              </CardContent>
+            </Card>
+          )}
+
+          {data.primaryGoal && (
+            <Card className="mb-8">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
+                  <Target className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
+                  Your Goal
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <GoalProgress
+                  primaryGoal={data.primaryGoal}
+                  progressItems={goalProgressItems}
+                  missingItem={goalMissing}
+                  mrsDeerQuestion={goalMrsDeerQuestion}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {data.wins.length > 0 && (
+            <Card className="mb-8">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
+                  <Award className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
+                  Your Top Wins
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <WinReflection
+                  wins={data.wins}
+                  favoriteIndices={favoriteWinIndices}
+                  onToggle={handleToggleFavoriteWin}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {data.lessons.length > 0 && (
+            <Card className="mb-8">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
+                  <Lightbulb className="w-5 h-5" style={{ color: colors.amber.DEFAULT }} />
+                  Your Key Insight
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <LessonInput
+                  lessons={data.lessons}
+                  keyIndices={keyLessonIndices}
+                  onToggle={handleToggleKeyLesson}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {(data.avgMood != null || data.avgEnergy != null) && (
+            <Card className="mb-8">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
+                  <Heart className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
+                  Mood & Energy
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <MoodChart
+                  days={moodChartDays}
+                  avgMood={data.avgMood}
+                  avgEnergy={data.avgEnergy}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+        </div>
+      )}
+
+      {data.tasksTotal === 0 &&
+        data.firesTotal === 0 &&
+        data.wins.length === 0 &&
+        data.lessons.length === 0 &&
+        !data.avgMood &&
+        !data.avgEnergy && (
+          <p className="text-center py-12 text-gray-600 dark:text-white">
+            No data for this week yet. Start your Morning Plan and Evening Reviews to build your insights.
           </p>
         )}
     </div>
   )
 }
-
-function StatBlock({
-  icon,
-  label,
-  value,
-  sub,
-  tooltip,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  sub?: string
-  tooltip?: string
-}) {
-  return (
-    <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 relative">
-      {tooltip && (
-        <div className="absolute top-3 right-3">
-          <InfoTooltip text={tooltip} />
-        </div>
-      )}
-      <div className="flex items-center gap-2 mb-1">{icon}</div>
-      <p className="text-sm text-gray-500">{label}</p>
-      <p className="text-2xl font-bold text-[#152b50] mt-1">{value}</p>
-      {sub && <p className="text-xs text-gray-500 mt-1">{sub}</p>}
-    </div>
-  )
-}
-

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserSession } from '@/lib/auth'
 import { getFullExperiments, createExperiment, updateExperiment } from '@/lib/analytics/experiments'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 async function requireAdmin(): Promise<{ ok: true } | NextResponse> {
   const session = await getUserSession()
   if (!session?.user?.is_admin) {

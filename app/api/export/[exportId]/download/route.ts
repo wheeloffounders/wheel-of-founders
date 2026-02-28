@@ -3,6 +3,9 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { getUserSession } from '@/lib/auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 const EXPORTS_BUCKET = 'exports'
 const SIGNED_URL_EXPIRY_SECONDS = 3600 // 1 hour
 
@@ -24,16 +27,19 @@ export async function GET(
 
     // Verify user owns this export (service role, but we filter by user_id)
     const db = getServerSupabase()
-    const { data: exportRecord, error: fetchError } = await db
+    const { data: exportRecordData, error: fetchError } = await db
       .from('data_exports')
       .select('id, user_id, file_name, file_url, status')
       .eq('id', exportId)
       .eq('user_id', session.user.id)
       .single()
 
-    if (fetchError || !exportRecord) {
+    if (fetchError || !exportRecordData) {
       return NextResponse.json({ error: 'Export not found' }, { status: 404 })
     }
+
+    type ExportRecord = { id: string; user_id: string; file_name: string; file_url: string; status: string }
+    const exportRecord = exportRecordData as ExportRecord
 
     if (exportRecord.status !== 'completed') {
       return NextResponse.json({ error: 'Export not ready' }, { status: 400 })

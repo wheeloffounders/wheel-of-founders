@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getUserSession } from '@/lib/auth'
+import { getServerSession } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 /** POST: Update user preference (e.g. planning_mode for Light Mode) */
 export async function POST(req: NextRequest) {
   try {
-    const session = await getUserSession()
+    const session = await getServerSession()
     if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+      return NextResponse.json(
+        { error: 'Unauthorized', message: 'Please log in to update preferences.' },
+        { status: 401, headers: { 'Content-Type': 'application/json' } }
+      )
     }
 
     const body = await req.json()
@@ -18,16 +24,13 @@ export async function POST(req: NextRequest) {
     }
 
     const db = getServerSupabase()
-    const { error } = await db
-      .from('user_profiles')
-      .upsert(
-        {
-          id: session.user.id,
-          ...(planning_mode && { planning_mode }),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      )
+    const upsertPayload = {
+      id: session.user.id,
+      ...(planning_mode && { planning_mode }),
+      updated_at: new Date().toISOString(),
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit user_profiles in this context
+    const { error } = await (db.from('user_profiles') as any).upsert(upsertPayload, { onConflict: 'id' })
 
     if (error) {
       return NextResponse.json({ error: 'Failed to save preference' }, { status: 500 })
@@ -39,12 +42,12 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** GET: Read user preferences */
+/** GET: Read user preferences. Returns defaults when not authenticated (avoids 401 breaking UI). */
 export async function GET() {
   try {
-    const session = await getUserSession()
+    const session = await getServerSession()
     if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+      return NextResponse.json({ planning_mode: 'full' })
     }
 
     const db = getServerSupabase()
@@ -57,8 +60,9 @@ export async function GET() {
     if (error) {
       return NextResponse.json({ planning_mode: 'full' })
     }
+    const prefs = (data as { planning_mode?: 'full' | 'light' } | null) ?? null
     return NextResponse.json({
-      planning_mode: data?.planning_mode ?? 'full',
+      planning_mode: prefs?.planning_mode ?? 'full',
     })
   } catch {
     return NextResponse.json({ planning_mode: 'full' })

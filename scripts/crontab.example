@@ -1,0 +1,18 @@
+# Wheel of Founders - Backup Cron Jobs
+# Install: crontab -e
+# Then paste the lines below (adjust paths and add WOF_BACKUP_PASSWORD)
+
+# Daily at 2am: backup env vars
+0 2 * * * cd /Users/vanieho/Desktop/wheel-of-founders && WOF_BACKUP_PASSWORD="YOUR_PASSWORD" ./scripts/backup-env-local.sh >> ~/.wof-backups/cron.log 2>&1
+
+# Daily at 3am: backup database
+0 3 * * * cd /Users/vanieho/Desktop/wheel-of-founders && ./scripts/backup-supabase.sh >> ~/.wof-backups/cron.log 2>&1
+
+# Daily at 4am: sync to cloud
+0 4 * * * cd /Users/vanieho/Desktop/wheel-of-founders && ./scripts/backup-env-cloud.sh >> ~/.wof-backups/cron.log 2>&1
+
+# Daily at 5am: backup Vercel config
+0 5 * * * cd /Users/vanieho/Desktop/wheel-of-founders && ./scripts/backup-vercel-config.sh >> ~/.wof-backups/cron.log 2>&1
+
+# Every 6 hours: check backups are fresh
+0 */6 * * * cd /Users/vanieho/Desktop/wheel-of-founders && WOF_ALERT_EMAIL="you@example.com" ./scripts/backup-monitor.sh >> ~/.wof-backups/cron.log 2>&1

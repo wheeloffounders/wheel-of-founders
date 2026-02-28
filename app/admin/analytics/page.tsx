@@ -49,10 +49,10 @@ function MetricCard({
   icon?: React.ComponentType<{ className?: string }>
 }) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border-l-4 border-[#152b50]">
+    <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6 border-l-4 border-[#152b50]">
       {Icon && <Icon className="w-8 h-8 text-[#152b50] dark:text-[#ef725c] mb-2" />}
-      <h3 className="text-sm text-gray-600 dark:text-gray-400 mb-1">{title}</h3>
-      <div className="text-2xl font-bold text-gray-900 dark:text-white">{value}</div>
+      <h3 className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-400 mb-1">{title}</h3>
+      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 dark:text-white">{value}</div>
       {change !== undefined && (
         <div className={`text-sm mt-1 ${change >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
           {change >= 0 ? '↑' : '↓'} {Math.abs(change).toFixed(1)}%
@@ -72,13 +72,13 @@ function ChartCard({
   exportable?: boolean
 }) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+    <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h2>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 dark:text-white">{title}</h2>
         {exportable && (
           <button
             type="button"
-            className="flex items-center gap-1 text-sm text-[#152b50] hover:text-[#ef725c] transition"
+            className="flex items-center gap-1 text-sm text-[#152b50] dark:text-[#E2E8F0] hover:text-[#ef725c] transition"
           >
             <Download className="w-4 h-4" />
             Export
@@ -159,7 +159,7 @@ export default function AdminAnalyticsPage() {
     const init = async () => {
       const session = await getUserSession()
       if (!session?.user?.is_admin) {
-        router.push('/')
+        router.push('/dashboard')
         return
       }
       loadAll()
@@ -271,7 +271,7 @@ export default function AdminAnalyticsPage() {
     : []
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 dark:bg-gray-900">
       {/* Header */}
       <div className="bg-[#152b50] text-white px-6 py-6 shadow-lg">
         <h1 className="text-2xl font-bold">Analytics Dashboard</h1>
@@ -287,7 +287,7 @@ export default function AdminAnalyticsPage() {
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
                 activeTab === tab.id
                   ? 'bg-[#ef725c] text-white'
-                  : 'bg-white/10 hover:bg-white/20 text-white'
+                  : 'bg-white dark:bg-gray-800/10 hover:bg-white dark:bg-gray-800/20 text-white'
               }`}
             >
               <tab.icon className="w-4 h-4" />
@@ -299,13 +299,13 @@ export default function AdminAnalyticsPage() {
         <div className="flex gap-2 mt-4">
           <button
             onClick={() => setTimeframe('7d')}
-            className={`px-3 py-1.5 rounded text-sm ${timeframe === '7d' ? 'bg-[#ef725c]' : 'bg-white/10 hover:bg-white/20'}`}
+            className={`px-3 py-1.5 rounded text-sm ${timeframe === '7d' ? 'bg-[#ef725c]' : 'bg-white dark:bg-gray-800/10 hover:bg-white dark:bg-gray-800/20'}`}
           >
             7 Days
           </button>
           <button
             onClick={() => setTimeframe('30d')}
-            className={`px-3 py-1.5 rounded text-sm ${timeframe === '30d' ? 'bg-[#ef725c]' : 'bg-white/10 hover:bg-white/20'}`}
+            className={`px-3 py-1.5 rounded text-sm ${timeframe === '30d' ? 'bg-[#ef725c]' : 'bg-white dark:bg-gray-800/10 hover:bg-white dark:bg-gray-800/20'}`}
           >
             30 Days
           </button>
@@ -313,7 +313,7 @@ export default function AdminAnalyticsPage() {
             <select
               value={funnelName}
               onChange={(e) => setFunnelName(e.target.value)}
-              className="ml-2 px-3 py-1.5 rounded text-sm bg-white/10 border border-white/20 text-white"
+              className="ml-2 px-3 py-1.5 rounded text-sm bg-white dark:bg-gray-800/10 border border-white/20 text-white"
             >
               <option value="daily_flow">Daily Flow</option>
               <option value="morning_flow">Morning Flow</option>
@@ -326,7 +326,7 @@ export default function AdminAnalyticsPage() {
 
       <div className="p-6">
         {loading && activeTab === 'overview' ? (
-          <p className="text-gray-500">Loading...</p>
+          <p className="text-gray-500 dark:text-gray-500">Loading...</p>
         ) : (
           <>
             {/* Overview Tab */}
@@ -390,12 +390,12 @@ export default function AdminAnalyticsPage() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                  <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6">
                     <h2 className="text-xl font-bold mb-4 dark:text-white">Top Struggles</h2>
                     <div className="space-y-3 max-h-64 overflow-y-auto">
                       {struggles.slice(0, 10).map((p, i) => (
                         <div key={i} className="flex justify-between items-center">
-                          <span className="text-gray-800 dark:text-gray-200 text-sm truncate flex-1 mr-2">
+                          <span className="text-gray-900 dark:text-gray-100 dark:text-gray-200 text-sm truncate flex-1 mr-2">
                             &quot;{p.pattern_text}&quot;
                           </span>
                           <span className="bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 px-3 py-1 rounded-full text-sm shrink-0">
@@ -404,16 +404,16 @@ export default function AdminAnalyticsPage() {
                         </div>
                       ))}
                       {struggles.length === 0 && (
-                        <p className="text-gray-500">No struggles recorded yet.</p>
+                        <p className="text-gray-500 dark:text-gray-500">No struggles recorded yet.</p>
                       )}
                     </div>
                   </div>
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                  <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6">
                     <h2 className="text-xl font-bold mb-4 dark:text-white">Top Wins</h2>
                     <div className="space-y-3 max-h-64 overflow-y-auto">
                       {wins.slice(0, 10).map((p, i) => (
                         <div key={i} className="flex justify-between items-center">
-                          <span className="text-gray-800 dark:text-gray-200 text-sm truncate flex-1 mr-2">
+                          <span className="text-gray-900 dark:text-gray-100 dark:text-gray-200 text-sm truncate flex-1 mr-2">
                             &quot;{p.pattern_text}&quot;
                           </span>
                           <span className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200 px-3 py-1 rounded-full text-sm shrink-0">
@@ -421,7 +421,7 @@ export default function AdminAnalyticsPage() {
                           </span>
                         </div>
                       ))}
-                      {wins.length === 0 && <p className="text-gray-500">No wins recorded yet.</p>}
+                      {wins.length === 0 && <p className="text-gray-500 dark:text-gray-500">No wins recorded yet.</p>}
                     </div>
                   </div>
                 </div>
@@ -454,7 +454,7 @@ export default function AdminAnalyticsPage() {
                 )}
 
                 {dailyStats.length === 0 && topPatterns.length === 0 && (
-                  <p className="text-gray-500">
+                  <p className="text-gray-500 dark:text-gray-500">
                     No analytics data yet. Run the daily cron job to populate stats.
                   </p>
                 )}
@@ -474,23 +474,24 @@ export default function AdminAnalyticsPage() {
                             fill="#000"
                             stroke="none"
                             dataKey="name"
-                            formatter={(v: string, entry: { value: number }) =>
-                              `${v}: ${entry.value} users`
+                            formatter={
+                              ((v: string, entry?: { value: number }) =>
+                                `${v}: ${entry?.value ?? 0} users`) as (label: unknown) => string
                             }
                           />
                         </Funnel>
                       </FunnelChart>
                     </ResponsiveContainer>
                   ) : (
-                    <p className="text-gray-500 py-12">
+                    <p className="text-gray-500 dark:text-gray-500 py-12">
                       No funnel events yet. Funnel steps are recorded when users complete actions.
                     </p>
                   )}
                 </ChartCard>
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+                <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
                   <table className="w-full">
                     <thead>
-                      <tr className="bg-gray-100 dark:bg-gray-700">
+                      <tr className="bg-gray-50 dark:bg-gray-900 dark:bg-gray-700">
                         <th className="px-4 py-3 text-left font-semibold">Step</th>
                         <th className="px-4 py-3 text-left font-semibold">Users</th>
                         <th className="px-4 py-3 text-left font-semibold">Completion Rate</th>
@@ -573,7 +574,7 @@ export default function AdminAnalyticsPage() {
                       </table>
                     </div>
                   ) : (
-                    <p className="text-gray-500 py-12">
+                    <p className="text-gray-500 dark:text-gray-500 py-12">
                       No cohort data. Refresh the cohort_retention materialized view.
                     </p>
                   )}
@@ -607,7 +608,7 @@ export default function AdminAnalyticsPage() {
                           key={i}
                           className="flex justify-between items-center py-2 border-b dark:border-gray-700 last:border-0"
                         >
-                          <span className="font-mono text-sm text-gray-800 dark:text-gray-200 truncate flex-1 mr-4">
+                          <span className="font-mono text-sm text-gray-900 dark:text-gray-100 dark:text-gray-200 truncate flex-1 mr-4">
                             {path}
                           </span>
                           <span className="text-[#152b50] dark:text-[#ef725c] font-semibold shrink-0">
@@ -617,7 +618,7 @@ export default function AdminAnalyticsPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-gray-500 py-12">
+                    <p className="text-gray-500 dark:text-gray-500 py-12">
                       No journey data. Page views are recorded when users navigate.
                     </p>
                   )}
@@ -676,18 +677,18 @@ export default function AdminAnalyticsPage() {
                         key={i}
                         className="flex items-center gap-4 py-2 border-b dark:border-gray-700 text-sm"
                       >
-                        <span className="text-gray-500 dark:text-gray-400 shrink-0">
+                        <span className="text-gray-500 dark:text-gray-500 dark:text-gray-400 shrink-0">
                           {a.at ? new Date(a.at).toLocaleTimeString() : '—'}
                         </span>
                         <span className="font-medium">{a.feature}</span>
-                        <span className="text-gray-600 dark:text-gray-300">{a.action}</span>
+                        <span className="text-gray-700 dark:text-gray-300 dark:text-gray-300">{a.action}</span>
                         {a.page && (
-                          <span className="font-mono text-gray-500">{a.page}</span>
+                          <span className="font-mono text-gray-500 dark:text-gray-500">{a.page}</span>
                         )}
                       </div>
                     ))}
                     {(realtime?.recentActivity ?? []).length === 0 && (
-                      <p className="text-gray-500 py-8">No recent activity.</p>
+                      <p className="text-gray-500 dark:text-gray-500 py-8">No recent activity.</p>
                     )}
                   </div>
                 </ChartCard>
@@ -703,7 +704,7 @@ export default function AdminAnalyticsPage() {
                       {experiments.map((exp) => (
                         <div
                           key={exp.id}
-                          className="p-4 rounded-lg border dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50"
+                          className="p-4 rounded-lg border dark:border-gray-600 bg-gray-50 dark:bg-gray-900 dark:bg-gray-700/50"
                         >
                           <div className="flex items-center justify-between mb-3">
                             <h3 className="font-semibold text-lg">{exp.name}</h3>
@@ -712,7 +713,7 @@ export default function AdminAnalyticsPage() {
                                 exp.status === 'running'
                                   ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200'
                                   : exp.status === 'completed'
-                                    ? 'bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200'
+                                    ? 'bg-gray-200 text-gray-900 dark:text-gray-100 dark:bg-gray-600 dark:text-gray-200'
                                     : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200'
                               }`}
                             >
@@ -721,11 +722,11 @@ export default function AdminAnalyticsPage() {
                           </div>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                             {exp.variants.map((v) => (
-                              <div key={v} className="p-2 rounded bg-white dark:bg-gray-800">
+                              <div key={v} className="p-2 rounded bg-white dark:bg-gray-800 dark:bg-gray-800">
                                 <div className="font-medium text-[#152b50] dark:text-[#ef725c]">
                                   {v}
                                 </div>
-                                <div className="text-gray-600 dark:text-gray-300">
+                                <div className="text-gray-700 dark:text-gray-300 dark:text-gray-300">
                                   Assigned: {exp.assignments[v] ?? 0}
                                 </div>
                                 {exp.events[v] && (
@@ -744,7 +745,7 @@ export default function AdminAnalyticsPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-gray-500 py-12">
+                    <p className="text-gray-500 dark:text-gray-500 py-12">
                       No experiments yet. Create experiments and assign variants to users.
                     </p>
                   )}

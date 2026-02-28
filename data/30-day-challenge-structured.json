@@ -1,0 +1,574 @@
+{
+  "days": [
+    {
+      "date": "2026-01-21",
+      "morning": {
+        "tasks": [
+          {"text": "Set up project structure for Wheel of Founders app", "completed": true, "is_needle_mover": true},
+          {"text": "Research founder coaching frameworks", "completed": true, "is_needle_mover": true},
+          {"text": "Create initial wireframes for morning/evening flow", "completed": true, "is_needle_mover": false}
+        ],
+        "decisions": [
+          {"text": "Build for founders first—they need this most", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 4,
+        "wins": ["Project structure in place, clear direction"],
+        "lessons": ["Starting simple beats over-planning"]
+      }
+    },
+    {
+      "date": "2026-01-22",
+      "morning": {
+        "tasks": [
+          {"text": "Build morning plan UI (Power List)", "completed": true, "is_needle_mover": true},
+          {"text": "Add decision log component", "completed": true, "is_needle_mover": false},
+          {"text": "Connect to Supabase schema", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Max 3 tasks per day—constraint forces focus", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 3,
+        "wins": ["Morning flow works end-to-end"],
+        "lessons": ["Supabase RLS needs careful setup"]
+      }
+    },
+    {
+      "date": "2026-01-23",
+      "morning": {
+        "tasks": [
+          {"text": "Build evening review UI", "completed": true, "is_needle_mover": true},
+          {"text": "Add mood/energy sliders", "completed": true, "is_needle_mover": false},
+          {"text": "Wins and lessons input fields", "completed": true, "is_needle_mover": false}
+        ],
+        "decisions": [
+          {"text": "Wins and lessons as free text—don't over-structure", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 3,
+        "wins": "Full day loop: morning plan → evening review",
+        "lessons": "Simple UI beats complex forms"
+      }
+    },
+    {
+      "date": "2026-01-24",
+      "morning": {
+        "tasks": [
+          {"text": "Create Mrs. Deer persona and voice", "completed": true, "is_needle_mover": true},
+          {"text": "Design first coaching prompts", "completed": true, "is_needle_mover": true},
+          {"text": "Set up basic dashboard layout", "completed": true, "is_needle_mover": false}
+        ],
+        "decisions": [
+          {"text": "Mrs. Deer should feel gentle, not pushy", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 5,
+        "energy": 4,
+        "wins": "Mrs. Deer persona feels right",
+        "lessons": "Voice matters—gentle beats aggressive"
+      }
+    },
+    {
+      "date": "2026-01-25",
+      "morning": {
+        "tasks": [
+          {"text": "Integrate AI for Mrs. Deer responses", "completed": true, "is_needle_mover": true},
+          {"text": "Test morning prompt generation", "completed": true, "is_needle_mover": false},
+          {"text": "Fix Supabase auth flow", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Use AI for insight, not for replacing user input", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 3,
+        "wins": "Auth works, AI prompts generating",
+        "lessons": "API rate limits—batch when possible"
+      }
+    },
+    {
+      "date": "2026-01-26",
+      "morning": {
+        "tasks": [
+          {"text": "Build weekly insights page", "completed": true, "is_needle_mover": true},
+          {"text": "Add pattern detection for wins/lessons", "completed": true, "is_needle_mover": true},
+          {"text": "Family time—no work after 6pm", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Son's bedtime is sacred—no laptop after", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 4,
+        "wins": "Weekly patterns working, family dinner uninterrupted",
+        "lessons": "Boundaries work when enforced"
+      }
+    },
+    {
+      "date": "2026-01-27",
+      "morning": {
+        "tasks": [
+          {"text": "Polish dashboard UI", "completed": true, "is_needle_mover": false},
+          {"text": "Add needle mover indicators", "completed": true, "is_needle_mover": true},
+          {"text": "Test full flow with real data", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Needle movers = what changes trajectory", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 3,
+        "wins": "Dashboard tells a story",
+        "lessons": "Visual hierarchy guides attention"
+      }
+    },
+    {
+      "date": "2026-01-28",
+      "morning": {
+        "tasks": [
+          {"text": "Start Reddit outreach for beta", "completed": true, "is_needle_mover": true},
+          {"text": "Write first build-in-public post", "completed": true, "is_needle_mover": true},
+          {"text": "Fix mobile responsive issues", "completed": true, "is_needle_mover": false}
+        ],
+        "decisions": [
+          {"text": "Build in public—share the journey", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 3,
+        "energy": 3,
+        "wins": "First Reddit post live",
+        "lessons": "Subreddit rules vary—read first"
+      }
+    },
+    {
+      "date": "2026-01-29",
+      "morning": {
+        "tasks": [
+          {"text": "Create Marketing OS spreadsheet", "completed": true, "is_needle_mover": true},
+          {"text": "Track Reddit/Twitter outreach", "completed": true, "is_needle_mover": false},
+          {"text": "Delegate husband to help with networking", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Husband can own Reddit—I focus on product", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 4,
+        "wins": "Marketing OS built, delegation working",
+        "lessons": "Systems beat ad-hoc"
+      }
+    },
+    {
+      "date": "2026-01-30",
+      "morning": {
+        "tasks": [
+          {"text": "Add action plan options (My Zone, Systemize, etc)", "completed": true, "is_needle_mover": true},
+          {"text": "Implement proactive/reactive decision tracking", "completed": true, "is_needle_mover": false},
+          {"text": "Son's playground time—fully present", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "When with son, phone away", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 5,
+        "energy": 4,
+        "wins": "Action mix adds depth, son had great day",
+        "lessons": "Presence is a practice"
+      }
+    },
+    {
+      "date": "2026-01-31",
+      "morning": {
+        "tasks": [
+          {"text": "Build emergency/firefighter mode", "completed": true, "is_needle_mover": true},
+          {"text": "Add fires to dashboard", "completed": true, "is_needle_mover": false},
+          {"text": "Beta list: 5 new signups target", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Fires happen—track them, don't pretend they don't", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 3,
+        "wins": "Emergency mode works, 6 signups",
+        "lessons": "Reactive work is still work"
+      }
+    },
+    {
+      "date": "2026-02-01",
+      "morning": {
+        "tasks": [
+          {"text": "Weekly email automation setup", "completed": true, "is_needle_mover": true},
+          {"text": "Improve Mrs. Deer response rules", "completed": true, "is_needle_mover": true},
+          {"text": "Fix timezone handling", "completed": true, "is_needle_mover": false}
+        ],
+        "decisions": [
+          {"text": "Weekly digest = accountability without daily pressure", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 4,
+        "wins": "Email flow ready, Mrs. Deer smarter",
+        "lessons": "Automation saves cognitive load"
+      }
+    },
+    {
+      "date": "2026-02-02",
+      "morning": {
+        "tasks": [
+          {"text": "Profile page for user background", "completed": true, "is_needle_mover": true},
+          {"text": "Personalize prompts from profile", "completed": true, "is_needle_mover": true},
+          {"text": "Family day—Starbucks build session with husband", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Us time matters—schedule it", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 5,
+        "energy": 4,
+        "wins": "Profile adds personalization, quality time with husband",
+        "lessons": "Side-by-side work counts as together"
+      }
+    },
+    {
+      "date": "2026-02-03",
+      "morning": {
+        "tasks": [
+          {"text": "Beta list: 10 more signups", "completed": true, "is_needle_mover": true},
+          {"text": "Reddit DM templates", "completed": true, "is_needle_mover": false},
+          {"text": "Son's nap = deep work block", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Nap time is sacred for focus", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 3,
+        "wins": "12 signups, templates converting",
+        "lessons": "DM template iteration pays off"
+      }
+    },
+    {
+      "date": "2026-02-04",
+      "morning": {
+        "tasks": [
+          {"text": "Fix Marketing OS bug (Reddit tracking)", "completed": true, "is_needle_mover": true},
+          {"text": "Husband feedback on Marketing OS", "completed": true, "is_needle_mover": true},
+          {"text": "Core app: Virtuous Loop implementation", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Husband using Marketing OS—close the feedback loop", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 4,
+        "wins": "Bug fixed, husband gave valuable insights",
+        "lessons": "Real users find what you miss"
+      }
+    },
+    {
+      "date": "2026-02-05",
+      "morning": {
+        "tasks": [
+          {"text": "Connect Mrs. Deer to AI engine", "completed": true, "is_needle_mover": true},
+          {"text": "Implement husband's Marketing OS enhancement", "completed": true, "is_needle_mover": true},
+          {"text": "Grow beta list in crack times", "completed": true, "is_needle_mover": false}
+        ],
+        "decisions": [
+          {"text": "When with son, 100% there. Work in cracks only.", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 3,
+        "wins": "AI connected, 6 onboarded, played with son when he needed",
+        "lessons": "Switched laptop to phone while cuddling—system bends"
+      }
+    },
+    {
+      "date": "2026-02-06",
+      "morning": {
+        "tasks": [
+          {"text": "Continue app build—what's missing before strangers touch it?", "completed": true, "is_needle_mover": true},
+          {"text": "Outreach: Reddit back online, Marketing OS bug fixed", "completed": true, "is_needle_mover": true},
+          {"text": "Son's quality time—cherish, not optimize", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "7 is a benchmark, not a cage", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 3,
+        "energy": 3,
+        "wins": "Profile page added, app feels more personal",
+        "lessons": "Yelling exhausting and useless—need better approach with son"
+      }
+    },
+    {
+      "date": "2026-02-07",
+      "morning": {
+        "tasks": [
+          {"text": "Morning build with husband at Starbucks", "completed": true, "is_needle_mover": true},
+          {"text": "Son quality time: lunch + playground with friend", "completed": true, "is_needle_mover": true},
+          {"text": "Outreach: Reddit, Twitter", "completed": true, "is_needle_mover": false}
+        ],
+        "decisions": [
+          {"text": "Us time matters even if coffee shop isn't perfect", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 5,
+        "energy": 4,
+        "wins": "Son's smile at playground, breakfast date with husband",
+        "lessons": "Explore better cafes—too loud, hard chairs"
+      }
+    },
+    {
+      "date": "2026-02-08",
+      "morning": {
+        "tasks": [
+          {"text": "Build app—near 90% done", "completed": true, "is_needle_mover": true},
+          {"text": "Outreach continues—permission to DM 8-10%", "completed": true, "is_needle_mover": true},
+          {"text": "Son time—no agenda, whatever he needs", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Rest when body says slow down—treat as data not failure", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 4,
+        "wins": "First successful r/entrepreneurs post, 100 Twitter followers",
+        "lessons": "Track weekly not daily—less stress"
+      }
+    },
+    {
+      "date": "2026-02-09",
+      "morning": {
+        "tasks": [
+          {"text": "Wrap up app building", "completed": true, "is_needle_mover": true},
+          {"text": "Outreach + evaluate—sharper pain point", "completed": true, "is_needle_mover": true},
+          {"text": "Plan beta launch—Tuesday next week", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Pain point too broad—more specific next round", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 3,
+        "energy": 3,
+        "wins": "App on track, Reddit weekly plan in place",
+        "lessons": "Plan for worst—might be zero paid, need Plan B"
+      }
+    },
+    {
+      "date": "2026-02-10",
+      "morning": {
+        "tasks": [
+          {"text": "Continue app UX + debugging", "completed": true, "is_needle_mover": true},
+          {"text": "Beta launch prep: emails, screenshots", "completed": true, "is_needle_mover": true},
+          {"text": "Family time—uninterrupted when they need me", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "If nap time disappears, building time does. That's not failure.", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 4,
+        "wins": "App looks nicer, son had great day",
+        "lessons": "Good day for him = good day for me"
+      }
+    },
+    {
+      "date": "2026-02-11",
+      "morning": {
+        "tasks": [
+          {"text": "Full Turbo on Core App—deep immersive build", "completed": true, "is_needle_mover": true},
+          {"text": "Network & test Marketing OS in Reddit/FB communities", "completed": true, "is_needle_mover": true},
+          {"text": "Grow beta list in crack times", "completed": true, "is_needle_mover": false}
+        ],
+        "decisions": [
+          {"text": "Marketing OS app closed during Core App build block—protect flow", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 4,
+        "wins": "All tasks done, 21 beta signups, husband using Marketing OS, system holds me when everything else is a mess",
+        "lessons": "Son was naughty, scolded louder than intended—felt bad"
+      }
+    },
+    {
+      "date": "2026-02-12",
+      "morning": {
+        "tasks": [
+          {"text": "Connect Mrs. Deer to AI—give her voice an engine", "completed": true, "is_needle_mover": true},
+          {"text": "Implement husband's Marketing OS enhancement", "completed": true, "is_needle_mover": true},
+          {"text": "Grow beta list in crack time", "completed": true, "is_needle_mover": false}
+        ],
+        "decisions": [
+          {"text": "When with son, 100% there. Work lives only in cracks.", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 4,
+        "wins": "All 3 done, 6 onboarded, switched template got 2-3 emails, cuddled son during nap",
+        "lessons": "First respectful decline after DM—made him rethink templates"
+      }
+    },
+    {
+      "date": "2026-02-13",
+      "morning": {
+        "tasks": [
+          {"text": "Continue building app—what's missing before strangers touch it?", "completed": true, "is_needle_mover": true},
+          {"text": "Outreach: Reddit back online, Marketing OS bug fixed", "completed": true, "is_needle_mover": true},
+          {"text": "Son's quality time—cherish, not optimize", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Goal isn't same number every day—average trending up while life intact", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 3,
+        "energy": 3,
+        "wins": "All 3 done, 1 Reddit converted, played with son and new car toys",
+        "lessons": "Trust body: knew should stop last night, today too tired for outreach"
+      }
+    },
+    {
+      "date": "2026-02-14",
+      "morning": {
+        "tasks": [
+          {"text": "Morning build with husband at Starbucks", "completed": true, "is_needle_mover": true},
+          {"text": "Son quality time: lunch + playground with Charlotte", "completed": true, "is_needle_mover": true},
+          {"text": "Outreach: Reddit, Twitter", "completed": true, "is_needle_mover": false}
+        ],
+        "decisions": [
+          {"text": "Explore better cafes—Starbucks table too small, chairs hard", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 5,
+        "energy": 4,
+        "wins": "Son's smile kicking ball, happy talking whole way home, breakfast date with husband",
+        "lessons": "Low conversion (3) expected—weekend, family day"
+      }
+    },
+    {
+      "date": "2026-02-15",
+      "morning": {
+        "tasks": [
+          {"text": "Build app—near 90% done", "completed": true, "is_needle_mover": true},
+          {"text": "Outreach continues", "completed": true, "is_needle_mover": true},
+          {"text": "Son time—no agenda, whatever he needs", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Validation comes from paid users. Rest when body says slow down.", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 4,
+        "wins": "First successful r/entrepreneurs post, 5 comments in 15 mins, 100 followers—celebrated with beer",
+        "lessons": "Try different approach with son—reasoning works momentarily"
+      }
+    },
+    {
+      "date": "2026-02-16",
+      "morning": {
+        "tasks": [
+          {"text": "Wrap up app building", "completed": true, "is_needle_mover": true},
+          {"text": "Outreach + evaluate—sharper pain point", "completed": true, "is_needle_mover": true},
+          {"text": "Plan beta launch—Tuesday next week", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Pain point too broad—more specific: 17 tabs open, not founder overwhelm", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 3,
+        "energy": 3,
+        "wins": "App on track, Reddit weekly plan, revisited old approach with son",
+        "lessons": "Pessimistic today—what if none turn paid? Plan for worst."
+      }
+    },
+    {
+      "date": "2026-02-17",
+      "morning": {
+        "tasks": [
+          {"text": "Continue app UX + debugging", "completed": true, "is_needle_mover": true},
+          {"text": "Beta launch prep: emails, screenshots", "completed": true, "is_needle_mover": true},
+          {"text": "Family time—uninterrupted when they need me", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "3 day holiday—system bends. App waits, his childhood doesn't.", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 4,
+        "energy": 4,
+        "wins": "App looks nicer, son had great day, revisit approach with son working",
+        "lessons": "No outreach or beta prep—no time"
+      }
+    },
+    {
+      "date": "2026-02-18",
+      "morning": {
+        "tasks": [
+          {"text": "Continue app UX—debug, polish until ready", "completed": true, "is_needle_mover": true},
+          {"text": "Holiday mode: family time, presence over productivity", "completed": false, "is_needle_mover": true},
+          {"text": "Beta launch prep: emails, screenshots", "completed": false, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Banned from subreddit—pivot to Facebook, LinkedIn, Indie Hackers", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 3,
+        "energy": 3,
+        "wins": "App debugging progress",
+        "lessons": "Itch to fix overrode presence—husband took son to playground while I worked"
+      }
+    },
+    {
+      "date": "2026-02-19",
+      "morning": {
+        "tasks": [
+          {"text": "Finish enough version of app to close laptop", "completed": true, "is_needle_mover": true},
+          {"text": "Beta launch prep: final emails", "completed": true, "is_needle_mover": true},
+          {"text": "Celebrate Day 30—family time", "completed": true, "is_needle_mover": true}
+        ],
+        "decisions": [
+          {"text": "Finished enough beats perfect. Close laptop and mean it.", "is_proactive": true}
+        ]
+      },
+      "evening": {
+        "mood": 5,
+        "energy": 4,
+        "wins": "30 days of building app, community, and new relationship with myself",
+        "lessons": "Awareness is where change starts"
+      }
+    }
+  ]
+}

@@ -27,19 +27,19 @@ export function HistoryAccessGate({ user, children, date }: HistoryAccessGatePro
         </div>
 
         {/* Upgrade overlay */}
-        <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm rounded-xl">
+        <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-800/80 backdrop-blur-sm rounded-xl">
           <div className="text-center p-8 max-w-md">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-[#ef725c] to-[#152b50] mb-4">
               <Lock className="w-8 h-8 text-white" />
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
               🔒 Unlock Your Full History
             </h3>
-            <p className="text-gray-600 mb-4">
+            <p className="text-gray-700 dark:text-gray-300 mb-4">
               Free tier shows last 2 days only. Entries older than{' '}
               <strong>{format(cutoffDate, 'MMM d, yyyy')}</strong> are locked.
             </p>
-            <p className="text-sm text-gray-500 mb-6">
+            <p className="text-sm text-gray-500 dark:text-gray-500 mb-6">
               Upgrade to Pro to view unlimited history and unlock AI-powered insights.
             </p>
             <button

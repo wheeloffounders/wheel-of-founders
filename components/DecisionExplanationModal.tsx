@@ -16,14 +16,14 @@ export function DecisionExplanationModal({ isOpen, onClose }: DecisionExplanatio
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto"
+        className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-2xl font-semibold text-[#152b50]">Understanding Decision Types</h3>
+          <h3 className="text-2xl font-semibold text-[#152b50] dark:text-[#E2E8F0]">Understanding Decision Types</h3>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition"
+            className="text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300 transition"
             aria-label="Close"
           >
             <X className="w-6 h-6" />
@@ -31,7 +31,7 @@ export function DecisionExplanationModal({ isOpen, onClose }: DecisionExplanatio
         </div>
 
         <div className="mb-6">
-          <p className="text-gray-700 mb-4">
+          <p className="text-gray-700 dark:text-gray-300 mb-4">
             Every decision can be classified along two dimensions: <strong>Needle Mover</strong> and{' '}
             <strong>Initiative</strong>. Understanding where your decisions fall helps you see patterns
             in your decision-making.
@@ -40,51 +40,51 @@ export function DecisionExplanationModal({ isOpen, onClose }: DecisionExplanatio
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
-                <tr className="bg-gray-50">
-                  <th className="border border-gray-300 p-3 text-left font-semibold text-gray-900"></th>
-                  <th className="border border-gray-300 p-3 text-center font-semibold text-gray-900">
+                <tr className="bg-gray-50 dark:bg-gray-900">
+                  <th className="border border-gray-300 dark:border-gray-600 p-3 text-left font-semibold text-gray-900 dark:text-gray-100"></th>
+                  <th className="border border-gray-300 dark:border-gray-600 p-3 text-center font-semibold text-gray-900 dark:text-gray-100">
                     Proactive (You initiated)
                   </th>
-                  <th className="border border-gray-300 p-3 text-center font-semibold text-gray-900">
+                  <th className="border border-gray-300 dark:border-gray-600 p-3 text-center font-semibold text-gray-900 dark:text-gray-100">
                     Reactive (Response)
                   </th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td className="border border-gray-300 p-3 font-semibold text-gray-900 bg-gray-50">
+                  <td className="border border-gray-300 dark:border-gray-600 p-3 font-semibold text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-900">
                     <strong>Needle Mover</strong>
                   </td>
-                  <td className="border border-gray-300 p-4 bg-green-50 border-green-300">
+                  <td className="border border-gray-300 dark:border-gray-600 p-4 bg-green-50 border-green-300">
                     <strong className="text-green-800">Strategic Building</strong>
                     <br />
-                    <span className="text-sm text-gray-700">
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
                       Intentional growth decision you initiated
                     </span>
                   </td>
-                  <td className="border border-gray-300 p-4 bg-blue-50 border-blue-300">
+                  <td className="border border-gray-300 dark:border-gray-600 p-4 bg-blue-50 border-blue-300">
                     <strong className="text-blue-800">Adaptive Execution</strong>
                     <br />
-                    <span className="text-sm text-gray-700">
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
                       Might be your most important pivot—responding to change with high impact
                     </span>
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-gray-300 p-3 font-semibold text-gray-900 bg-gray-50">
+                  <td className="border border-gray-300 dark:border-gray-600 p-3 font-semibold text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-900">
                     <strong>Not Needle Mover</strong>
                   </td>
-                  <td className="border border-gray-300 p-4 bg-yellow-50 border-yellow-300">
+                  <td className="border border-gray-300 dark:border-gray-600 p-4 bg-yellow-50 border-yellow-300">
                     <strong className="text-yellow-800">Busy Work</strong>
                     <br />
-                    <span className="text-sm text-gray-700">
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
                       Proactive but not moving the needle
                     </span>
                   </td>
-                  <td className="border border-gray-300 p-4 bg-orange-50 border-orange-300">
+                  <td className="border border-gray-300 dark:border-gray-600 p-4 bg-orange-50 border-orange-300">
                     <strong className="text-orange-800">Firefighting</strong>
                     <br />
-                    <span className="text-sm text-gray-700">Keeping things running, responding to issues</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Keeping things running, responding to issues</span>
                   </td>
                 </tr>
               </tbody>

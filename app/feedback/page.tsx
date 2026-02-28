@@ -6,6 +6,7 @@ import { MessageSquare, Send, ArrowLeft } from 'lucide-react'
 import SpeechToTextInput from '@/components/SpeechToTextInput'
 import Link from 'next/link'
 import { getUserSession } from '@/lib/auth'
+import { supabase } from '@/lib/supabase'
 
 export default function FeedbackPage() {
   const router = useRouter()
@@ -38,9 +39,14 @@ export default function FeedbackPage() {
 
     setSubmitting(true)
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
+
       const res = await fetch('/api/feedback', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: 'include',
         body: JSON.stringify({
           feedbackType: 'long_form',
           description: 'Long form feedback',
@@ -69,7 +75,7 @@ export default function FeedbackPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12">
-        <p className="text-gray-500">Loading...</p>
+        <p className="text-gray-500 dark:text-gray-500 dark:text-gray-400">Loading...</p>
       </div>
     )
   }
@@ -77,9 +83,9 @@ export default function FeedbackPage() {
   if (submitted) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12">
-        <div className="rounded-xl bg-white p-8 shadow-md dark:bg-[#1A202C]">
-          <h1 className="mb-4 text-2xl font-bold text-gray-900 dark:text-[#E2E8F0]">Thank you!</h1>
-          <p className="mb-6 text-gray-600 dark:text-gray-300">
+        <div className="rounded-xl bg-white dark:bg-gray-800 dark:bg-gray-800 p-8 shadow-md dark:bg-[#1A202C]">
+          <h1 className="mb-4 text-2xl font-bold text-gray-900 dark:text-gray-100 dark:text-white dark:text-[#E2E8F0]">Thank you!</h1>
+          <p className="mb-6 text-gray-700 dark:text-gray-300 dark:text-gray-300">
             Your feedback helps make Wheel of Founders better for you and other founders.
           </p>
           <Link
@@ -98,25 +104,25 @@ export default function FeedbackPage() {
     <div className="mx-auto max-w-2xl px-4 py-12">
       <Link
         href="/profile"
-        className="mb-6 inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-[#E2E8F0]"
+        className="mb-6 inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:text-gray-900 dark:text-gray-100 dark:text-white dark:text-gray-400 dark:hover:text-[#E2E8F0]"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Profile
       </Link>
 
       <div className="mb-8">
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900 dark:text-[#E2E8F0]">
+        <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900 dark:text-gray-100 dark:text-white dark:text-[#E2E8F0]">
           <MessageSquare className="h-7 w-7 text-[#ef725c]" />
           Give Feedback
         </h1>
-        <p className="mt-2 text-gray-600 dark:text-gray-300">
+        <p className="mt-2 text-gray-700 dark:text-gray-300 dark:text-gray-300">
           Your thoughts shape what Wheel of Founders becomes.
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6 rounded-xl bg-white p-6 shadow-md dark:bg-[#1A202C]">
+      <form onSubmit={handleSubmit} className="space-y-6 rounded-xl bg-white dark:bg-gray-800 dark:bg-gray-800 p-6 shadow-md dark:bg-[#1A202C]">
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">
             Email (optional — for follow-up)
           </label>
           <SpeechToTextInput
@@ -124,12 +130,12 @@ export default function FeedbackPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] dark:border-gray-600 dark:bg-[#0F1419] dark:text-[#E2E8F0]"
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 dark:text-white placeholder-gray-400 focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] dark:border-gray-600 dark:bg-[#0F1419] dark:text-[#E2E8F0]"
           />
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">
             1. What&apos;s working well for you?
           </label>
           <SpeechToTextInput
@@ -138,12 +144,12 @@ export default function FeedbackPage() {
             onChange={(e) => setWhatsWorking(e.target.value)}
             rows={3}
             placeholder="Share what you love..."
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] dark:border-gray-600 dark:bg-[#0F1419] dark:text-[#E2E8F0]"
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 dark:text-white placeholder-gray-400 focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] dark:border-gray-600 dark:bg-[#0F1419] dark:text-[#E2E8F0]"
           />
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">
             2. What&apos;s confusing or frustrating?
           </label>
           <SpeechToTextInput
@@ -152,12 +158,12 @@ export default function FeedbackPage() {
             onChange={(e) => setWhatsConfusing(e.target.value)}
             rows={3}
             placeholder="Tell us what could be clearer..."
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] dark:border-gray-600 dark:bg-[#0F1419] dark:text-[#E2E8F0]"
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 dark:text-white placeholder-gray-400 focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] dark:border-gray-600 dark:bg-[#0F1419] dark:text-[#E2E8F0]"
           />
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">
             3. What features would you add or change?
           </label>
           <SpeechToTextInput
@@ -166,12 +172,12 @@ export default function FeedbackPage() {
             onChange={(e) => setFeaturesRequest(e.target.value)}
             rows={3}
             placeholder="Your ideas..."
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] dark:border-gray-600 dark:bg-[#0F1419] dark:text-[#E2E8F0]"
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 dark:text-white placeholder-gray-400 focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] dark:border-gray-600 dark:bg-[#0F1419] dark:text-[#E2E8F0]"
           />
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">
             4. How likely are you to recommend WoF to another founder?
           </label>
           <div className="flex gap-2">
@@ -183,20 +189,20 @@ export default function FeedbackPage() {
                 className={`flex h-10 w-10 items-center justify-center rounded-lg border text-sm font-medium transition ${
                   npsScore === n
                     ? 'border-[#ef725c] bg-[#ef725c] text-white'
-                    : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 dark:border-gray-600 dark:bg-[#0F1419] dark:text-gray-300'
+                    : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-800 text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:border-gray-400 dark:border-gray-600 dark:bg-[#0F1419] dark:text-gray-300'
                 }`}
               >
                 {n}
               </button>
             ))}
           </div>
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400">
             1 = Not likely · 5 = Very likely
           </p>
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">
             5. Any other thoughts?
           </label>
           <SpeechToTextInput
@@ -205,7 +211,7 @@ export default function FeedbackPage() {
             onChange={(e) => setOtherThoughts(e.target.value)}
             rows={3}
             placeholder="Anything else..."
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] dark:border-gray-600 dark:bg-[#0F1419] dark:text-[#E2E8F0]"
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 dark:text-white placeholder-gray-400 focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] dark:border-gray-600 dark:bg-[#0F1419] dark:text-[#E2E8F0]"
           />
         </div>
 

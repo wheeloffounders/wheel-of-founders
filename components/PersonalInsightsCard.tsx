@@ -19,7 +19,7 @@ interface PersonalInsightsCardProps {
 
 export function PersonalInsightsCard({
   insights,
-  title = "Mrs. Deer's Personal Observations",
+  title = "Mrs. Deer, your AI companion's Personal Observations",
   subtitle = "Based on your unique patterns",
   refreshable = true,
   onRefresh,
@@ -47,11 +47,11 @@ export function PersonalInsightsCard({
     <div className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-[#1A202C] dark:to-[#1A202C] rounded-xl shadow-lg p-6 mb-8 border border-amber-200 dark:border-amber-500/40">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-[#E2E8F0] flex items-center gap-2">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-[#E2E8F0] flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-amber-600 dark:text-amber-300" />
             {title}
           </h2>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">{subtitle}</p>
+          <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-1">{subtitle}</p>
         </div>
         {refreshable && onRefresh && (
           <button
@@ -71,17 +71,17 @@ export function PersonalInsightsCard({
           {insights.map((insight, idx) => (
             <div
               key={idx}
-              className="bg-white dark:bg-[#0F1419] rounded-lg p-5 border-l-4 border-amber-500 shadow-sm"
+              className="bg-white dark:bg-gray-800 dark:bg-[#0F1419] rounded-lg p-5 border-l-4 border-amber-500 shadow-sm"
             >
               <div className="flex items-start gap-3">
                 <div className="flex-shrink-0 mt-0.5 text-2xl">
                   {typeEmoji[insight.insight_type] || '💡'}
                 </div>
                 <div className="flex-1">
-                  <p className="text-gray-800 dark:text-[#E2E8F0] leading-relaxed mb-2">
+                  <p className="text-gray-900 dark:text-gray-100 dark:text-[#E2E8F0] leading-relaxed mb-2">
                     {insight.insight_text}
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+                  <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 italic">
                     {insight.data_based_on}
                   </p>
                 </div>
@@ -90,13 +90,13 @@ export function PersonalInsightsCard({
           ))}
         </div>
       ) : (
-        <div className="bg-white dark:bg-[#0F1419] rounded-lg p-6 text-center border-2 border-dashed border-amber-300 dark:border-amber-500/50">
+        <div className="bg-white dark:bg-gray-800 dark:bg-[#0F1419] rounded-lg p-6 text-center border-2 border-dashed border-amber-300 dark:border-amber-500/50">
           <Sparkles className="w-12 h-12 text-amber-400 dark:text-amber-300 mx-auto mb-3" />
-          <p className="text-gray-600 dark:text-gray-300 mb-2">
+          <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
             Your personalized insights will appear tomorrow at 2 AM
           </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Mrs. Deer analyzes YOUR unique patterns and delivers personalized coaching just for you
+          <p className="text-sm text-gray-500 dark:text-gray-500 dark:text-gray-400">
+            Mrs. Deer, your AI companion analyzes YOUR unique patterns and delivers personalized coaching just for you
           </p>
         </div>
       )}

@@ -1,0 +1,46 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e4]:
+      - link "Wheel of Founders" [ref=e6] [cursor=pointer]:
+        - /url: /
+        - img "Wheel of Founders" [ref=e7]
+      - generic [ref=e8]:
+        - link "Dashboard" [ref=e9] [cursor=pointer]:
+          - /url: /
+          - img [ref=e10]
+          - generic [ref=e13]: Dashboard
+        - link "Morning" [ref=e14] [cursor=pointer]:
+          - /url: /morning
+          - img [ref=e15]
+          - generic [ref=e21]: Morning
+        - link "Emergency" [ref=e22] [cursor=pointer]:
+          - /url: /emergency
+          - img [ref=e23]
+          - generic [ref=e25]: Emergency
+        - link "Evening" [ref=e26] [cursor=pointer]:
+          - /url: /evening
+          - img [ref=e27]
+          - generic [ref=e29]: Evening
+        - button "Insights" [ref=e31]:
+          - img [ref=e32]
+          - generic [ref=e33]: Insights
+          - img [ref=e34]
+        - button "Profile" [ref=e37]:
+          - img [ref=e38]
+          - generic [ref=e41]: Profile
+          - img [ref=e42]
+        - button "Toggle dark / light mode" [ref=e44]:
+          - img [ref=e45]
+  - main [ref=e47]:
+    - generic [ref=e49]:
+      - heading "404" [level=1] [ref=e50]
+      - heading "This page could not be found." [level=2] [ref=e52]
+  - contentinfo [ref=e53]:
+    - paragraph [ref=e54]: Install Wheel of Founders as an app on desktop or phone – look for Install app in your browser menu. No app store needed.
+  - button "Open Next.js Dev Tools" [ref=e60] [cursor=pointer]:
+    - img [ref=e61]
+  - alert [ref=e64]
+```

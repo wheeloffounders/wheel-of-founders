@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { getServerSupabase } from './server-supabase'
 import { format, subDays } from 'date-fns'
 import { FounderStage, StageMetrics } from './mrs-deer'
 
@@ -6,6 +6,7 @@ import { FounderStage, StageMetrics } from './mrs-deer'
  * Detect founder stage based on behavior patterns
  */
 export async function detectFounderStage(userId: string): Promise<FounderStage> {
+  const db = getServerSupabase()
   const endDate = new Date()
   const startDate = subDays(endDate, 7) // Last week
   const startStr = format(startDate, 'yyyy-MM-dd')
@@ -13,19 +14,19 @@ export async function detectFounderStage(userId: string): Promise<FounderStage> 
 
   // Fetch user data from last week
   const [tasksRes, decisionsRes, emergenciesRes] = await Promise.all([
-    supabase
+    db
       .from('morning_tasks')
       .select('action_plan, completed, needle_mover')
       .eq('user_id', userId)
       .gte('plan_date', startStr)
       .lte('plan_date', endStr),
-    supabase
+    db
       .from('morning_decisions')
       .select('plan_date')
       .eq('user_id', userId)
       .gte('plan_date', startStr)
       .lte('plan_date', endStr),
-    supabase
+    db
       .from('emergencies')
       .select('fire_date')
       .eq('user_id', userId)
@@ -33,7 +34,8 @@ export async function detectFounderStage(userId: string): Promise<FounderStage> 
       .lte('fire_date', endStr),
   ])
 
-  const tasks = tasksRes.data || []
+  type TaskRow = { completed?: boolean; action_plan?: string; needle_mover?: boolean }
+  const tasks = (tasksRes.data || []) as TaskRow[]
   const decisions = decisionsRes.data || []
   const emergencies = emergenciesRes.data || []
 
@@ -69,38 +71,45 @@ export async function detectFounderStage(userId: string): Promise<FounderStage> 
  * Update user's stage in database
  */
 export async function updateUserStage(userId: string, stage: FounderStage): Promise<void> {
-  const { data: existing } = await supabase
+  const db = getServerSupabase()
+  const { data: existingData } = await db
     .from('user_stages')
-    .select('current_stage, days_in_stage')
+    .select('current_stage, days_in_stage, stage_detected_at')
     .eq('user_id', userId)
     .maybeSingle()
+
+  type UserStageRow = {
+    current_stage?: string | null
+    days_in_stage?: number | null
+    stage_detected_at?: string | null
+  }
+  const existing = existingData as UserStageRow | null
 
   const isStageChange = existing?.current_stage !== stage
   const daysInStage = isStageChange ? 1 : (existing?.days_in_stage || 0) + 1
 
-  await supabase
-    .from('user_stages')
-    .upsert(
-      {
-        user_id: userId,
-        current_stage: stage,
-        stage_detected_at: isStageChange ? new Date().toISOString() : existing?.stage_detected_at,
-        days_in_stage: daysInStage,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' }
-    )
+  const payload = {
+    user_id: userId,
+    current_stage: stage,
+    stage_detected_at: isStageChange ? new Date().toISOString() : existing?.stage_detected_at,
+    days_in_stage: daysInStage,
+    updated_at: new Date().toISOString(),
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit user_stages
+  await (db.from('user_stages') as any).upsert(payload as any, { onConflict: 'user_id' })
 }
 
 /**
  * Get user's current stage
  */
 export async function getUserStage(userId: string): Promise<FounderStage | null> {
-  const { data } = await supabase
+  const db = getServerSupabase()
+  const { data } = await db
     .from('user_stages')
     .select('current_stage')
     .eq('user_id', userId)
     .maybeSingle()
 
-  return (data?.current_stage as FounderStage) || null
+  const row = data as Record<string, unknown> | null
+  return (row?.current_stage as FounderStage) || null
 }

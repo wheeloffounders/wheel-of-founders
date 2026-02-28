@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserSession } from '@/lib/auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /** POST: Record that we showed Mrs. Deer pattern feedback for this pattern type */
 export async function POST(req: NextRequest) {
   try {
@@ -18,27 +21,33 @@ export async function POST(req: NextRequest) {
 
     const db = getServerSupabase()
 
-    const { data: existing } = await db
+    const { data: existingData } = await db
       .from('feedback_trigger_preferences')
       .select('pattern_prompted_at, dismissed_triggers, maybe_later_until')
       .eq('user_id', session.user.id)
       .maybeSingle()
 
-    const promptedAt = { ...((existing?.pattern_prompted_at as Record<string, string>) || {}) }
+    type FeedbackPrefsRow = {
+      pattern_prompted_at?: Record<string, string> | null
+      dismissed_triggers?: Record<string, boolean> | null
+      maybe_later_until?: Record<string, string> | null
+    }
+    const existing = existingData as FeedbackPrefsRow | null
+
+    const promptedAt = { ...(existing?.pattern_prompted_at || {}) }
     promptedAt[patternType] = new Date().toISOString()
 
-    const { error } = await db
-      .from('feedback_trigger_preferences')
-      .upsert(
-        {
-          user_id: session.user.id,
-          pattern_prompted_at: promptedAt,
-          dismissed_triggers: existing?.dismissed_triggers ?? {},
-          maybe_later_until: existing?.maybe_later_until ?? {},
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' }
-      )
+    const upsertPayload = {
+      user_id: session.user.id,
+      pattern_prompted_at: promptedAt,
+      dismissed_triggers: existing?.dismissed_triggers ?? {},
+      maybe_later_until: existing?.maybe_later_until ?? {},
+      updated_at: new Date().toISOString(),
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit feedback_trigger_preferences
+    const { error } = await (db.from('feedback_trigger_preferences') as any).upsert(upsertPayload, {
+      onConflict: 'user_id',
+    })
 
     if (error) {
       return NextResponse.json({ error: 'Failed to record' }, { status: 500 })

@@ -250,14 +250,16 @@ export function getUserLanguage(primaryGoal: UserGoal | null | undefined): UserL
  * Get user's primary goal from database
  */
 export async function getUserGoal(userId: string): Promise<UserGoal | null> {
-  const { supabase } = await import('./supabase')
-  const { data } = await supabase
+  const { getServerSupabase } = await import('./server-supabase')
+  const db = getServerSupabase()
+  const { data } = await db
     .from('user_profiles')
     .select('primary_goal')
     .eq('id', userId)
     .maybeSingle()
-  
-  return (data?.primary_goal as UserGoal) || null
+
+  const profileData = data as { primary_goal?: string } | null
+  return (profileData?.primary_goal as UserGoal) || null
 }
 
 /**

@@ -10,27 +10,33 @@ export async function getVariant(
 ): Promise<string> {
   const db = getServerSupabase()
 
-  const { data: exp } = await db
+  const { data: expData } = await db
     .from('experiments')
     .select('id')
     .eq('name', experimentName)
     .eq('status', 'running')
     .maybeSingle()
 
+  type ExperimentRow = { id: string }
+  const exp = expData as ExperimentRow | null
+
   if (!exp) return variants[0] ?? 'control'
 
-  const { data: assignment } = await db
+  const { data: assignmentData } = await db
     .from('experiment_assignments')
     .select('variant')
     .eq('user_id', userId)
     .eq('experiment_id', exp.id)
     .maybeSingle()
 
-  if (assignment) return assignment.variant
+  type AssignmentRow = { variant?: string | null }
+  const assignment = assignmentData as AssignmentRow | null
+
+  if (assignment?.variant) return assignment.variant
 
   const variant = variants[Math.floor(Math.random() * variants.length)] ?? 'control'
 
-  await db.from('experiment_assignments').upsert(
+  await (db.from('experiment_assignments') as any).upsert(
     {
       user_id: userId,
       experiment_id: exp.id,
@@ -53,24 +59,29 @@ export async function trackExperimentEvent(
 ) {
   const db = getServerSupabase()
 
-  const { data: exp } = await db
+  const { data: expData } = await db
     .from('experiments')
     .select('id')
     .eq('name', experimentName)
     .maybeSingle()
 
+  type ExperimentRow = { id: string }
+  const exp = expData as ExperimentRow | null
+
   if (!exp) return
 
-  const { data: assignment } = await db
+  const { data: assignmentData } = await db
     .from('experiment_assignments')
     .select('variant')
     .eq('user_id', userId)
     .eq('experiment_id', exp.id)
     .maybeSingle()
 
+  type AssignmentRow = { variant?: string | null }
+  const assignment = assignmentData as AssignmentRow | null
   const variant = assignment?.variant ?? 'control'
 
-  await db.from('experiment_events').insert({
+  await (db.from('experiment_events') as any).insert({
     user_id: userId,
     experiment_id: exp.id,
     variant,

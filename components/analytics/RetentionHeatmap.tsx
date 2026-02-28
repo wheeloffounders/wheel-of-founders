@@ -15,20 +15,20 @@ type CohortRow = {
 export function RetentionHeatmap({ cohorts }: { cohorts: CohortRow[] }) {
   if (!cohorts || cohorts.length === 0) {
     return (
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow overflow-x-auto">
+      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 p-6 rounded-lg shadow overflow-x-auto">
         <h3 className="text-lg font-bold mb-4 dark:text-gray-100">Cohort Retention</h3>
-        <p className="text-gray-500 dark:text-gray-400 text-sm">
+        <p className="text-gray-500 dark:text-gray-500 dark:text-gray-400 text-sm">
           No cohort data yet. Refresh the materialized view after users sign up and complete flows.
         </p>
         <p className="text-xs text-gray-400 mt-2">
-          Run: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">REFRESH MATERIALIZED VIEW cohort_retention;</code>
+          Run: <code className="bg-gray-50 dark:bg-gray-900 dark:bg-gray-700 px-1 rounded">REFRESH MATERIALIZED VIEW cohort_retention;</code>
         </p>
       </div>
     )
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow overflow-x-auto">
+    <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 p-6 rounded-lg shadow overflow-x-auto">
       <h3 className="text-lg font-bold mb-4 dark:text-gray-100">Cohort Retention</h3>
       <table className="min-w-full text-sm">
         <thead>
@@ -44,7 +44,7 @@ export function RetentionHeatmap({ cohorts }: { cohorts: CohortRow[] }) {
         </thead>
         <tbody>
           {cohorts.map((cohort, i) => (
-            <tr key={i} className="border-t border-gray-200 dark:border-gray-700">
+            <tr key={i} className="border-t border-gray-200 dark:border-gray-700 dark:border-gray-700">
               <td className="py-2 dark:text-gray-200">
                 {format(new Date(cohort.cohort_week), 'MMM d, yyyy')}
               </td>

@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessageSquare, X } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { AutoExpandTextarea } from './AutoExpandTextarea'
 
 type TriggerType = '7_days_active' | '7_evening_reviews' | 'first_export' | '30_days'
 
@@ -51,10 +53,15 @@ export function FeedbackPopUp() {
 
     setSubmitting(true)
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
+
       const desc = [whatsWorking.trim(), whatsImprove.trim()].filter(Boolean).join('\n\n') || 'Quick feedback'
       const res = await fetch('/api/feedback', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: 'include',
         body: JSON.stringify({
           feedbackType: 'popup',
           description: desc,
@@ -78,18 +85,18 @@ export function FeedbackPopUp() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="feedback-popup-title"
     >
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-[#1A202C]">
+      <div className="w-full max-w-md rounded-xl bg-white dark:bg-gray-800 p-6 shadow-xl">
         {!showQuickForm ? (
           <>
-            <h2 id="feedback-popup-title" className="mb-3 text-lg font-semibold text-gray-900 dark:text-[#E2E8F0]">
+            <h2 id="feedback-popup-title" className="mb-3 text-lg font-semibold text-gray-900 dark:text-gray-100">
               {trigger.message}
             </h2>
-            <p className="mb-6 text-gray-600 dark:text-gray-300">
+            <p className="mb-6 text-gray-700 dark:text-gray-300">
               How&apos;s it going? Your feedback helps make this better for you and other founders.
             </p>
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
@@ -104,14 +111,14 @@ export function FeedbackPopUp() {
               <button
                 type="button"
                 onClick={() => handleDismiss('maybe_later')}
-                className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                className="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
               >
                 Maybe Later
               </button>
               <button
                 type="button"
                 onClick={() => handleDismiss('dont_show')}
-                className="rounded-lg px-4 py-2.5 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                className="rounded-lg px-4 py-2.5 text-sm text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300"
               >
                 Don&apos;t Show Again
               </button>
@@ -119,17 +126,17 @@ export function FeedbackPopUp() {
           </>
         ) : (
           <form onSubmit={handleQuickFeedback}>
-            <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-[#E2E8F0]">Quick Feedback</h2>
+            <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">Quick Feedback</h2>
             <div className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                   What&apos;s one thing working well?
                 </label>
-                <textarea
+                <AutoExpandTextarea
                   value={whatsWorking}
                   onChange={(e) => setWhatsWorking(e.target.value)}
-                  rows={2}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] dark:border-gray-600 dark:bg-[#0F1419] dark:text-[#E2E8F0]"
+                  minRows={2}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] "
                   placeholder="e.g. The evening review helps me reflect..."
                 />
               </div>
@@ -137,11 +144,11 @@ export function FeedbackPopUp() {
                 <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                   What&apos;s one thing we could improve?
                 </label>
-                <textarea
+                <AutoExpandTextarea
                   value={whatsImprove}
                   onChange={(e) => setWhatsImprove(e.target.value)}
-                  rows={2}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] dark:border-gray-600 dark:bg-[#0F1419] dark:text-[#E2E8F0]"
+                  minRows={2}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-[#ef725c] focus:outline-none focus:ring-1 focus:ring-[#ef725c] "
                   placeholder="e.g. Would love to see..."
                 />
               </div>
@@ -150,7 +157,7 @@ export function FeedbackPopUp() {
               <button
                 type="button"
                 onClick={() => setShowQuickForm(false)}
-                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 dark:border-gray-600 dark:text-gray-300"
+                className="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300"
               >
                 Back
               </button>

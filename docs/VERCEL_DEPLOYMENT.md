@@ -13,6 +13,29 @@ Step-by-step deployment to Vercel with the correct environment variables and fol
 
 ---
 
+## Deploy from CLI (project already on Vercel)
+
+If the project **wheel-of-founders-prod** already exists on Vercel but has no production deployment:
+
+1. **Log in once** (opens browser):
+   ```bash
+   cd ~/Desktop/wheel-of-founders
+   npx vercel login
+   ```
+2. **Link this repo to the Vercel project**:
+   ```bash
+   npx vercel link --yes --project wheel-of-founders-prod
+   ```
+   When prompted for scope, choose the team/account that owns **wheel-of-founders-prod**.
+3. **Add env vars** in [Vercel → wheel-of-founders-prod → Settings → Environment Variables](https://vercel.com/vanies-projects-e1afa5d7/wheel-of-founders-prod/settings/environment-variables). See Step 2 below for the list. You can also add via CLI: `npx vercel env add VARIABLE_NAME` (prompts for value).
+4. **Deploy to production**:
+   ```bash
+   npx vercel --prod
+   ```
+5. Note the **production URL** (e.g. `https://wheel-of-founders-prod.vercel.app`). Then do Step 4 (Stripe webhook) and Step 5 (Supabase URLs).
+
+---
+
 ## Step 1: Create Vercel project
 
 1. Go to [vercel.com](https://vercel.com) → **Add New** → **Project**.
@@ -148,6 +171,51 @@ VERCEL_URL=https://wheel-of-founders.vercel.app node scripts/verify-production.j
 ```
 
 See [scripts/verify-production.js](../scripts/verify-production.js) for what it checks. Fix any failing checks, then update the README live URL and run the script again.
+
+---
+
+## Troubleshooting: "Invalid API key" in Preview
+
+If preview deployments fail with `Invalid API key - Double check your Supabase anon or service_role API key`:
+
+1. **Verify env vars exist for Preview:**
+   ```bash
+   npx vercel env ls
+   ```
+   Ensure `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` are listed for **Preview**.
+
+2. **Re-add the Supabase keys** (values may be wrong or from a different project). **Recommended: use the Vercel dashboard** (works reliably):
+   - Go to [Supabase Dashboard](https://supabase.com/dashboard) → your project → **Project Settings** → **API**
+   - Copy **Project URL**, **anon public** key, and **service_role** key
+   - Go to [Vercel Dashboard](https://vercel.com) → your project → **Settings** → **Environment Variables**
+   - For each of `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`:
+     - Edit (or add) and ensure **Preview** is checked
+     - Paste the value from `.env.local` or Supabase
+   - Save
+
+   **Alternative: CLI** (may prompt for branch; run interactively):
+   ```bash
+   npx vercel env rm NEXT_PUBLIC_SUPABASE_ANON_KEY preview
+   npx vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY preview
+   # Paste the anon key when prompted; choose "all branches" or specific branch
+
+   npx vercel env rm NEXT_PUBLIC_SUPABASE_URL preview
+   npx vercel env add NEXT_PUBLIC_SUPABASE_URL preview
+
+   npx vercel env rm SUPABASE_SERVICE_ROLE_KEY preview
+   npx vercel env add SUPABASE_SERVICE_ROLE_KEY preview
+   ```
+
+   **Optional script** (syncs from `.env.local`; may still require interactive input):
+   ```bash
+   ./scripts/fix-preview-supabase-env.sh
+   ```
+
+3. **Redeploy preview** so new env vars take effect:
+   ```bash
+   ./scripts/deploy-dev.sh
+   ```
+   Or push a new commit to trigger a preview deployment.
 
 ---
 

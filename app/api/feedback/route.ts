@@ -1,57 +1,74 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { getUserSession } from '@/lib/auth'
-import { getServerSupabase } from '@/lib/server-supabase'
+import { NextResponse } from 'next/server'
+import { supabase } from '@/lib/supabase'
+import { getServerSessionFromRequest } from '@/lib/server-auth'
 
-export type FeedbackType = 'bug' | 'long_form' | 'popup' | 'mrs_deer'
+export async function POST(req: Request) {
+  console.log('[feedback] API called')
+  console.log('[feedback] Auth header:', req.headers.get('authorization') ? '(present)' : '(absent)')
+  const cookieHeader = req.headers.get('cookie')
+  console.log('[feedback] Cookies:', cookieHeader ? `present (${cookieHeader.length} chars)` : '(none)')
 
-export async function POST(req: NextRequest) {
   try {
-    const session = await getUserSession()
+    const session = await getServerSessionFromRequest(req)
+    console.log('[feedback] Session result:', session ? `found user ${session.user.id}` : 'No session')
+
     if (!session) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+      console.log('[feedback] Unauthorized - no session from cookies or Bearer token')
+      return NextResponse.json(
+        { error: 'Not authenticated' },
+        { status: 401 }
+      )
     }
 
     const body = await req.json()
+    console.log('🔍 Received feedback body:', body)
 
-    const feedbackType = body.feedbackType as FeedbackType
-    if (!['bug', 'long_form', 'popup', 'mrs_deer'].includes(feedbackType)) {
-      return NextResponse.json({ error: 'Invalid feedback type' }, { status: 400 })
+    let feedbackText = ''
+    let pageUrl = body.screenLocation || body.page || '/feedback'
+
+    // Handle different feedback formats
+    if (body.feedbackType === 'popup') {
+      // From FeedbackPopUp.tsx
+      feedbackText = body.description || 'Quick feedback'
+    } else if (body.feedbackType === 'long_form') {
+      // From /feedback page
+      const parts = []
+      if (body.whatsWorking) parts.push(`👍 Working: ${body.whatsWorking}`)
+      if (body.whatsConfusing) parts.push(`❓ Confusing: ${body.whatsConfusing}`)
+      if (body.featuresRequest) parts.push(`💡 Feature request: ${body.featuresRequest}`)
+      if (body.npsScore) parts.push(`📊 NPS: ${body.npsScore}/5`)
+      if (body.otherThoughts) parts.push(`💬 Other: ${body.otherThoughts}`)
+      if (body.email) parts.push(`📧 Contact: ${body.email}`)
+      
+      feedbackText = parts.join('\n\n') || 'Long form feedback'
+    } else {
+      // Simple format from other components
+      feedbackText = body.feedback || body.description || 'Feedback'
+      pageUrl = body.page || pageUrl
     }
 
-    const description = body.description?.trim() || ''
-    if (!description && feedbackType !== 'long_form') {
-      return NextResponse.json({ error: 'Description is required' }, { status: 400 })
-    }
+    console.log('[feedback] Saving:', { feedbackText: feedbackText.slice(0, 50), pageUrl, userId: session.user.id })
 
-    const insertData: Record<string, unknown> = {
-      user_id: session.user.id,
-      feedback_type: feedbackType,
-      screen_location: body.screenLocation || null,
-      description: description || body.otherThoughts || 'No description',
-      email: body.email || null,
-      screenshot_url: body.screenshotUrl || null,
-      context_prefilled: body.contextPrefilled || null,
-    }
-
-    if (feedbackType === 'long_form') {
-      insertData.whats_working = body.whatsWorking || null
-      insertData.whats_confusing = body.whatsConfusing || null
-      insertData.features_request = body.featuresRequest || null
-      insertData.nps_score = body.npsScore || null
-      insertData.other_thoughts = body.otherThoughts || null
-    }
-
-    const db = getServerSupabase()
-    const { data, error } = await db.from('feedback').insert(insertData).select('id').single()
+    const { error } = await supabase
+      .from('feedback')
+      .insert({
+        user_id: session.user.id,
+        feedback_text: feedbackText,
+        page_url: pageUrl
+      })
 
     if (error) {
-      console.error('[Feedback API] Insert error:', error)
-      return NextResponse.json({ error: 'Failed to save feedback' }, { status: 500 })
+      console.error('[feedback] Supabase insert error:', error)
+      throw error
     }
 
-    return NextResponse.json({ success: true, id: data?.id })
-  } catch (err) {
-    console.error('[Feedback API] Error:', err)
-    return NextResponse.json({ error: 'Failed to save feedback' }, { status: 500 })
+    console.log('[feedback] Saved successfully')
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('[feedback] Error:', error)
+    return NextResponse.json(
+      { error: 'Failed to save feedback' },
+      { status: 500 }
+    )
   }
 }

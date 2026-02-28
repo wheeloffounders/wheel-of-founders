@@ -1,43 +1,58 @@
-// Simple cache-first service worker for Wheel of Founders
-// Bump CACHE_NAME to force clients to pick up new assets after code changes
-const CACHE_NAME = 'wheel-of-founders-v2'
-const PRECACHE_URLS = ['/', '/manifest.json']
+// Version: 2026.02.26 - Network-first for HTML, only cache GET requests
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(PRECACHE_URLS)
-    })
-  )
+const CACHE_NAME = 'wof-v4'
+
+self.addEventListener('install', event => {
   self.skipWaiting()
 })
 
-self.addEventListener('activate', (event) => {
+self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then((cacheNames) =>
-      Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+    Promise.all([
+      clients.claim(),
+      caches.keys().then(keys => 
+        Promise.all(keys.map(key => {
+          if (key !== CACHE_NAME) return caches.delete(key)
+        }))
       )
+    ])
+  )
+})
+
+self.addEventListener('fetch', event => {
+  // For HTML pages (navigation requests) - ALWAYS go to network
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          // Never cache HTML
+          return response
+        })
+        .catch(() => {
+          // If offline, try to serve a minimal offline page
+          return caches.match('/offline.html')
+        })
     )
-  )
-  self.clients.claim()
-})
+    return
+  }
 
-self.addEventListener('fetch', (event) => {
-  const { request } = event
-
-  // Only handle GET requests
-  if (request.method !== 'GET') return
-
+  // For assets (JS, CSS, images) - network-first, cache fallback
+  // Skip caching for non-GET - Cache API does not support POST/PUT/etc
+  if (event.request.method !== 'GET') {
+    event.respondWith(fetch(event.request))
+    return
+  }
   event.respondWith(
-    caches.match(request).then((response) => {
-      if (response) {
+    fetch(event.request)
+      .then(response => {
+        if (response.status === 200) {
+          const responseClone = response.clone()
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, responseClone)
+          })
+        }
         return response
-      }
-      return fetch(request)
-    })
+      })
+      .catch(() => caches.match(event.request))
   )
 })
-

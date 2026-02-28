@@ -123,7 +123,8 @@ export async function generatePDF(data: ExportData): Promise<Buffer> {
   // Dynamic import for server-side only
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
-  const pageW = doc.getPageWidth()
+  // A4 portrait width in points: 595.28
+  const pageW = doc.internal.pageSize.getWidth()
   const margin = 40
   let y = margin
 

@@ -1,19 +1,48 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
-import Navigation from '@/components/Navigation'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
 import InstallPrompt from '@/components/InstallPrompt'
 import PostHogProvider from '@/components/PostHogProvider'
 import PageViewTracker from '@/components/PageViewTracker'
-import { FloatingBugButton } from '@/components/FloatingBugButton'
 import { FeedbackPopUp } from '@/components/FeedbackPopUp'
+import { Toast } from '@/components/Toast'
+import { BottomNav } from '@/components/BottomNav'
+import { OfflineBanner } from '@/components/OfflineBanner'
+import { AppHeader } from '@/components/AppHeader'
+import { AppFooter } from '@/components/AppFooter'
+import { ThemeProvider } from '@/components/ThemeProvider'
+import { ForceUpdateChecker } from '@/components/ForceUpdateChecker'
+import { VersionChecker } from '@/components/VersionChecker'
+import { DevModeBadge } from '@/components/DevModeBadge'
 
 const inter = Inter({ subsets: ['latin'] })
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export const metadata: Metadata = {
-  title: 'Wheel of Founders',
-  description: 'Your daily founder coaching companion',
+  title: 'Wheel of Founders | Your Daily Founder Coaching Companion',
+  description: 'Turn scattered days into a clear, repeatable rhythm. Morning planning, evening reflection, and gentle coaching from Mrs. Deer, your AI companion—built for founders who want to do what actually matters.',
+  keywords: ['founder coaching', 'productivity', 'daily planning', 'founder tools', 'startup', 'entrepreneurship'],
+  openGraph: {
+    title: 'Wheel of Founders',
+    description: 'Your daily founder coaching companion',
+    type: 'website',
+    siteName: 'Wheel of Founders',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Wheel of Founders',
+    description: 'Your daily founder coaching companion',
+  },
+}
+
+// Client component for notifications
+function NotificationPermission() {
+  // This needs 'use client' but we can't have it in a server component
+  // So we'll handle it differently
+  return null
 }
 
 export default async function RootLayout({
@@ -29,12 +58,12 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
-                const stored = localStorage.getItem('wof_theme');
-                const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-                const theme = stored === 'light' || stored === 'dark' ? stored : (prefersDark ? 'dark' : 'light');
-                if (theme === 'dark') {
-                  document.documentElement.classList.add('dark');
-                }
+                try {
+                  var stored = localStorage.getItem('wof_theme');
+                  var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                  var theme = (stored === 'light' || stored === 'dark') ? stored : (prefersDark ? 'dark' : 'light');
+                  document.documentElement.classList.toggle('dark', theme === 'dark');
+                } catch (e) {}
               })();
             `,
           }}
@@ -49,25 +78,36 @@ export default async function RootLayout({
         <meta name="msapplication-TileImage" content="/icon-144x144.png" />
       </head>
       <body
-        className={`${inter.className} bg-[#FAFBFC] text-[#4A5568] dark:bg-[#0F1419] dark:text-[#E2E8F0] transition-colors duration-300 overflow-x-hidden`}
+        className={`${inter.className} bg-white dark:bg-gray-800 dark:bg-slate-900 text-gray-900 dark:text-gray-100 dark:text-gray-100 transition-colors duration-300 overflow-x-hidden`}
       >
+        <ForceUpdateChecker>
+        <ThemeProvider>
+        <VersionChecker />
+        <DevModeBadge />
         <PostHogProvider />
-        <PageViewTracker />
         <PageViewTracker />
         <ServiceWorkerRegister />
         <InstallPrompt />
-        <Navigation />
-        <main className="min-h-screen pt-20 md:pt-16">{children}</main>
-        <FloatingBugButton />
+        <OfflineBanner />
+        <AppHeader />
+        <main className="min-h-screen pt-4 pb-24">{children}</main>
+        <BottomNav />
+        <Toast />
         <FeedbackPopUp />
-        <FeedbackPopUp />
-        <footer className="border-t border-gray-100 mt-8 py-4 text-center text-xs text-gray-500">
-          <p>
-            Install Wheel of Founders as an app on desktop or phone – look for{' '}
-            <span className="font-medium">Install app</span> in your browser menu. No app store
-            needed.
-          </p>
-        </footer>
+        <AppFooter />
+        </ThemeProvider>
+        </ForceUpdateChecker>
+
+        {/* Notification permission script */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   )

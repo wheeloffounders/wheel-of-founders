@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserSession } from '@/lib/auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /** GET: Fetch user's feedback trigger preferences */
 export async function GET() {
   const session = await getUserSession()
@@ -10,7 +13,7 @@ export async function GET() {
   }
 
   const db = getServerSupabase()
-  const { data, error } = await db
+  const { data: prefsData, error } = await db
     .from('feedback_trigger_preferences')
     .select('dismissed_triggers, maybe_later_until')
     .eq('user_id', session.user.id)
@@ -19,6 +22,12 @@ export async function GET() {
   if (error) {
     return NextResponse.json({ dismissedTriggers: {}, maybeLaterUntil: {} })
   }
+
+  type FeedbackPrefsRow = {
+    dismissed_triggers?: Record<string, boolean> | null
+    maybe_later_until?: Record<string, string> | null
+  }
+  const data = prefsData as FeedbackPrefsRow | null
 
   return NextResponse.json({
     dismissedTriggers: data?.dismissed_triggers || {},
@@ -40,15 +49,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'triggerType required' }, { status: 400 })
   }
 
-    const db = getServerSupabase()
-    const { data: existing } = await db
+  const db = getServerSupabase()
+  const { data: existingData } = await db
     .from('feedback_trigger_preferences')
     .select('dismissed_triggers, maybe_later_until')
     .eq('user_id', session.user.id)
     .maybeSingle()
 
-  const dismissed = (existing?.dismissed_triggers as Record<string, boolean>) || {}
-  const maybeLater = (existing?.maybe_later_until as Record<string, string>) || {}
+  type TriggerPrefsRow = {
+    dismissed_triggers?: Record<string, boolean> | null
+    maybe_later_until?: Record<string, string> | null
+  }
+  const existing = existingData as TriggerPrefsRow | null
+
+  const dismissed = existing?.dismissed_triggers || {}
+  const maybeLater = existing?.maybe_later_until || {}
 
   if (action === 'dismiss') {
     dismissed[triggerType] = true
@@ -59,17 +74,17 @@ export async function POST(req: NextRequest) {
     maybeLater[triggerType] = until.toISOString()
   }
 
-  const { error: upsertError } = await db
-    .from('feedback_trigger_preferences')
-    .upsert(
-      {
-        user_id: session.user.id,
-        dismissed_triggers: dismissed,
-        maybe_later_until: maybeLater,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' }
-    )
+  const upsertPayload = {
+    user_id: session.user.id,
+    dismissed_triggers: dismissed,
+    maybe_later_until: maybeLater,
+    updated_at: new Date().toISOString(),
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit feedback_trigger_preferences
+  const { error: upsertError } = await (db.from('feedback_trigger_preferences') as any).upsert(
+    upsertPayload,
+    { onConflict: 'user_id' }
+  )
 
   if (upsertError) {
     return NextResponse.json({ error: 'Failed to update preferences' }, { status: 500 })

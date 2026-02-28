@@ -11,6 +11,9 @@ const EXPORTS_BUCKET = 'exports'
 const SIGNED_URL_EXPIRY_SECONDS = 3600 // 1 hour
 const EXPORT_FORMATS = ['json', 'csv', 'pdf', 'all'] as const
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * Generate data export for user
  */
@@ -43,13 +46,15 @@ export async function POST(request: NextRequest) {
         }
         // Get first entry date (service role bypasses RLS)
         const db = getServerSupabase()
-        const { data: firstEntry } = await db
+        const { data: firstEntryData } = await db
           .from('morning_tasks')
           .select('plan_date')
           .eq('user_id', session.user.id)
           .order('plan_date', { ascending: true })
           .limit(1)
           .maybeSingle()
+        type TaskRow = { plan_date?: string }
+        const firstEntry = firstEntryData as TaskRow | null
         startDate = firstEntry?.plan_date ? new Date(firstEntry.plan_date) : subDays(endDate, features.viewableHistoryDays)
         break
 
@@ -94,21 +99,26 @@ export async function POST(request: NextRequest) {
 
     // Create export record (service role bypasses RLS)
     const db = getServerSupabase()
-    const { data: exportRecord, error: exportError } = await db
+    const exportPayload = {
+      user_id: session.user.id,
+      export_type: exportType,
+      date_range_start: startStr,
+      date_range_end: endStr,
+      status: 'processing',
+    }
+    // Supabase DB types omit data_exports; cast to satisfy type checker
+    const { data: exportRecordData, error: exportError } = await db
       .from('data_exports')
-      .insert({
-        user_id: session.user.id,
-        export_type: exportType,
-        date_range_start: startStr,
-        date_range_end: endStr,
-        status: 'processing',
-      })
+      .insert(exportPayload as any)
       .select()
       .single()
 
-    if (exportError) {
-      throw new Error(`Failed to create export record: ${exportError.message}`)
+    if (exportError || !exportRecordData) {
+      throw new Error(`Failed to create export record: ${exportError?.message || 'No data returned'}`)
     }
+
+    type ExportRecord = { id: string; user_id: string; export_type: string; status: string }
+    const exportRecord = exportRecordData as ExportRecord
 
     // Fetch user data (service role bypasses RLS)
     const [tasksRes, decisionsRes, reviewsRes, emergenciesRes] = await Promise.all([
@@ -233,24 +243,28 @@ export async function POST(request: NextRequest) {
     const primaryUrl = fileUrl ?? csvDownloadUrl ?? pdfDownloadUrl
 
     // Update export record as completed
-    await db
-      .from('data_exports')
-      .update({
-        status: 'completed',
-        file_name: jsonFileName,
-        file_url: primaryUrl,
-        export_formats: generatedFormats,
-        csv_file_name: wantCsv ? csvFileName : null,
-        pdf_file_name: wantPdf ? pdfFileName : null,
-      })
-      .eq('id', exportRecord.id)
+    const updatePayload = {
+      status: 'completed',
+      file_name: jsonFileName,
+      file_url: primaryUrl,
+      export_formats: generatedFormats,
+      csv_file_name: wantCsv ? csvFileName : null,
+      pdf_file_name: wantPdf ? pdfFileName : null,
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit data_exports
+    ;(db.from('data_exports') as any).update(updatePayload).eq('id', exportRecord.id)
 
     // Send export ready notification if user opted in
-    const { data: profile } = await db
+    const { data: profileData } = await db
       .from('user_profiles')
       .select('email_address, export_notification_enabled')
       .eq('id', session.user.id)
       .maybeSingle()
+    type UserProfileForExport = {
+      email_address?: string | null
+      export_notification_enabled?: boolean | null
+    }
+    const profile = profileData as UserProfileForExport | null
     const notifyEmail = profile?.email_address || session.user.email
     const notifyEnabled = profile?.export_notification_enabled ?? true
     if (notifyEmail && notifyEnabled && (primaryUrl || exportData)) {

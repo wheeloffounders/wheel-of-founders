@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<!--
+  WHEEL OF FOUNDERS — Canva Code Design System
+  --------------------------------------------
+  1. Paste this file into Canva "Code for me" (or open in browser to preview).
+  2. UPLOAD your Mrs. Deer images in Canva, then set each <img src=""> to your image URL.
+     - Search for: "PLACEHOLDER", "UPLOAD", "Replace the img src", "expression-img"
+  3. SWAP EXPRESSIONS BY CONTEXT:
+     - Welcoming: login/onboarding
+     - Thoughtful: morning prompts
+     - Encouraging: evening reflection
+     - Celebratory: streaks/wins
+     - Empathetic: emergencies
+  4. CUSTOMIZE: Edit :root CSS variables for colors; change font-family for typography.
+  5. Export from Canva; then we implement with Tailwind (e.g. bg-[#152b50], rounded-xl).
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wheel of Founders — Canva Code Design System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ==========================================================================
+       WHEEL OF FOUNDERS — DESIGN SYSTEM (Customize these in Canva after generation)
+       ========================================================================== */
+    :root {
+      /* Primary */
+      --navy: #152b50;
+      --navy-hover: #1a3565;
+      --coral: #ef725c;
+      --coral-hover: #e8654d;
+      --emerald: #10b981;
+      /* Backgrounds */
+      --bg-light: #FAFBFC;
+      --bg-dark: #0F1419;
+      --card-light: #ffffff;
+      --card-dark: #1A202C;
+      /* Mrs. Deer / warmth */
+      --amber-50: #FFFBEB;
+      --amber-100: #FEF3C7;
+      --amber-500: #F59E0B;
+      --orange-50: #FFF7ED;
+      /* Text */
+      --text-primary: #111827;
+      --text-secondary: #4A5568;
+      --text-on-dark: #E2E8F0;
+      /* Borders */
+      --border-light: #E5E7EB;
+      --radius-card: 12px;
+      --radius-button: 8px;
+      --accent-bar: 4px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-light);
+      color: var(--text-primary);
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    /* ==========================================================================
+       SECTION: Design system preview (colors + typography)
+       ========================================================================== */
+    .design-system {
+      padding: 32px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .design-system h1 {
+      font-size: 30px;
+      font-weight: 700;
+      color: var(--navy);
+      margin: 0 0 8px 0;
+    }
+    .design-system .subtitle {
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+    .color-swatches {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+    .swatch {
+      width: 80px;
+      height: 56px;
+      border-radius: 8px;
+      border: 1px solid var(--border-light);
+    }
+    .swatch-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+    .typography-sample {
+      margin-bottom: 24px;
+    }
+    .typography-sample .h1 { font-size: 30px; font-weight: 700; color: var(--navy); }
+    .typography-sample .h2 { font-size: 20px; font-weight: 600; color: var(--navy); }
+    .typography-sample .body { font-size: 16px; color: var(--text-primary); }
+    .typography-sample .caption { font-size: 12px; color: var(--text-secondary); }
+
+    /* ==========================================================================
+       SECTION: Dashboard cards (12px radius, 4px left accent bar)
+       ========================================================================== */
+    .cards-section {
+      padding: 32px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .cards-section h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--navy);
+      margin: 0 0 16px 0;
+    }
+    .card {
+      background: var(--card-light);
+      border-radius: var(--radius-card);
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+      border-left: var(--accent-bar) solid transparent;
+    }
+    .card.card-navy { border-left-color: var(--navy); }
+    .card.card-coral { border-left-color: var(--coral); }
+    .card.card-emerald { border-left-color: var(--emerald); }
+    .card h3 { font-size: 18px; font-weight: 600; color: var(--navy); margin: 0 0 8px 0; }
+    .card p { margin: 0; color: var(--text-secondary); font-size: 14px; }
+
+    /* ==========================================================================
+       SECTION: Mrs. Deer message bubbles (gradient amber-50 to orange-50)
+       UPLOAD YOUR MRS. DEER IMAGES: Replace .mrs-deer-avatar img src with your
+       uploaded asset. Use data-src or swap the src in Canva for each expression.
+       ========================================================================== */
+    .mrs-deer-bubble {
+      background: linear-gradient(135deg, var(--amber-50) 0%, var(--orange-50) 100%);
+      border: 1px solid var(--amber-100);
+      border-radius: var(--radius-card);
+      padding: 24px;
+      margin-bottom: 24px;
+      max-width: 560px;
+    }
+    .mrs-deer-bubble-inner {
+      background: var(--card-light);
+      border-radius: 8px;
+      border-left: var(--accent-bar) solid var(--amber-500);
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    /* PLACEHOLDER: Your Mrs. Deer avatar image goes here. Swap for each expression. */
+    .mrs-deer-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      overflow: hidden;
+      background: var(--amber-50);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      color: var(--coral);
+    }
+    .mrs-deer-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .mrs-deer-content { flex: 1; min-width: 0; }
+    .mrs-deer-context {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #B45309;
+      background: var(--amber-100);
+      padding: 2px 8px;
+      border-radius: 9999px;
+      margin-bottom: 8px;
+    }
+    .mrs-deer-message {
+      font-size: 16px;
+      color: var(--text-primary);
+      line-height: 1.6;
+      margin: 0;
+    }
+
+    /* ==========================================================================
+       SECTION: Buttons with hover states
+       ========================================================================== */
+    .buttons-section {
+      padding: 32px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .buttons-section h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--navy);
+      margin: 0 0 16px 0;
+    }
+    .button-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 24px;
+      border-radius: var(--radius-button);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary-coral {
+      background: var(--coral);
+      color: white;
+    }
+    .btn-primary-coral:hover {
+      background: var(--coral-hover);
+    }
+    .btn-primary-navy {
+      background: var(--navy);
+      color: white;
+    }
+    .btn-primary-navy:hover {
+      background: var(--navy-hover);
+    }
+    .btn-secondary {
+      background: #f3f4f6;
+      color: var(--text-primary);
+      border: 1px solid var(--border-light);
+    }
+    .btn-secondary:hover {
+      background: #e5e7eb;
+    }
+
+    /* ==========================================================================
+       SECTION: 9 Onboarding goal cards (grid)
+       Use exact options from design brief. Each card can have an emoji or
+       YOUR custom icon image in .goal-icon.
+       ========================================================================== */
+    .onboarding-section {
+      padding: 32px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .onboarding-section h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--navy);
+      margin: 0 0 8px 0;
+    }
+    .onboarding-section .intro {
+      font-size: 16px;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+    }
+    .goals-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+    }
+    .goal-card {
+      background: var(--card-light);
+      border: 2px solid var(--border-light);
+      border-radius: var(--radius-card);
+      padding: 16px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      text-align: left;
+    }
+    .goal-card:hover {
+      border-color: #d1d5db;
+    }
+    .goal-card.selected {
+      border-color: var(--coral);
+      background: var(--amber-50);
+    }
+    .goal-icon {
+      width: 40px;
+      height: 40px;
+      font-size: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+    }
+    /* Optional: use your own icon image
+    .goal-icon img { width: 40px; height: 40px; object-fit: contain; }
+    */
+    .goal-card .label {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: 0 0 4px 0;
+    }
+    .goal-card .description {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin: 0;
+    }
+
+    /* ==========================================================================
+       SECTION: Bottom navigation with + FAB
+       ========================================================================== */
+    .bottom-nav-section {
+      padding: 32px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .bottom-nav-section h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--navy);
+      margin: 0 0 16px 0;
+    }
+    .bottom-nav-demo {
+      position: relative;
+      height: 120px;
+      background: var(--card-light);
+      border-radius: var(--radius-card);
+      box-shadow: 0 -4px 6px -1px rgba(0,0,0,0.08);
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-around;
+      padding-bottom: 16px;
+      padding-top: 24px;
+    }
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .nav-item .icon-box {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+    .nav-fab {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--coral);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      font-weight: 300;
+      line-height: 1;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      border: none;
+      cursor: pointer;
+    }
+    .nav-fab:hover {
+      background: var(--coral-hover);
+      transform: translate(-50%, -50%) scale(1.05);
+    }
+
+    /* ==========================================================================
+       SECTION: Mrs. Deer 5 expressions — placeholder areas for YOUR images
+       Swap the img src in each .expression-block to use your uploaded assets.
+       ========================================================================== */
+    .expressions-section {
+      padding: 32px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .expressions-section h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--navy);
+      margin: 0 0 24px 0;
+    }
+    .expressions-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 20px;
+    }
+    .expression-block {
+      text-align: center;
+    }
+    .expression-block .expression-img {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 8px auto;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--amber-50) 0%, var(--orange-50) 100%);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      color: var(--coral);
+    }
+    .expression-block .expression-img img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .expression-block .expression-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--navy);
+      margin: 0 0 2px 0;
+    }
+    .expression-block .expression-context {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin: 0;
+    }
+
+    /* Spacer between sections */
+    .section-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      margin: 48px 0 16px 0;
+      padding: 0 32px;
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ========================================================================
+       DESIGN SYSTEM: Colors + Typography
+       Customize in Canva: Edit :root variables or use Canva's color picker
+       ======================================================================== -->
+  <section class="design-system" aria-label="Design system">
+    <h1>Wheel of Founders Design System</h1>
+    <p class="subtitle">Use this page in Canva Code; replace image placeholders with your Mrs. Deer assets.</p>
+
+    <p style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">Color palette (hex)</p>
+    <div class="color-swatches">
+      <div><div class="swatch" style="background: #152b50;"></div><div class="swatch-label">Navy #152b50</div></div>
+      <div><div class="swatch" style="background: #ef725c;"></div><div class="swatch-label">Coral #ef725c</div></div>
+      <div><div class="swatch" style="background: #10b981;"></div><div class="swatch-label">Emerald #10b981</div></div>
+      <div><div class="swatch" style="background: #FAFBFC; border: 1px solid #E5E7EB;"></div><div class="swatch-label">Bg #FAFBFC</div></div>
+      <div><div class="swatch" style="background: #FFFBEB;"></div><div class="swatch-label">Amber-50</div></div>
+      <div><div class="swatch" style="background: #FFF7ED;"></div><div class="swatch-label">Orange-50</div></div>
+    </div>
+
+    <p style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">Typography (Inter)</p>
+    <div class="typography-sample">
+      <div class="h1">H1 — 30px Bold</div>
+      <div class="h2" style="margin-top: 8px;">H2 — 20px Semibold</div>
+      <div class="body" style="margin-top: 8px;">Body — 16px Regular. Mrs. Deer messages can use this or a slightly warmer italic.</div>
+      <div class="caption" style="margin-top: 8px;">Caption — 12px for labels and badges.</div>
+    </div>
+  </section>
+
+  <p class="section-label">Dashboard cards (12px radius, 4px left accent)</p>
+  <section class="cards-section" aria-label="Dashboard cards">
+    <h2>Sample dashboard cards</h2>
+    <div class="card card-navy">
+      <h3>Needle movers</h3>
+      <p>Tasks that move the needle. Use navy left bar for primary sections.</p>
+    </div>
+    <div class="card card-coral">
+      <h3>Today's focus</h3>
+      <p>Coral for warmth and CTAs. Power List, primary actions.</p>
+    </div>
+    <div class="card card-emerald">
+      <h3>Completed</h3>
+      <p>Emerald for success and completion states.</p>
+    </div>
+  </section>
+
+  <p class="section-label">Mrs. Deer message bubbles — UPLOAD YOUR IMAGE: replace src below</p>
+  <!-- UPLOAD: Replace the img src with your Mrs. Deer avatar (e.g. welcoming expression) -->
+  <section class="cards-section" aria-label="Mrs. Deer bubbles">
+    <h2>Mrs. Deer message bubble</h2>
+    <div class="mrs-deer-bubble">
+      <div class="mrs-deer-bubble-inner">
+        <div class="mrs-deer-avatar" aria-hidden="true">
+          <!-- PLACEHOLDER: Paste your Mrs. Deer image URL or upload in Canva and set src -->
+          <img src="" alt="Mrs. Deer welcoming" onerror="this.style.display='none'; this.parentElement.innerHTML='🦌';" />
+        </div>
+        <div class="mrs-deer-content">
+          <span class="mrs-deer-context">Morning</span>
+          <p class="mrs-deer-message">Good morning. Yesterday's data is more valuable than a perfect scorecard. What's the one thing today that would make it feel like a win?</p>
+        </div>
+      </div>
+    </div>
+    <div class="mrs-deer-bubble">
+      <div class="mrs-deer-bubble-inner">
+        <div class="mrs-deer-avatar" aria-hidden="true">
+          <!-- Second bubble: use thoughtful or encouraging expression -->
+          <img src="" alt="Mrs. Deer thoughtful" onerror="this.style.display='none'; this.parentElement.innerHTML='🦌';" />
+        </div>
+        <div class="mrs-deer-content">
+          <span class="mrs-deer-context">Evening Reflection</span>
+          <p class="mrs-deer-message">That kind of day takes something out of you. It makes sense. This reflection is still a checkpoint—and the data is useful. What's one small shift that would make tomorrow feel more yours?</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="section-label">Buttons (hover: slightly darker)</p>
+  <section class="buttons-section" aria-label="Buttons">
+    <h2>Buttons</h2>
+    <div class="button-row">
+      <button type="button" class="btn btn-primary-coral">Save plan</button>
+      <button type="button" class="btn btn-primary-navy">Cancel</button>
+      <button type="button" class="btn btn-secondary">Skip for now</button>
+    </div>
+  </section>
+
+  <p class="section-label">Onboarding — 9 goal cards (exact options from app)</p>
+  <section class="onboarding-section" aria-label="Onboarding goals">
+    <h2>What brings you here today?</h2>
+    <p class="intro">Select one. In Canva, you can link each card to your Mrs. Deer welcoming image or custom icons.</p>
+    <div class="goals-grid">
+      <div class="goal-card" role="button" tabindex="0"><div class="goal-icon">🎯</div><p class="label">Finding my purpose</p><p class="description">I need clarity on what truly matters</p></div>
+      <div class="goal-card" role="button" tabindex="0"><div class="goal-icon">🌟</div><p class="label">Build a meaningful business</p><p class="description">I want my business to grow and leave a mark</p></div>
+      <div class="goal-card" role="button" tabindex="0"><div class="goal-icon">🌊</div><p class="label">Reducing overwhelm</p><p class="description">I'm drowning in too many small tasks</p></div>
+      <div class="goal-card" role="button" tabindex="0"><div class="goal-icon">🚀</div><p class="label">Breaking through stuck</p><p class="description">I'm doing everything but still feel stuck</p></div>
+      <div class="goal-card" role="button" tabindex="0"><div class="goal-icon">🔍</div><p class="label">Improving focus</p><p class="description">I need better clarity and focus</p></div>
+      <div class="goal-card" role="button" tabindex="0"><div class="goal-icon">⚙️</div><p class="label">Building systems</p><p class="description">I want to systemize and delegate better</p></div>
+      <div class="goal-card" role="button" tabindex="0"><div class="goal-icon">💡</div><p class="label">General clarity</p><p class="description">I want better decision-making and clarity</p></div>
+      <div class="goal-card" role="button" tabindex="0"><div class="goal-icon">💪</div><p class="label">Staying motivated</p><p class="description">I know what to do, I just struggle to do it consistently</p></div>
+      <div class="goal-card" role="button" tabindex="0"><div class="goal-icon">🧘</div><p class="label">Finding calm</p><p class="description">I'm productive but never feel settled or at peace</p></div>
+    </div>
+  </section>
+
+  <p class="section-label">Mrs. Deer 5 expressions — UPLOAD YOUR IMAGES per expression</p>
+  <section class="expressions-section" aria-label="Mrs. Deer expressions">
+    <h2>Mrs. Deer expression variations</h2>
+    <p class="intro" style="margin-bottom: 16px;">Replace each placeholder with your uploaded Mrs. Deer image. Use these in login, morning, evening, celebrations, and emergencies.</p>
+    <div class="expressions-grid">
+      <div class="expression-block">
+        <div class="expression-img"><img src="" alt="Welcoming" onerror="this.style.display='none'; this.parentElement.innerHTML='😊';" /></div>
+        <p class="expression-name">Welcoming</p>
+        <p class="expression-context">Login / Onboarding</p>
+      </div>
+      <div class="expression-block">
+        <div class="expression-img"><img src="" alt="Thoughtful" onerror="this.style.display='none'; this.parentElement.innerHTML='🤔';" /></div>
+        <p class="expression-name">Thoughtful</p>
+        <p class="expression-context">Morning prompts</p>
+      </div>
+      <div class="expression-block">
+        <div class="expression-img"><img src="" alt="Encouraging" onerror="this.style.display='none'; this.parentElement.innerHTML='💪';" /></div>
+        <p class="expression-name">Encouraging</p>
+        <p class="expression-context">Evening reflection</p>
+      </div>
+      <div class="expression-block">
+        <div class="expression-img"><img src="" alt="Celebratory" onerror="this.style.display='none'; this.parentElement.innerHTML='🎉';" /></div>
+        <p class="expression-name">Celebratory</p>
+        <p class="expression-context">Streaks / Wins</p>
+      </div>
+      <div class="expression-block">
+        <div class="expression-img"><img src="" alt="Empathetic" onerror="this.style.display='none'; this.parentElement.innerHTML='💙';" /></div>
+        <p class="expression-name">Empathetic</p>
+        <p class="expression-context">Emergencies</p>
+      </div>
+    </div>
+  </section>
+
+  <p class="section-label">Bottom navigation with + FAB</p>
+  <section class="bottom-nav-section" aria-label="Bottom nav">
+    <h2>Bottom navigation (design proposal)</h2>
+    <div class="bottom-nav-demo">
+      <div class="nav-item"><div class="icon-box">📊</div><span>Insights</span></div>
+      <button type="button" class="nav-fab" aria-label="Today">+</button>
+      <div class="nav-item"><div class="icon-box">👤</div><span>Profile</span></div>
+    </div>
+    <p style="font-size: 13px; color: var(--text-secondary); margin-top: 12px;">Center + opens: Morning (coral), Emergency (amber), Evening (navy). FAB 56×56px, coral #ef725c.</p>
+  </section>
+
+  <script>
+    // Optional: toggle goal card selected state (for preview in browser)
+    document.querySelectorAll('.goal-card').forEach(function (el) {
+      el.addEventListener('click', function () {
+        this.classList.toggle('selected');
+      });
+    });
+  </script>
+
+</body>
+</html>

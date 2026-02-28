@@ -63,7 +63,7 @@ export default function AdminExperimentsPage() {
     const init = async () => {
       const session = await getUserSession()
       if (!session?.user?.is_admin) {
-        router.push('/')
+        router.push('/dashboard')
         return
       }
       loadExperiments()
@@ -234,7 +234,7 @@ export default function AdminExperimentsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 dark:bg-gray-900">
       <div className="bg-[#152b50] text-white px-6 py-6 shadow-lg">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -262,17 +262,17 @@ export default function AdminExperimentsPage() {
         )}
 
         {loading ? (
-          <div className="flex items-center gap-2 text-gray-500">
+          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-500">
             <Loader2 className="w-5 h-5 animate-spin" />
             Loading experiments...
           </div>
         ) : experiments.length === 0 ? (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-12 text-center">
+          <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-12 text-center">
             <FlaskConical className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-2">
               No experiments yet
             </h2>
-            <p className="text-gray-600 dark:text-gray-300 mb-6 max-w-md mx-auto">
+            <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-6 max-w-md mx-auto">
               Create your first A/B experiment to test variants with page views and funnel metrics.
             </p>
             <button
@@ -289,13 +289,13 @@ export default function AdminExperimentsPage() {
             {experiments.map((exp) => (
               <div
                 key={exp.id}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700"
+                className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 dark:border-gray-700"
               >
                 <div className="p-4 sm:p-6">
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                     <div className="flex-1">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 dark:text-white">
                           {exp.name}
                         </h3>
                         <span
@@ -303,25 +303,25 @@ export default function AdminExperimentsPage() {
                             exp.status === 'running'
                               ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200'
                               : exp.status === 'completed'
-                                ? 'bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200'
+                                ? 'bg-gray-200 text-gray-900 dark:text-gray-100 dark:bg-gray-600 dark:text-gray-200'
                                 : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200'
                           }`}
                         >
                           {exp.status}
                         </span>
                         {exp.target_metric && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                          <span className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400">
                             Target: {exp.target_metric}
                           </span>
                         )}
                       </div>
                       {exp.description && (
-                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                        <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-3">
                           {exp.description}
                         </p>
                       )}
                       {(exp.start_date || exp.end_date) && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                        <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mb-3">
                           {exp.start_date ? new Date(exp.start_date).toLocaleDateString() : '—'}
                           {' → '}
                           {exp.end_date ? new Date(exp.end_date).toLocaleDateString() : '—'}
@@ -332,19 +332,19 @@ export default function AdminExperimentsPage() {
                         {exp.variants.map((v) => (
                           <div
                             key={v}
-                            className="p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600"
+                            className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-700 dark:border-gray-600"
                           >
                             <div className="font-medium text-[#152b50] dark:text-[#ef725c]">{v}</div>
-                            <div className="text-sm text-gray-600 dark:text-gray-300">
+                            <div className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
                               Assigned: {exp.assignments[v] ?? 0}
                             </div>
                             {exp.traffic_allocation?.[v] != null && (
-                              <div className="text-xs text-gray-500">
+                              <div className="text-xs text-gray-500 dark:text-gray-500">
                                 {exp.traffic_allocation[v]}% traffic
                               </div>
                             )}
                             {exp.events[v] && Object.keys(exp.events[v]).length > 0 && (
-                              <div className="mt-1 text-xs text-gray-500">
+                              <div className="mt-1 text-xs text-gray-500 dark:text-gray-500">
                                 {Object.entries(exp.events[v]).map(([ev, n]) => (
                                   <div key={ev}>
                                     {ev}: {n}
@@ -361,7 +361,7 @@ export default function AdminExperimentsPage() {
                       <button
                         type="button"
                         onClick={() => openEdit(exp)}
-                        className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition"
+                        className="p-2 rounded-lg text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition"
                         aria-label="Edit"
                       >
                         <Pencil className="w-4 h-4" />
@@ -374,7 +374,7 @@ export default function AdminExperimentsPage() {
                           exp.status === 'running'
                             ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900/50'
                             : exp.status === 'completed'
-                              ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
+                              ? 'bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
                               : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200 hover:bg-emerald-200 dark:hover:bg-emerald-900/50'
                         }`}
                         title={
@@ -416,37 +416,37 @@ export default function AdminExperimentsPage() {
       {/* Create modal */}
       {modal === 'create' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 dark:text-white mb-4">
                 Create Experiment
               </h2>
               <form onSubmit={handleCreate} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Name *
                   </label>
                   <input
                     type="text"
                     value={form.name}
                     onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Description
                   </label>
                   <textarea
                     value={form.description}
                     onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                     rows={2}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Variants (comma-separated)
                   </label>
                   <input
@@ -454,11 +454,11 @@ export default function AdminExperimentsPage() {
                     value={form.variants}
                     onChange={(e) => setForm((f) => ({ ...f, variants: e.target.value }))}
                     placeholder="control, test"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Traffic allocation % (comma-separated, same order as variants)
                   </label>
                   <input
@@ -466,17 +466,17 @@ export default function AdminExperimentsPage() {
                     value={form.traffic_allocation}
                     onChange={(e) => setForm((f) => ({ ...f, traffic_allocation: e.target.value }))}
                     placeholder="50, 50"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Target metric
                   </label>
                   <select
                     value={form.target_metric}
                     onChange={(e) => setForm((f) => ({ ...f, target_metric: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                   >
                     {TARGET_METRICS.map((m) => (
                       <option key={m.value || 'blank'} value={m.value}>
@@ -487,25 +487,25 @@ export default function AdminExperimentsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                       Start date
                     </label>
                     <input
                       type="date"
                       value={form.start_date}
                       onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                       End date
                     </label>
                     <input
                       type="date"
                       value={form.end_date}
                       onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                     />
                   </div>
                 </div>
@@ -513,7 +513,7 @@ export default function AdminExperimentsPage() {
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700"
                   >
                     Cancel
                   </button>
@@ -535,46 +535,46 @@ export default function AdminExperimentsPage() {
       {/* Edit modal */}
       {modal === 'edit' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 dark:text-white">
                   Edit Experiment
                 </h2>
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="p-2 rounded-lg text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600"
+                  className="p-2 rounded-lg text-gray-500 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
               <form onSubmit={handleUpdate} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Name *
                   </label>
                   <input
                     type="text"
                     value={form.name}
                     onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Description
                   </label>
                   <textarea
                     value={form.description}
                     onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                     rows={2}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Variants (comma-separated)
                   </label>
                   <input
@@ -582,11 +582,11 @@ export default function AdminExperimentsPage() {
                     value={form.variants}
                     onChange={(e) => setForm((f) => ({ ...f, variants: e.target.value }))}
                     placeholder="control, test"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Traffic allocation % (comma-separated)
                   </label>
                   <input
@@ -594,17 +594,17 @@ export default function AdminExperimentsPage() {
                     value={form.traffic_allocation}
                     onChange={(e) => setForm((f) => ({ ...f, traffic_allocation: e.target.value }))}
                     placeholder="50, 50"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                     Target metric
                   </label>
                   <select
                     value={form.target_metric}
                     onChange={(e) => setForm((f) => ({ ...f, target_metric: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                   >
                     {TARGET_METRICS.map((m) => (
                       <option key={m.value || 'blank'} value={m.value}>
@@ -615,25 +615,25 @@ export default function AdminExperimentsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                       Start date
                     </label>
                     <input
                       type="date"
                       value={form.start_date}
                       onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">
                       End date
                     </label>
                     <input
                       type="date"
                       value={form.end_date}
                       onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-white"
                     />
                   </div>
                 </div>
@@ -641,7 +641,7 @@ export default function AdminExperimentsPage() {
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:border-gray-600 text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700"
                   >
                     Cancel
                   </button>

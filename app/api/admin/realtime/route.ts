@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { getUserSession } from '@/lib/auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * GET: Real-time metrics - live users, recent activity
  */
@@ -21,7 +24,9 @@ export async function GET() {
       .select('user_id')
       .gte('created_at', fiveMinAgo)
 
-    const liveUserIds = new Set((recentUsage ?? []).map((r) => r.user_id).filter(Boolean))
+    type UsageRow = { user_id?: string }
+    const usageList = (recentUsage ?? []) as UsageRow[]
+    const liveUserIds = new Set(usageList.map((r) => r.user_id).filter((id): id is string => Boolean(id)))
     const liveUsers = liveUserIds.size
 
     // Recent activity (last 50 events)
@@ -30,6 +35,9 @@ export async function GET() {
       .select('user_id, feature_name, action, page, created_at')
       .order('created_at', { ascending: false })
       .limit(50)
+
+    type ActivityRow = { user_id?: string; feature_name?: string; action?: string; page?: string; created_at?: string }
+    const activityList = (activity ?? []) as ActivityRow[]
 
     // Today's key metrics
     const today = new Date().toISOString().slice(0, 10)
@@ -41,7 +49,7 @@ export async function GET() {
 
     return NextResponse.json({
       liveUsers,
-      recentActivity: (activity ?? []).map((a) => ({
+      recentActivity: activityList.map((a) => ({
         userId: a.user_id,
         feature: a.feature_name,
         action: a.action,

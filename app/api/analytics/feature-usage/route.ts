@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { getServerSession } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 /**
  * Record feature usage for founder analytics. Requires authenticated session.
@@ -21,37 +23,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'feature_name and action required' }, { status: 400 })
     }
 
-    const cookieStore = await cookies()
-    const authClient = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll()
-          },
-          setAll(cookiesToSet: { name: string; value: string; options?: Record<string, unknown> }[]) {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, options as object)
-            })
-          },
-        },
-      }
-    )
-    const { data: { session } } = await authClient.auth.getSession()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const session = await getServerSession()
+    if (!session) {
+      // Return 200 to avoid 401 breaking UI; analytics is non-critical
+      return NextResponse.json({ ok: false, skipped: 'not_authenticated' })
     }
 
     const db = getServerSupabase()
-    await db.from('feature_usage').insert({
+    const row = {
       user_id: session.user.id,
       feature_name,
       action,
       page: page ?? null,
       duration_seconds: duration_seconds ?? null,
       metadata: metadata ?? null,
-    })
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit feature_usage
+    await db.from('feature_usage').insert(row as any)
     return NextResponse.json({ ok: true })
   } catch (e) {
     console.error('[feature-usage]', e)

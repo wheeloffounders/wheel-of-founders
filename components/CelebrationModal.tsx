@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useCallback, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import confetti from 'canvas-confetti'
+import { MrsDeerAvatar } from './MrsDeerAvatar'
 
 const CELEBRATION_MESSAGES = [
   'Another day of progress! Your consistency is building something amazing.',
@@ -108,41 +110,92 @@ export function CelebrationModal({
     }
   }, [isOpen, handleClose])
 
-  if (!isOpen) return null
-
   const displayMessage = message ?? getRandomMessage()
   const hasProgress = totalTasks > 0
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#152b50]/90 backdrop-blur-sm transition-opacity duration-300"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="celebration-title"
-    >
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center transition-transform duration-300">
-        <div className="mb-4 text-5xl" aria-hidden="true">
-          🦌
-        </div>
-        <h2 id="celebration-title" className="text-xl font-semibold text-[#152b50] mb-3">
-          Mrs. Deer is proud of you!
-        </h2>
-        <p className="text-gray-700 mb-4 leading-relaxed">{displayMessage}</p>
-
-        {hasProgress && (
-          <p className="text-sm text-emerald-600 font-medium mb-4">
-            {tasksCompleted}/{totalTasks} priorities completed today
-          </p>
-        )}
-
-        <button
-          type="button"
-          onClick={handleClose}
-          className="w-full py-3 px-6 bg-[#ef725c] text-white font-medium rounded-xl hover:bg-[#e8654d] transition touch-manipulation"
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#152b50]/90 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="celebration-title"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
         >
-          Continue
-        </button>
-      </div>
-    </div>
+          <motion.div
+            className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-8 text-center"
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ 
+              type: 'spring',
+              stiffness: 300,
+              damping: 30,
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0, rotate: -180 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ 
+                delay: 0.2,
+                type: 'spring',
+                stiffness: 200,
+                damping: 15,
+              }}
+              className="mb-4 flex justify-center"
+            >
+              <MrsDeerAvatar expression="celebratory" size="large" />
+            </motion.div>
+            
+            <motion.h2
+              id="celebration-title"
+              className="text-xl font-semibold text-[#152b50] dark:text-[#E2E8F0] mb-3"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+            >
+              Mrs. Deer, your AI companion is proud of you!
+            </motion.h2>
+            
+            <motion.p
+              className="text-gray-700 dark:text-gray-300 mb-4 leading-relaxed"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+            >
+              {displayMessage}
+            </motion.p>
+
+            {hasProgress && (
+              <motion.p
+                className="text-sm text-emerald-600 font-medium mb-4"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.5, type: 'spring' }}
+              >
+                {tasksCompleted}/{totalTasks} priorities completed today
+              </motion.p>
+            )}
+
+            <motion.button
+              type="button"
+              onClick={handleClose}
+              className="w-full py-3 px-6 bg-[#ef725c] text-white font-medium rounded-xl hover:bg-[#e8654d] transition touch-manipulation"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6 }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              Continue
+            </motion.button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }

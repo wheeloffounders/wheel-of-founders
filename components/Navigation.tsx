@@ -3,11 +3,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { Home, Sun, Flame, Moon, BarChart2, Calendar, MapPin, User, MessageSquare, Settings, DollarSign, BarChart3, FlaskConical, LogOut, Menu, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
-import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { resetAnalytics } from '@/lib/analytics'
 import MobileSidebar from './MobileSidebar'
+import { useProgress } from '@/lib/hooks/useProgress'
+import { ProgressCircle } from './ProgressCircle'
 
 export type NavItem = {
   name: string
@@ -18,6 +19,7 @@ export type NavItem = {
 export default function Navigation() {
   const pathname = usePathname()
   const router = useRouter()
+  const { monthly, quarterly } = useProgress()
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [insightsOpen, setInsightsOpen] = useState(false)
@@ -107,6 +109,8 @@ export default function Navigation() {
 
   const insightsItems: NavItem[] = [
     { name: 'Weekly', href: '/weekly', icon: Calendar },
+    { name: 'Monthly', href: '/monthly-insight', icon: Calendar },
+    { name: 'Quarterly', href: '/quarterly', icon: BarChart2 },
     { name: 'Journey', href: '/history', icon: MapPin },
   ]
 
@@ -127,8 +131,10 @@ export default function Navigation() {
 
   const isDark = theme === 'dark'
 
-  const isInsightsActive = pathname === '/weekly' || pathname === '/history'
-  const isProfileActive = pathname === '/profile' || pathname === '/feedback' || pathname === '/settings' || pathname === '/pricing' || pathname.startsWith('/admin')
+  const isInsightsActive = pathname === '/weekly' || pathname === '/history' || pathname === '/monthly-insight' || pathname === '/quarterly'
+const isProfileActive = pathname 
+  ? pathname === '/profile' || pathname === '/feedback' || pathname === '/settings' || pathname === '/pricing' || pathname.startsWith('/admin')
+  : false
 
   return (
     <>
@@ -141,7 +147,7 @@ export default function Navigation() {
                 href="/"
                 className={`flex items-center focus:outline-none focus:ring-2 focus:ring-[#ef725c] focus:ring-offset-2 rounded ${isDark ? 'focus:ring-offset-[#152b50]' : 'focus:ring-offset-white'}`}
               >
-                <Image src="/logo.jpg" alt="Wheel of Founders" width={180} height={76} className="w-[140px] md:w-[180px] h-auto object-contain object-left" priority unoptimized />
+                <span className="text-lg font-medium text-[#152b50] dark:text-[#E2E8F0]">Wheel of Founders</span>
               </Link>
             </div>
 
@@ -149,7 +155,7 @@ export default function Navigation() {
             <button
               onClick={() => setSidebarOpen(true)}
               aria-label="Open menu"
-              className={`md:hidden p-2 rounded-lg transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center ${isDark ? 'text-[#ef725c] hover:bg-gray-700' : 'text-[#ef725c] hover:bg-gray-100'}`}
+              className={`md:hidden p-2 rounded-lg transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center ${isDark ? 'text-[#ef725c] hover:bg-gray-700' : 'text-[#ef725c] hover:bg-gray-50 dark:bg-gray-900'}`}
             >
               <Menu className="w-6 h-6" />
             </button>
@@ -163,7 +169,7 @@ export default function Navigation() {
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`${navLinkBase} ${isActive ? 'bg-[#ef725c] text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}
+                    className={`${navLinkBase} ${isActive ? 'bg-[#ef725c] text-white' : 'text-white/80 hover:bg-white dark:bg-gray-800/10 hover:text-white'}`}
                   >
                     <Icon className="w-4 h-4 mr-2 flex-shrink-0" />
                     <span>{item.name}</span>
@@ -180,7 +186,7 @@ export default function Navigation() {
                     setInsightsOpen((o) => !o)
                     setProfileOpen(false)
                   }}
-                  className={`${navLinkBase} ${isInsightsActive ? 'bg-[#ef725c] text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}
+                  className={`${navLinkBase} ${isInsightsActive ? 'bg-[#ef725c] text-white' : 'text-white/80 hover:bg-white dark:bg-gray-800/10 hover:text-white'}`}
                   aria-expanded={insightsOpen}
                   aria-haspopup="true"
                 >
@@ -195,10 +201,16 @@ export default function Navigation() {
                   >
                     {insightsItems.map((item) => {
                       const Icon = item.icon
+                      const isMonthly = item.href === '/monthly-insight'
+                      const isQuarterly = item.href === '/quarterly'
+                      const progress = isMonthly ? monthly : isQuarterly ? quarterly : null
                       return (
-                        <Link key={item.name} href={item.href} onClick={() => setInsightsOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-white/90 hover:bg-white/10">
+                        <Link key={item.name} href={item.href} onClick={() => setInsightsOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-white/90 hover:bg-white dark:bg-gray-800/10">
                           <Icon className="w-4 h-4 flex-shrink-0" />
-                          {item.name}
+                          <span className="flex-1">{item.name}</span>
+                          {progress && (
+                            <ProgressCircle current={progress.current} required={progress.required} size="sm" showFraction />
+                          )}
                         </Link>
                       )
                     })}
@@ -215,7 +227,7 @@ export default function Navigation() {
                     setProfileOpen((o) => !o)
                     setInsightsOpen(false)
                   }}
-                  className={`${navLinkBase} ${isProfileActive ? 'bg-[#ef725c] text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}
+                  className={`${navLinkBase} ${isProfileActive ? 'bg-[#ef725c] text-white' : 'text-white/80 hover:bg-white dark:bg-gray-800/10 hover:text-white'}`}
                   aria-expanded={profileOpen}
                   aria-haspopup="true"
                 >
@@ -231,7 +243,7 @@ export default function Navigation() {
                     {profileItems.map((item) => {
                       const Icon = item.icon
                       return (
-                        <Link key={item.name} href={item.href} onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-white/90 hover:bg-white/10">
+                        <Link key={item.name} href={item.href} onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-white/90 hover:bg-white dark:bg-gray-800/10">
                           <Icon className="w-4 h-4 flex-shrink-0" />
                           {item.name}
                         </Link>
@@ -240,7 +252,7 @@ export default function Navigation() {
                     {isAdmin && adminItems.map((item) => {
                       const Icon = item.icon
                       return (
-                        <Link key={item.name} href={item.href} onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-white/90 hover:bg-white/10">
+                        <Link key={item.name} href={item.href} onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-white/90 hover:bg-white dark:bg-gray-800/10">
                           <Icon className="w-4 h-4 flex-shrink-0" />
                           {item.name}
                         </Link>
@@ -257,7 +269,7 @@ export default function Navigation() {
                       </button>
                     )}
                     {!isLoggedIn && (
-                      <Link href="/login" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-white/90 hover:bg-white/10">
+                      <Link href="/login" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-white/90 hover:bg-white dark:bg-gray-800/10">
                         <LogOut className="w-4 h-4 flex-shrink-0" />
                         Log in
                       </Link>
@@ -271,7 +283,7 @@ export default function Navigation() {
                 type="button"
                 onClick={toggleTheme}
                 aria-label="Toggle dark / light mode"
-                className={`${navLinkBase} ${isDark ? 'text-gray-200 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-[#152b50]'}`}
+                className={`${navLinkBase} ${isDark ? 'text-gray-200 hover:bg-gray-700 hover:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 hover:text-[#152b50]'}`}
               >
                 {isDark ? <Sun className="w-4 h-4 flex-shrink-0" /> : <Moon className="w-4 h-4 flex-shrink-0" />}
               </button>
@@ -283,7 +295,7 @@ export default function Navigation() {
       <MobileSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
-        pathname={pathname}
+        pathname={pathname || ''}
         mainNavItems={mainNavItems}
         insightsItems={insightsItems}
         profileItems={profileItems}
@@ -292,6 +304,8 @@ export default function Navigation() {
         onSignOut={handleSignOut}
         theme={theme}
         onToggleTheme={toggleTheme}
+        monthlyProgress={monthly}
+        quarterlyProgress={quarterly}
       />
     </>
   )

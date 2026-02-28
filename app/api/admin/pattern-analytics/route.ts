@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { subDays, format } from 'date-fns'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * Founder-facing pattern analytics (last 7 days).
  * Protected by ADMIN_SECRET. Returns counts of users in each behavior pattern.
@@ -26,27 +29,34 @@ export async function GET(req: Request) {
     .select('user_id, review_date, mood, energy')
     .gte('review_date', startDate)
 
+  type TaskRow = { user_id?: string; plan_date?: string; completed?: boolean; needle_mover?: boolean }
+  type ReviewRow = { user_id?: string; review_date?: string; mood?: number | null; energy?: number | null }
+  const taskList = (tasks || []) as TaskRow[]
+  const reviewList = (reviews || []) as ReviewRow[]
+
   const userIds = new Set<string>()
-  ;(tasks || []).forEach((t) => userIds.add(t.user_id))
-  ;(reviews || []).forEach((r) => userIds.add(r.user_id))
+  taskList.forEach((t) => { if (t.user_id) userIds.add(t.user_id) })
+  reviewList.forEach((r) => { if (r.user_id) userIds.add(r.user_id) })
 
   const userTaskDays = new Map<string, Record<string, { total: number; completed: number; withNeedleMover: number }>>()
-  for (const t of tasks || []) {
-    const uid = t.user_id
-    const d = t.plan_date
+  for (const t of taskList) {
+    const uid = t.user_id ?? ''
+    const d = t.plan_date ?? ''
+    if (!uid || !d) continue
     if (!userTaskDays.has(uid)) userTaskDays.set(uid, {})
     const byDate = userTaskDays.get(uid)!
     if (!byDate[d]) byDate[d] = { total: 0, completed: 0, withNeedleMover: 0 }
     byDate[d].total++
-    if ((t as { completed?: boolean }).completed) byDate[d].completed++
-    if ((t as { needle_mover?: boolean }).needle_mover === true) byDate[d].withNeedleMover++
+    if (t.completed) byDate[d].completed++
+    if (t.needle_mover === true) byDate[d].withNeedleMover++
   }
 
   const userReviewDays = new Map<string, Array<{ mood: number | null; energy: number | null }>>()
-  for (const r of reviews || []) {
-    const uid = r.user_id
+  for (const r of reviewList) {
+    const uid = r.user_id ?? ''
+    if (!uid) continue
     if (!userReviewDays.has(uid)) userReviewDays.set(uid, [])
-    userReviewDays.get(uid)!.push({ mood: r.mood, energy: r.energy })
+    userReviewDays.get(uid)!.push({ mood: r.mood ?? null, energy: r.energy ?? null })
   }
 
   let overPlanning = 0

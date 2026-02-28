@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { getServerSession } from '@/lib/server-auth'
 import { extractPatternsFromText } from '@/lib/analytics/pattern-extractor'
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 /**
  * Enqueue user reflection content for AI pattern extraction.
@@ -19,24 +21,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'source_table and content required' }, { status: 400 })
     }
 
-    const cookieStore = await cookies()
-    const authClient = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll: () => cookieStore.getAll(),
-          setAll(cookiesToSet: { name: string; value: string; options?: object }[]) {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, options as object)
-            })
-          },
-        },
-      }
-    )
-    const { data: { session } } = await authClient.auth.getSession()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const session = await getServerSession()
+    if (!session) {
+      return NextResponse.json({ ok: false, skipped: 'not_authenticated' })
     }
 
     await extractPatternsFromText(

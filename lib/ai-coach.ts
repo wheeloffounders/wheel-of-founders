@@ -47,21 +47,21 @@ export async function generateAICoachPrompt(
         const completedTasks = tasks.filter((t) => t.completed).length
 
         if (!review && tasks.length === 0) {
-          return "Good morning! Ready to plan today? Start with 1-2 needle movers—what will move the needle most?"
+          return "Good morning. No pressure to have it all figured out—what's the one thing that would make today feel like a win if it were the only thing you finished?"
         }
 
         const energyLevel = review?.energy || 0
         const moodLevel = review?.mood || 0
 
         if (energyLevel >= 4 && completedTasks >= 2) {
-          return `Yesterday you had high energy and completed ${completedTasks} tasks. Today, capitalize on that momentum—what needle mover will you tackle first?`
+          return `Yesterday you had good energy and got ${completedTasks} things done. That momentum is real. This morning: what's the one piece of work that deserves to ride that wave first?`
         } else if (energyLevel <= 2) {
-          return `Yesterday felt lower energy. Today, start with one clear priority and build momentum. What's the ONE thing that matters most?`
+          return `Yesterday took something out of you—that's data, not a verdict. Today, one clear priority is enough. What's the single thing that would matter most if you protected it from everything else?`
         } else if (completedTasks < tasks.length) {
-          return `You completed ${completedTasks}/${tasks.length} tasks yesterday. Today, focus on fewer, higher-impact priorities. What's your needle mover?`
+          return `You finished ${completedTasks} of ${tasks.length} yesterday. Less can be more: what's the one outcome that would make today feel intentional rather than full?`
         }
 
-        return `Based on yesterday's patterns, you're ready to plan today. What's the ONE thing that will move the needle most?`
+        return `Yesterday's in the books. This morning: what's the one thing that would make today feel like it belonged to you?`
       }
 
       case 'morning_after': {
@@ -80,14 +80,14 @@ export async function generateAICoachPrompt(
         }
 
         if (needleMovers === 0 && tasks.length > 0) {
-          return `You've planned ${tasks.length} tasks. Consider marking at least one as a needle mover—what will move the needle most today?`
+          return `You've named ${tasks.length} things for today. If you could only protect one from getting crowded out, which one would it be? Start there.`
         } else if (needleMovers >= 2) {
-          return `Great planning! You have ${needleMovers} needle movers. Focus on these first—they'll create the most impact.`
+          return `You've got ${needleMovers} priorities that really matter today. Guard the time for the first one—the rest will follow from that clarity.`
         } else if (tasks.length > 3) {
-          return `You've planned ${tasks.length} tasks. That's ambitious! Make sure your needle mover gets done first—everything else can wait.`
+          return `${tasks.length} things is a lot to hold. Which one, if you did it first, would make the rest feel lighter? Put that one at the top.`
         }
 
-        return `Your plan looks focused. Start with your needle mover—tackle it before anything else today.`
+        return `Your plan has a clear center. Do the one that matters most before the day pulls you elsewhere.`
       }
 
       case 'evening_after': {
@@ -119,16 +119,16 @@ export async function generateAICoachPrompt(
         const moodLevel = review?.mood || 0
 
         if (needleMoversCompleted > 0) {
-          return `You completed ${needleMoversCompleted} needle mover${needleMoversCompleted > 1 ? 's' : ''} today! That's what moves the needle. Keep this momentum going tomorrow.`
+          return `You finished what mattered most today—${needleMoversCompleted} piece${needleMoversCompleted > 1 ? 's' : ''} of work that really moved things. That's the kind of day that compounds. What made it possible?`
         } else if (completedTasks >= tasks.length * 0.8 && tasks.length > 0) {
-          return `You completed ${completedTasks}/${tasks.length} tasks today—strong execution! Tomorrow, make sure your needle mover is first on the list.`
+          return `You got ${completedTasks} of ${tasks.length} done today. That's strong. Tomorrow: put the one that matters most first, and let the rest arrange around it.`
         } else if (energyLevel >= 4 && moodLevel >= 4) {
-          return `You're ending today with high energy and good mood. That's a great foundation for tomorrow. What will you prioritize?`
+          return `You're closing the day with good energy and mood. That's a gift. What do you want to protect or extend when you plan tomorrow?`
         } else if (completedTasks < tasks.length * 0.5 && tasks.length > 0) {
-          return `You completed ${completedTasks}/${tasks.length} tasks today. Tomorrow, try focusing on fewer priorities—quality over quantity.`
+          return `Today didn't go to plan—${completedTasks}/${tasks.length}. That's useful data, not a verdict. What's one small shift that would make tomorrow feel more yours?`
         }
 
-        return `You've reflected on today. What patterns do you notice? Use them to plan a better tomorrow.`
+        return `You've sat with today. What did you notice—about what worked, what drained you, or what you'd do differently? Let that shape tomorrow.`
       }
 
       default:

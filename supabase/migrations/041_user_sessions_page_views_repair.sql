@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS public.page_views (
 );
 
 CREATE INDEX IF NOT EXISTS idx_page_views_user ON public.page_views(user_id);
+CREATE INDEX IF NOT EXISTS idx_page_views_session ON public.page_views(session_id);
 CREATE INDEX IF NOT EXISTS idx_page_views_entered ON public.page_views(entered_at);
 CREATE INDEX IF NOT EXISTS idx_page_views_path ON public.page_views(path);
 

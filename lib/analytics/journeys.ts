@@ -28,12 +28,14 @@ export async function recordPageView(
   if (options?.referrer) metadata.referrer = options.referrer
   if (options?.sessionId && !sessionId) metadata.client_session_id = options.sessionId
 
-  const { error } = await db.from('page_views').insert({
+  const payload = {
     user_id: options?.userId ?? null,
     session_id: sessionId,
     path,
     metadata: Object.keys(metadata).length > 0 ? metadata : null,
-  })
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit page_views
+  const { error } = await (db.from('page_views') as any).insert(payload as any)
   if (error) {
     console.error('[analytics/journeys] recordPageView failed:', error)
   }
@@ -53,13 +55,21 @@ export async function analyzeJourneys(days = 7): Promise<JourneyStats> {
     .gte('entered_at', since)
     .order('entered_at', { ascending: true })
 
-  if (!views || views.length === 0) {
+  type PageViewRow = {
+    user_id?: string | null
+    path?: string | null
+    session_id?: string | null
+    entered_at?: string | null
+  }
+  const viewRows = (views as PageViewRow[] | null) ?? []
+
+  if (viewRows.length === 0) {
     return { paths: {}, drops: {}, completedFlow: 0, totalSessions: 0 }
   }
 
   // Group by user session (simplified: use user_id + date as session)
   const sessions = new Map<string, { paths: string[]; completed: boolean }>()
-  for (const v of views) {
+  for (const v of viewRows) {
     const day = v.entered_at?.slice(0, 10) ?? ''
     const key = `${v.user_id}|${day}`
     if (!sessions.has(key)) {

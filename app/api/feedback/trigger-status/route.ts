@@ -12,6 +12,9 @@ interface TriggerStatus {
   daysOrCount?: number
 }
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /** GET: Check if any feedback popup should show */
 export async function GET() {
   try {
@@ -24,14 +27,20 @@ export async function GET() {
     const db = getServerSupabase()
 
     // Fetch trigger preferences
-    const { data: prefs } = await db
+    const { data: prefsData } = await db
       .from('feedback_trigger_preferences')
       .select('dismissed_triggers, maybe_later_until')
       .eq('user_id', userId)
       .maybeSingle()
 
-    const dismissed = (prefs?.dismissed_triggers as Record<string, boolean>) || {}
-    const maybeLater = (prefs?.maybe_later_until as Record<string, string>) || {}
+    type TriggerPrefsRow = {
+      dismissed_triggers?: Record<string, boolean> | null
+      maybe_later_until?: Record<string, string> | null
+    }
+    const prefs = prefsData as TriggerPrefsRow | null
+
+    const dismissed = prefs?.dismissed_triggers || {}
+    const maybeLater = prefs?.maybe_later_until || {}
     const now = new Date()
 
     // Get user activity data
@@ -43,9 +52,10 @@ export async function GET() {
     ])
 
     const reviews = reviewsRes.data || []
-    const firstTask = tasksRes.data?.[0]
+    type TaskRow = { created_at?: string; plan_date?: string }
+    const firstTask = ((tasksRes.data as TaskRow[] | null) ?? [])[0]
     const hasExported = (exportsRes.data?.length ?? 0) > 0
-    const profileCreated = profileRes.data?.created_at
+    const profileCreated = (profileRes.data as { created_at?: string } | null)?.created_at
 
     // Days since first activity (profile or first task)
     const firstActivity = profileCreated || firstTask?.created_at || firstTask?.plan_date

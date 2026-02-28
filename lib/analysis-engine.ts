@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { getServerSupabase } from './server-supabase'
 import { format, subDays, startOfWeek, endOfWeek, getDay } from 'date-fns'
 import { getFeatureAccess, UserProfile } from './features'
 
@@ -74,27 +74,28 @@ export async function analyzeUserPatterns(
   const startStr = format(startDate, 'yyyy-MM-dd')
   const endStr = format(endDate, 'yyyy-MM-dd')
 
+  const db = getServerSupabase()
   // Fetch all user data in parallel
   const [tasksRes, decisionsRes, reviewsRes, emergenciesRes] = await Promise.all([
-    supabase
+    db
       .from('morning_tasks')
       .select('plan_date, completed, needle_mover, action_plan')
       .gte('plan_date', startStr)
       .lte('plan_date', endStr)
       .eq('user_id', userId),
-    supabase
+    db
       .from('morning_decisions')
       .select('plan_date, decision_type')
       .gte('plan_date', startStr)
       .lte('plan_date', endStr)
       .eq('user_id', userId),
-    supabase
+    db
       .from('evening_reviews')
       .select('review_date, mood, energy')
       .gte('review_date', startStr)
       .lte('review_date', endStr)
       .eq('user_id', userId),
-    supabase
+    db
       .from('emergencies')
       .select('fire_date, resolved')
       .gte('fire_date', startStr)
@@ -102,10 +103,15 @@ export async function analyzeUserPatterns(
       .eq('user_id', userId),
   ])
 
-  const tasks = tasksRes.data || []
-  const decisions = decisionsRes.data || []
-  const reviews = reviewsRes.data || []
-  const emergencies = emergenciesRes.data || []
+  type TaskRow = { plan_date: string; completed?: boolean; needle_mover?: boolean; action_plan?: string }
+  type DecisionRow = { plan_date: string; decision_type?: string }
+  type ReviewRow = { review_date: string; mood?: number | null; energy?: number | null }
+  type EmergencyRow = { fire_date: string; resolved?: boolean }
+
+  const tasks = (tasksRes.data || []) as TaskRow[]
+  const decisions = (decisionsRes.data || []) as DecisionRow[]
+  const reviews = (reviewsRes.data || []) as ReviewRow[]
+  const emergencies = (emergenciesRes.data || []) as EmergencyRow[]
 
   // Task patterns
   const completedTasks = tasks.filter((t) => t.completed).length
@@ -144,7 +150,11 @@ export async function analyzeUserPatterns(
   decisions.forEach((d) => {
     const dayName = format(new Date(d.plan_date), 'EEEE')
     byDecisionDay[dayName] = (byDecisionDay[dayName] || 0) + 1
-    byDecisionType[d.decision_type] = (byDecisionType[d.decision_type] || 0) + 1
+    if (d.decision_type) {
+    if (d.decision_type) {
+      byDecisionType[d.decision_type] = (byDecisionType[d.decision_type] || 0) + 1
+    }
+    }
   })
 
   // Energy/Mood patterns

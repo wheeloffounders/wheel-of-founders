@@ -3,6 +3,9 @@ import { supabase } from '@/lib/supabase'
 import { analyzeUser } from '@/lib/analysis-engine'
 import { format } from 'date-fns'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * Manual Analysis Endpoint
  * Allows authenticated users to trigger their own analysis

@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
-import { generateAIPrompt, getAIModel } from '@/lib/ai-client'
+import { generateAIPrompt, AIError } from '@/lib/ai-client'
 import { MRS_DEER_RULES } from '@/lib/mrs-deer'
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export async function POST(request: NextRequest) {
   try {
@@ -154,8 +157,24 @@ export async function POST(request: NextRequest) {
       console.log('[Profile Insight API] Raw profile data:', JSON.stringify(profileData, null, 2))
     }
 
-    // Build context string (use empty object if profileData is null)
-    const profile = profileData || {}
+    // Build context string (use typed object; fall back to empty profile)
+    type UserProfileRow = {
+      preferred_name?: string | null
+      name?: string | null
+      primary_goal?: string | null
+      primary_goal_text?: string | null
+      hobbies?: string[] | null
+      struggles?: string[] | null
+      message_to_mrs_deer?: string | null
+      destress_activity?: string | null
+      founder_stage?: string | null
+      primary_role?: string | null
+      years_as_founder?: string | number | null
+      founder_personality?: string | null
+      // Allow additional dynamic fields from user_profiles without strict typing
+      [key: string]: any
+    }
+    const profile = (profileData as UserProfileRow | null) ?? ({} as UserProfileRow)
     const userName = profile.preferred_name || profile.name
     
     console.log('[Profile Insight API] ===== PROFILE FIELD EXTRACTION =====')
@@ -298,15 +317,9 @@ export async function POST(request: NextRequest) {
     const insight = await generateAIPrompt({
       systemPrompt,
       userPrompt,
-      model: getAIModel(),
-      maxTokens: 200, // Increased for more detailed responses
-      temperature: 0.8, // Slightly higher for more natural, personalized responses
+      maxTokens: 200,
+      temperature: 0.8,
     })
-
-    if (!insight) {
-      console.error('[Profile Insight API] AI generation returned null')
-      return NextResponse.json({ error: 'Failed to generate insight' }, { status: 500 })
-    }
 
     console.log('[Profile Insight API] Insight generated, length:', insight.length)
     console.log('[Profile Insight API] Insight preview:', insight.substring(0, 150))
@@ -587,12 +600,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ insight: finalInsight })
   } catch (error) {
     console.error('[Profile Insight API] Error generating profile insight:', error)
+    if (error instanceof AIError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          aiError: true,
+          model: error.model,
+          status: error.status,
+          statusText: error.statusText,
+          openRouterError: error.openRouterError,
+        },
+        { status: 502 }
+      )
+    }
     if (error instanceof Error) {
       console.error('[Profile Insight API] Error stack:', error.stack)
-      console.error('[Profile Insight API] Error message:', error.message)
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to generate insight' },
+      { error: 'Failed to generate insight' },
       { status: 500 }
     )
   }

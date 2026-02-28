@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { format, formatDistanceToNow, isToday } from 'date-fns'
-import { Target, Zap, X, AlertCircle, Edit2, Check, Square, Save, X as XIcon, HelpCircle } from 'lucide-react'
+import { Target, Zap, X, AlertCircle, Edit2, Check, Square, Save, X as XIcon, HelpCircle, Trash2 } from 'lucide-react'
 import { InfoTooltip } from '@/components/InfoTooltip'
 import SpeechToTextInput from '@/components/SpeechToTextInput'
 import { supabase } from '@/lib/supabase'
@@ -13,9 +13,20 @@ import { AICoachPrompt } from '@/components/AICoachPrompt'
 import { getFeatureAccess } from '@/lib/features'
 import { DateSelector } from '@/components/DateSelector'
 import { useUserLanguage } from '@/lib/use-user-language'
-import { getUserGoal, getActionPlanOptions } from '@/lib/user-language'
+import { getUserGoal, getActionPlanOptions, type UserGoal } from '@/lib/user-language'
 import { trackEvent } from '@/lib/analytics'
 import { trackFunnelStep } from '@/lib/analytics/track-funnel'
+import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { ProgressIndicator } from '@/components/ProgressIndicator'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
+import { ConfirmModal } from '@/components/ConfirmModal'
+import { StreamingIndicator } from '@/components/StreamingIndicator'
+import { useStreamingInsight } from '@/lib/hooks/useStreamingInsight'
+import { colors, typography, spacing } from '@/lib/design-tokens'
+import { motion, useReducedMotion } from 'framer-motion'
 
 
 export type ActionPlanOption2 = 'my_zone' | 'systemize' | 'delegate_founder' | 'eliminate_founder' | 'quick_win_founder'
@@ -62,7 +73,7 @@ function generateTaskId(): string {
 export default function MorningPage() {
   const router = useRouter()
   const lang = useUserLanguage() // Personalized language
-  const [userGoal, setUserGoal] = useState<string | null>(null)
+  const [userGoal, setUserGoal] = useState<UserGoal | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [userTier, setUserTier] = useState<string>('beta')
   const [morningInsight, setMorningInsight] = useState<string | null>(null)
@@ -82,15 +93,163 @@ export default function MorningPage() {
   const [planCreatedAt, setPlanCreatedAt] = useState<Date | null>(null)
   const [planUpdatedAt, setPlanUpdatedAt] = useState<Date | null>(null)
   const [decisionDbId, setDecisionDbId] = useState<string | null>(null)
-  const [planDate, setPlanDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  // Fix hydration: initialize with empty string, set in useEffect
+  const [planDate, setPlanDate] = useState<string>('')
   const [planningMode, setPlanningMode] = useState<'full' | 'light'>('full')
+  const [retryTrigger, setRetryTrigger] = useState(0)
+  const [confirmDeleteTask, setConfirmDeleteTask] = useState<Task | null>(null)
+  const [confirmDeleteDecision, setConfirmDeleteDecision] = useState(false)
   const funnelStepRef = useRef<Set<number>>(new Set())
+  const prefersReducedMotion = useReducedMotion()
+  const { insight: streamingInsight, isStreaming: isStreamingPostMorning, error: streamingError, startStream } = useStreamingInsight()
+
+  // Initialize planDate on client side to avoid hydration mismatch
+  useEffect(() => {
+    if (planDate === '') {
+      setPlanDate(format(new Date(), 'yyyy-MM-dd'))
+    }
+  }, [])
+
+  // Debug: log when insight state changes
+  useEffect(() => {
+    console.log('[Morning Page State] morningInsight:', morningInsight ? `${morningInsight.length} chars` : 'null', 'postMorningInsight:', postMorningInsight ? `${postMorningInsight.length} chars` : 'null', 'hasPlan:', hasPlan)
+  }, [morningInsight, postMorningInsight, hasPlan])
+
+  /** Log when banned phrases appear (for debugging) - always show insight, never hide */
+  const logBannedPhrasesIfAny = useCallback((insight: string) => {
+    if (insight && (insight.includes('top priority') || insight.includes('Needle Mover') || insight.includes('Smart Constraint') || insight.includes('🌿'))) {
+      console.warn('[MORNING] Banned phrases detected in insight, showing anyway (filtered version)')
+    }
+  }, [])
 
   const fireFunnelStep = useCallback((step: number, name: string) => {
     if (funnelStepRef.current.has(step)) return
     funnelStepRef.current.add(step)
     trackFunnelStep('morning_flow', name, step)
   }, [])
+
+  const loadTodayPlan = useCallback(async (opts?: { silent?: boolean }) => {
+    const session = await getUserSession()
+    if (!session) return
+
+    if (!opts?.silent) setLoading(true)
+    try {
+      const features = getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
+      const [prefsRes, tasksRes, decisionsRes, postMorningInsightRes] = await Promise.all([
+        fetch('/api/user-preferences', { credentials: 'include', cache: 'no-store' }).then((r) => r.json()).catch(() => ({ planning_mode: 'full' })),
+        supabase.from('morning_tasks').select('*').eq('plan_date', planDate).eq('user_id', session.user.id).order('task_order', { ascending: true }),
+        supabase.from('morning_decisions').select('*').eq('plan_date', planDate).eq('user_id', session.user.id).maybeSingle(),
+        features.dailyPostMorningPrompt
+          ? (async () => {
+              const { data, error } = await supabase.from('personal_prompts').select('prompt_text, prompt_type, prompt_date, generated_at').eq('user_id', session.user.id).eq('prompt_date', planDate).eq('prompt_type', 'post_morning').order('generated_at', { ascending: false }).limit(1).maybeSingle()
+              return { data, error }
+            })()
+          : Promise.resolve({ data: null, error: null }),
+      ])
+      const planning_mode = (prefsRes as { planning_mode?: 'full' | 'light' })?.planning_mode ?? 'full'
+      setPlanningMode(planning_mode)
+      const loadedTasks = (tasksRes.data ?? []) as Array<{ id: string; description: string; why_this_matters?: string; needle_mover: boolean; is_proactive?: boolean | null; action_plan?: string; completed?: boolean; created_at: string; updated_at: string }>
+      const hasPlanForDate = loadedTasks.length > 0 || decisionsRes.data
+      if (hasPlanForDate && postMorningInsightRes?.data?.prompt_text) {
+        const insight = postMorningInsightRes.data.prompt_text
+        if (insight && (insight.includes('top priority') || insight.includes('Needle Mover') || insight.includes('Smart Constraint') || insight.includes('🌿'))) {
+          console.warn('[MORNING] Banned phrases in DB insight, showing anyway')
+        }
+        setPostMorningInsight(insight)
+      } else if (!hasPlanForDate) {
+        setPostMorningInsight(null)
+      }
+      if (loadedTasks.length > 0 || decisionsRes.data) {
+        setHasPlan(true)
+        if (loadedTasks.length > 0) {
+          setTasks(loadedTasks.map((t) => ({ id: generateTaskId(), dbId: t.id, description: t.description, whyThisMatters: t.why_this_matters || '', needleMover: t.needle_mover ?? null, isProactive: t.is_proactive ?? null, actionPlan: (t.action_plan as ActionPlanOption2) || 'my_zone', completed: t.completed || false })))
+          setPlanCreatedAt(new Date(loadedTasks[0].created_at))
+          setPlanUpdatedAt(new Date(loadedTasks[0].updated_at))
+        }
+        if (decisionsRes.data) {
+          setDecision({ decision: decisionsRes.data.decision, decisionType: decisionsRes.data.decision_type as 'strategic' | 'tactical', whyThisDecision: decisionsRes.data.why_this_decision || '' })
+          setDecisionDbId(decisionsRes.data.id)
+          setPlanCreatedAt((prev) => prev ?? new Date(decisionsRes.data.created_at))
+          setPlanUpdatedAt(new Date(decisionsRes.data.updated_at))
+        }
+      } else {
+        setHasPlan(false)
+        const maxTasks = planning_mode === 'light' ? 2 : 3
+        setTasks(Array.from({ length: maxTasks }, () => ({ ...EMPTY_TASK, id: generateTaskId() })))
+        setPostMorningInsight(null)
+      }
+      trackEvent('morning_page_view', { has_existing_plan: loadedTasks.length > 0 || !!decisionsRes.data, plan_date: planDate })
+      fireFunnelStep(1, 'morning_page_view')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load plan')
+    } finally {
+      setLoading(false)
+    }
+  }, [planDate, fireFunnelStep])
+
+  const generateFreshPostMorningInsight = useCallback(async () => {
+    console.log('🚨 DIAGNOSTIC - Tasks in state when generating insight:', JSON.stringify(tasks.map((t) => ({
+      description: t.description,
+      whyThisMatters: t.whyThisMatters,
+      needleMover: t.needleMover,
+      actionPlan: t.actionPlan,
+    })), null, 2))
+    console.log('🚨 DIAGNOSTIC - Decision in state:', JSON.stringify({ decision: decision.decision, decisionType: decision.decisionType, whyThisDecision: decision.whyThisDecision }))
+    console.log('🚨 DIAGNOSTIC - planDate:', planDate)
+
+    const session = await getUserSession()
+    if (!session) return
+    try {
+      await startStream(
+        { promptType: 'post_morning', userId: session.user.id, promptDate: planDate },
+        async (fullPrompt) => {
+          logBannedPhrasesIfAny(fullPrompt)
+          setPostMorningInsight(fullPrompt)
+
+          const { data: existing } = await supabase
+            .from('personal_prompts')
+            .select('id, generation_count')
+            .eq('user_id', session.user.id)
+            .eq('prompt_type', 'post_morning')
+            .eq('prompt_date', planDate)
+            .maybeSingle()
+
+          const generationCount = existing ? ((existing as { generation_count?: number }).generation_count ?? 1) + 1 : 1
+
+          const { data: savedRow, error: upsertError } = await supabase
+            .from('personal_prompts')
+            .upsert(
+              {
+                user_id: session.user.id,
+                prompt_type: 'post_morning',
+                prompt_date: planDate,
+                prompt_text: fullPrompt,
+                stage_context: null,
+                generation_count: generationCount,
+                generated_at: new Date().toISOString(),
+              },
+              { onConflict: 'user_id,prompt_type,prompt_date' }
+            )
+            .select()
+
+          if (upsertError) {
+            console.error('❌ CRITICAL - Post-morning insight save failed:', {
+              error: upsertError.message,
+              details: upsertError.details,
+              code: upsertError.code,
+            })
+            window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to save insight. Please try again.', type: 'error' } }))
+          } else {
+            console.log('✅ Post-morning insight SAVED, id:', (savedRow as { id?: string }[])?.[0]?.id)
+            window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
+          }
+          loadTodayPlan({ silent: true })
+        }
+      )
+    } catch (err) {
+      console.error('[MORNING] Failed to stream fresh insight:', err)
+    }
+  }, [planDate, logBannedPhrasesIfAny, startStream, loadTodayPlan, tasks, decision])
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -110,7 +269,7 @@ export default function MorningPage() {
         pro_features_enabled: session.user.pro_features_enabled,
       })
       
-      if (features.dailyMorningPrompt) {
+      if (features.dailyMorningPrompt && planDate) {
         // Fetch insights for THIS EXACT DATE ONLY (no cross-day fallback)
         try {
           console.log('[MORNING LOAD] Looking for morning prompt for date:', planDate, 'user:', session.user.id)
@@ -123,7 +282,7 @@ export default function MorningPage() {
             // Morning: get NEWEST only (generation 3 > 2 > 1)
             supabase
               .from('personal_prompts')
-              .select('prompt_text, prompt_type, prompt_date, stage_context, generated_at')
+              .select('id, prompt_text, prompt_type, prompt_date, stage_context, generated_at')
               .eq('user_id', session.user.id)
               .eq('prompt_type', 'morning')
               .eq('prompt_date', planDate)
@@ -133,7 +292,7 @@ export default function MorningPage() {
             // Post-morning: get NEWEST only
             supabase
               .from('personal_prompts')
-              .select('prompt_text, prompt_type, prompt_date, generated_at')
+              .select('id, prompt_text, prompt_type, prompt_date, generated_at')
               .eq('user_id', session.user.id)
               .eq('prompt_type', 'post_morning')
               .eq('prompt_date', planDate)
@@ -154,6 +313,15 @@ export default function MorningPage() {
           let morningInsightToShow = null
           let postMorningInsightToShow = null
 
+          console.log('🔍 Loading morning insights:', {
+            user_id: session.user.id,
+            plan_date: planDate,
+            morning_found: !!morningRes.data,
+            morning_id: (morningRes.data as { id?: string })?.id,
+            post_morning_found: !!postMorningRes.data,
+            post_morning_id: (postMorningRes.data as { id?: string })?.id,
+            morning_error: morningRes.error?.message,
+          })
           if (morningRes.error) {
             console.error('[MORNING LOAD] prompt_date query error:', morningRes.error.message)
           }
@@ -179,6 +347,7 @@ export default function MorningPage() {
             if (postFromFallback) postMorningInsightToShow = postFromFallback.prompt_text
           }
           
+          console.log('[checkAuth] Setting insights - morning:', !!morningInsightToShow, 'postMorning:', !!postMorningInsightToShow)
           setMorningInsight(morningInsightToShow)
           setPostMorningInsight(postMorningInsightToShow)
         } catch (error) {
@@ -190,124 +359,10 @@ export default function MorningPage() {
   }, [router, planDate])
 
   useEffect(() => {
-    const loadTodayPlan = async () => {
-      const session = await getUserSession()
-      if (!session) return
-
-      setLoading(true)
-      try {
-        const features = getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
-        
-        const [prefsRes, tasksRes, decisionsRes, postMorningInsightRes] = await Promise.all([
-          fetch('/api/user-preferences').then((r) => r.json()).catch(() => ({ planning_mode: 'full' })),
-          supabase
-            .from('morning_tasks')
-            .select('*')
-            .eq('plan_date', planDate)
-            .eq('user_id', session.user.id)
-            .order('task_order', { ascending: true }),
-          supabase
-            .from('morning_decisions')
-            .select('*')
-            .eq('plan_date', planDate)
-            .eq('user_id', session.user.id)
-            .maybeSingle(),
-          // Fetch post_morning insight for THIS EXACT DATE ONLY (Mrs. Deer)
-          features.dailyPostMorningPrompt
-            ? (async () => {
-                const { data, error } = await supabase
-                  .from('personal_prompts')
-                  .select('prompt_text, prompt_type, prompt_date, generated_at')
-                  .eq('user_id', session.user.id)
-                  .eq('prompt_date', planDate) // EXACT date match
-                  .eq('prompt_type', 'post_morning')
-                  .order('generated_at', { ascending: false })
-                  .limit(1)
-                  .maybeSingle()
-                
-                return { data, error }
-              })()
-            : Promise.resolve({ data: null, error: null }),
-        ])
-        const planning_mode = (prefsRes as { planning_mode?: 'full' | 'light' })?.planning_mode ?? 'full'
-        setPlanningMode(planning_mode)
-
-        const loadedTasks = (tasksRes.data ?? []) as Array<{
-          id: string
-          description: string
-          why_this_matters?: string
-          needle_mover: boolean
-          action_plan?: string
-          completed?: boolean
-          created_at: string
-          updated_at: string
-        }>
-
-        // Load post_morning insight only if user has plan for this date (unlock after input)
-        const hasPlanForDate = loadedTasks.length > 0 || decisionsRes.data
-        console.log(`[Morning Page Load] Has plan for ${planDate}:`, hasPlanForDate)
-        if (hasPlanForDate && postMorningInsightRes.data?.prompt_text) {
-          console.log(`[Morning Page Load] Post-morning insight found for ${planDate} - setting`)
-          setPostMorningInsight(postMorningInsightRes.data.prompt_text)
-        } else if (!hasPlanForDate) {
-          // Clear insights if no plan (they'll be unlocked after input)
-          console.log(`[Morning Page Load] No plan for ${planDate} - clearing post-morning insight`)
-          setPostMorningInsight(null)
-        } else {
-          console.log(`[Morning Page Load] Plan exists but no post-morning insight for ${planDate}`)
-        }
-
-        if (loadedTasks.length > 0 || decisionsRes.data) {
-          setHasPlan(true)
-          if (loadedTasks.length > 0) {
-            setTasks(
-              loadedTasks.map((t) => ({
-                id: generateTaskId(),
-                dbId: t.id,
-                description: t.description,
-                whyThisMatters: t.why_this_matters || '',
-                needleMover: t.needle_mover ?? null,
-                isProactive: t.is_proactive ?? null,
-                actionPlan: (t.action_plan as ActionPlanOption2) || 'my_zone',
-                completed: t.completed || false,
-              }))
-            )
-            setPlanCreatedAt(new Date(loadedTasks[0].created_at))
-            setPlanUpdatedAt(new Date(loadedTasks[0].updated_at))
-          }
-          if (decisionsRes.data) {
-            setDecision({
-              decision: decisionsRes.data.decision,
-              decisionType: decisionsRes.data.decision_type as 'strategic' | 'tactical',
-              whyThisDecision: decisionsRes.data.why_this_decision || '',
-            })
-            setDecisionDbId(decisionsRes.data.id)
-            if (!planCreatedAt) {
-              setPlanCreatedAt(new Date(decisionsRes.data.created_at))
-              setPlanUpdatedAt(new Date(decisionsRes.data.updated_at))
-            }
-          }
-        } else {
-          setHasPlan(false)
-          const maxTasks = planning_mode === 'light' ? 2 : 3
-          setTasks(
-            Array.from({ length: maxTasks }, () => ({ ...EMPTY_TASK, id: generateTaskId() }))
-          )
-          // Clear only post-morning (unlocks after plan save). Keep morning prompt — it's pre-generated from previous evening.
-          console.log('[Morning Page Load] No plan for', planDate, '- clearing post-morning only')
-          setPostMorningInsight(null)
-        }
-        trackEvent('morning_page_view', { has_existing_plan: loadedTasks.length > 0 || !!decisionsRes.data, plan_date: planDate })
-        fireFunnelStep(1, 'morning_page_view')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load plan')
-      } finally {
-        setLoading(false)
-      }
+    if (planDate) {
+      loadTodayPlan()
     }
-
-    loadTodayPlan()
-  }, [planDate])
+  }, [planDate, retryTrigger, loadTodayPlan])
 
   const updateTask = useCallback(
     (id: string, updates: Partial<Task>) => {
@@ -337,6 +392,50 @@ export default function MorningPage() {
 
   const removeTask = (id: string) => {
     setTasks((prev) => prev.filter((t) => t.id !== id))
+  }
+
+  const handleDeleteTaskConfirm = async () => {
+    const task = confirmDeleteTask
+    if (!task) return
+    setConfirmDeleteTask(null)
+
+    if (task.dbId) {
+      const session = await getUserSession()
+      if (!session) return
+      const { error } = await supabase
+        .from('morning_tasks')
+        .delete()
+        .eq('id', task.dbId)
+        .eq('user_id', session.user.id)
+      if (error) {
+        window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to delete task. Please try again.', type: 'error' } }))
+        return
+      }
+    }
+    removeTask(task.id)
+    setPlanUpdatedAt(new Date())
+    if (tasks.length === 1 && !decision.decision?.trim()) setHasPlan(false)
+  }
+
+  const handleDeleteDecisionConfirm = async () => {
+    setConfirmDeleteDecision(false)
+    if (!decisionDbId) return
+
+    const session = await getUserSession()
+    if (!session) return
+    const { error } = await supabase
+      .from('morning_decisions')
+      .delete()
+      .eq('id', decisionDbId)
+      .eq('user_id', session.user.id)
+    if (error) {
+      window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to delete decision. Please try again.', type: 'error' } }))
+      return
+    }
+    setDecision({ decision: '', decisionType: 'strategic', whyThisDecision: '' })
+    setDecisionDbId(null)
+    setPlanUpdatedAt(new Date())
+    if (tasks.length === 0) setHasPlan(false)
   }
 
   const savePlan = async () => {
@@ -476,23 +575,74 @@ export default function MorningPage() {
         }),
       }).catch(() => {})
 
+      console.log('[MORNING PLAN SAVE] dailyPostMorningPrompt:', features.dailyPostMorningPrompt)
       if (features.dailyPostMorningPrompt) {
         try {
-          console.log('[MORNING PLAN SAVE] Generating post-morning insight for date:', planDate)
-          const res = await fetch('/api/personal-coaching', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ promptType: 'post_morning', userId: session.user.id, promptDate: planDate }),
-          })
-          if (res.ok) {
-            const data = await res.json()
-            if (data.prompt) {
-              console.log('[MORNING PLAN SAVE] Post-morning insight generated for', planDate)
-              setTimeout(() => setPostMorningInsight(data.prompt as string), 500)
+          console.log('🚨 DIAGNOSTIC - Tasks just saved to DB (API will fetch these):', JSON.stringify(tasksToSave.map((t) => ({ description: t.description, needle_mover: t.needle_mover })), null, 2))
+          console.log('🚨 DIAGNOSTIC - Decision just saved:', decision.decision ? { decision: decision.decision, decisionType: decision.decisionType, whyThisDecision: decision.whyThisDecision } : 'none')
+          console.log('[MORNING PLAN SAVE] Starting post-morning stream for date:', planDate)
+          await startStream(
+            {
+              promptType: 'post_morning',
+              userId: session.user.id,
+              promptDate: planDate,
+              postMorningOverride: {
+                todayPlan: tasksToSave.map((t) => ({ description: t.description, needle_mover: t.needle_mover ?? undefined })),
+                todayDecision: decision.decision.trim()
+                  ? {
+                      decision: decision.decision.trim(),
+                      decision_type: decision.decisionType,
+                      why_this_decision: decision.whyThisDecision?.trim() || null,
+                    }
+                  : null,
+              },
+            },
+            async (fullPrompt) => {
+              if (fullPrompt && (fullPrompt.includes('top priority') || fullPrompt.includes('Needle Mover') || fullPrompt.includes('Smart Constraint') || fullPrompt.includes('🌿'))) {
+                console.warn('[MORNING] Banned phrases detected in stream, showing anyway')
+              }
+              console.log('[MORNING PLAN SAVE] Setting postMorningInsight (length:', fullPrompt?.length, ')')
+              setPostMorningInsight(fullPrompt)
+
+              const { data: existingPost } = await supabase
+                .from('personal_prompts')
+                .select('id, generation_count')
+                .eq('user_id', session.user.id)
+                .eq('prompt_type', 'post_morning')
+                .eq('prompt_date', planDate)
+                .maybeSingle()
+
+              const genCount = existingPost ? ((existingPost as { generation_count?: number }).generation_count ?? 1) + 1 : 1
+
+              const { data: saved, error: upsertErr } = await supabase
+                .from('personal_prompts')
+                .upsert(
+                  {
+                    user_id: session.user.id,
+                    prompt_type: 'post_morning',
+                    prompt_date: planDate,
+                    prompt_text: fullPrompt,
+                    stage_context: null,
+                    generation_count: genCount,
+                    generated_at: new Date().toISOString(),
+                  },
+                  { onConflict: 'user_id,prompt_type,prompt_date' }
+                )
+                .select()
+
+              if (upsertErr) {
+                console.error('❌ CRITICAL - Post-morning insight save failed:', upsertErr)
+                window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to save insight. Please try again.', type: 'error' } }))
+              } else {
+                console.log('✅ Post-morning insight SAVED on plan save, id:', (saved as { id?: string }[])?.[0]?.id)
+                window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
+              }
+              // Refresh plan data to ensure UI is in sync
+              loadTodayPlan({ silent: true })
             }
-          }
+          )
         } catch (error) {
-          console.error('Failed to load post-morning AI prompt:', error)
+          console.error('Failed to stream post-morning AI prompt:', error)
         }
       }
     } catch (err) {
@@ -541,8 +691,13 @@ export default function MorningPage() {
 
   if (loading) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-8 pt-24">
-        <p className="text-gray-500">Loading your plan...</p>
+      <div className="max-w-3xl mx-auto px-4 md:px-5 py-8 pt-24">
+        <LoadingSpinner
+          message="Mrs. Deer, your AI companion is thinking..."
+          showMrsDeer={true}
+          onRetry={() => setRetryTrigger((t) => t + 1)}
+          timeoutMs={8000}
+        />
       </div>
     )
   }
@@ -550,17 +705,36 @@ export default function MorningPage() {
   const tasksCompleted = tasks.filter((t) => t.completed).length
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 pt-24">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-[#152b50] dark:text-[#E2E8F0] mb-2">
-          Morning Plan
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400 mb-4">
-          {hasPlan ? (isToday(new Date(planDate)) ? "Today's Plan" : `Plan for ${format(new Date(planDate), 'MMMM d, yyyy')}`) : 'Ready to own the day? Let\'s plan your focus.'}
-        </p>
+    <div 
+      className="max-w-3xl mx-auto px-4 md:px-5 py-8 transition-all duration-200"
+      style={{ paddingTop: spacing['xl'] }}
+    >
+      {/* Header with Mrs. Deer - responsive: avatar above on mobile, left on desktop */}
+      <div className="mb-8" style={{ marginBottom: spacing['2xl'] }}>
+        <div className="flex flex-col md:flex-row md:items-start gap-4 mb-4">
+          <div className="flex justify-center md:justify-start">
+            <MrsDeerAvatar expression="thoughtful" size="mobile" className="md:hidden" />
+            <MrsDeerAvatar expression="thoughtful" size="large" className="hidden md:block" />
+          </div>
+          <div className="flex-1 text-center md:text-left">
+            <h1 
+              className="font-bold mb-2 text-[#152B50] dark:text-white"
+              style={{ 
+                fontSize: typography.pageTitle.fontSize, 
+                fontWeight: typography.pageTitle.fontWeight,
+                lineHeight: typography.pageTitle.lineHeight,
+              }}
+            >
+              Morning Plan
+            </h1>
+            <p className="mb-4 text-gray-600 dark:text-gray-300">
+              {hasPlan ? (isToday(new Date(planDate)) ? "Today's Plan" : `Plan for ${format(new Date(planDate), 'MMMM d, yyyy')}`) : 'Ready to own the day? Let\'s plan your focus.'}
+            </p>
+          </div>
+        </div>
         <DateSelector selectedDate={planDate} onDateChange={setPlanDate} maxDaysBack={30} maxDaysForward={1} />
         {hasPlan && planCreatedAt && (
-        <div className="flex gap-4 text-xs text-gray-500 dark:text-gray-400">
+        <div className="flex gap-4 text-xs mt-2 text-gray-600 dark:text-gray-300">
             <span>Plan created: {format(planCreatedAt, 'h:mm a')}</span>
             {planUpdatedAt && planUpdatedAt.getTime() !== planCreatedAt.getTime() && (
               <span>Last updated: {format(planUpdatedAt, 'h:mm a')}</span>
@@ -569,7 +743,7 @@ export default function MorningPage() {
         )}
       </div>
 
-      {/* Mrs. Deer AI Coach - Morning prompt: pre-generated from previous evening, shown before user saves plan */}
+      {/* Mrs. Deer AI Coach - Morning prompt: pre-generated from previous evening, shown at TOP before plan */}
       {morningInsight && (
         <AICoachPrompt
           message={morningInsight}
@@ -580,167 +754,206 @@ export default function MorningPage() {
 
       {/* Power List */}
       {hasPlan && !editingTasks ? (
-        <section className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-8 border-l-4 border-[#ef725c] dark:border-[#ef725c]/70">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-[#152b50] dark:text-[#E2E8F0] flex items-center gap-2">
-              <Target className="w-5 h-5 text-[#ef725c]" />
-              Today&apos;s Focus
-            </h2>
-            <button
-              type="button"
-              onClick={() => setEditingTasks(true)}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:text-[#ef725c] transition"
-            >
-              <Edit2 className="w-4 h-4" />
-              Edit
-            </button>
-          </div>
-          {tasks.length === 0 ? (
-            <p className="text-gray-500 text-sm italic">No tasks planned for today.</p>
-          ) : (
-            <div className="space-y-3">
+        <Card highlighted className="mb-8">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
+                <Target className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
+                Today&apos;s Focus
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setEditingTasks(true)}>
+                <Edit2 className="w-4 h-4 mr-1" />
+                Edit
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {tasks.length === 0 ? (
+              <p className="text-sm italic text-gray-600 dark:text-gray-300">
+                No tasks planned for today.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {tasks.map((task, index) => (
+                    <motion.div
+                      key={task.id}
+                      initial={prefersReducedMotion ? false : { opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3, delay: index * 0.1 }}
+                      className={`flex items-start gap-4 p-4 rounded-lg transition-all duration-200 hover:shadow-sm ${task.completed ? 'bg-emerald-50 dark:bg-emerald-900/30' : 'bg-gray-50 dark:bg-gray-700'}`}
+                      style={{ marginBottom: spacing.md }}
+                    >
+                      <motion.button
+                        type="button"
+                        onClick={() => toggleTaskCompletion(task.id, task.completed || false)}
+                        className="mt-0.5 flex-shrink-0"
+                        whileHover={prefersReducedMotion ? undefined : { scale: 1.1 }}
+                        whileTap={prefersReducedMotion ? undefined : { scale: 0.9 }}
+                      >
+                        {task.completed ? (
+                          <motion.div
+                            initial={prefersReducedMotion ? false : { scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{ type: 'spring', stiffness: 300 }}
+                          >
+                            <Check className="w-5 h-5" style={{ color: colors.emerald.DEFAULT }} />
+                          </motion.div>
+                        ) : (
+                          <Square className="w-5 h-5" style={{ color: colors.neutral.border }} />
+                        )}
+                      </motion.button>
+                      <div className="flex-1 min-w-0 space-y-3">
+                        <div>
+                          <p className="text-xs font-medium mb-0.5 text-gray-600 dark:text-gray-300">Task</p>
+                          <p className="text-gray-900 dark:text-white">
+                            {task.description}
+                          </p>
+                        </div>
+                        {task.needleMover !== null && (
+                          <div>
+                            <p className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">{lang.needleMover}?</p>
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">
+                              {task.needleMover ? 'Yes' : 'No'}
+                            </p>
+                          </div>
+                        )}
+                        {task.isProactive !== null && (
+                          <div>
+                            <p className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">Initiative</p>
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">
+                              {task.isProactive ? 'Proactive' : 'Reactive'}
+                            </p>
+                          </div>
+                        )}
+                        {task.actionPlan && (
+                          <div>
+                            <p className="text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">Action Plan</p>
+                            <p className="text-sm text-gray-900 dark:text-white">
+                              {getActionPlanOptions(userGoal).find((o) => o.value === task.actionPlan)?.label || task.actionPlan}
+                            </p>
+                          </div>
+                        )}
+                        {task.whyThisMatters && (
+                          <p className="text-sm mt-1 italic text-gray-600 dark:text-gray-300">
+                            {task.whyThisMatters}
+                          </p>
+                        )}
+                        <span className="text-xs block text-gray-600 dark:text-gray-300">
+                          {task.completed ? '1/1' : '0/1'} completed
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteTask(task)}
+                        className="flex-shrink-0 p-2 text-gray-500 hover:text-red-500 transition-colors"
+                        aria-label="Delete task"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </motion.div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card highlighted className="mb-8" style={{ marginBottom: spacing['2xl'], borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
+          <CardHeader style={{ padding: spacing['xl'] }}>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
+              {lang.powerList}
+            </CardTitle>
+          </CardHeader>
+          <CardContent style={{ padding: spacing['xl'] }}>
+            <div className="space-y-5">
               {tasks.map((task, index) => (
-                <div
+                <TaskCard
                   key={task.id}
-                  className={`flex items-start gap-3 p-3 rounded-lg ${
-                    task.completed
-                      ? 'bg-emerald-50 dark:bg-emerald-900/30'
-                      : 'bg-gray-50 dark:bg-[#111827]'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleTaskCompletion(task.id, task.completed || false)}
-                    className="mt-0.5 flex-shrink-0"
-                  >
-                    {task.completed ? (
-                      <Check className="w-5 h-5 text-[#10b981]" />
-                    ) : (
-                      <Square className="w-5 h-5 text-gray-400" />
-                    )}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-gray-900 dark:text-[#E2E8F0]">
-                      {index + 1}. {task.description}
-                    </p>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {task.needleMover !== null && (
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded ${
-                            task.needleMover
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
-                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-200'
-                          }`}
-                        >
-                          {task.needleMover ? `✓ ${lang.needleMover}` : `○ Not ${lang.needleMover}`}
-                        </span>
-                      )}
-                      {task.isProactive !== null && (
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded ${
-                            task.isProactive
-                              ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'
-                              : 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200'
-                          }`}
-                        >
-                          {task.isProactive ? '↑ Proactive' : '↓ Reactive'}
-                        </span>
-                      )}
-                      {task.actionPlan && (
-                        <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded">
-                          {getActionPlanOptions(userGoal).find((o) => o.value === task.actionPlan)?.label || task.actionPlan}
-                        </span>
-                      )}
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {task.completed ? '1/1' : '0/1'} completed
-                      </span>
-                    </div>
-                    {task.whyThisMatters && (
-                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 italic">
-                        {task.whyThisMatters}
-                      </p>
-                    )}
-                  </div>
-                </div>
+                  task={task}
+                  index={index}
+                  onChange={(updates) => updateTask(task.id, updates)}
+                  onDelete={() => setConfirmDeleteTask(task)}
+                  lang={lang}
+                  userGoal={userGoal}
+                />
               ))}
             </div>
-          )}
-        </section>
-      ) : (
-        <section className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-8 border-l-4 border-[#ef725c] dark:border-[#ef725c]/70">
-          <h2 className="text-xl font-semibold text-[#152b50] dark:text-[#E2E8F0] mb-4 flex items-center gap-2">
-            <Target className="w-5 h-5 text-[#ef725c]" />
-            {lang.powerList}
-          </h2>
-          <div className="space-y-5">
-            {tasks.map((task, index) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                index={index}
-                onChange={(updates) => updateTask(task.id, updates)}
-                onRemove={tasks.length > 1 ? () => removeTask(task.id) : undefined}
-                lang={lang}
-                userGoal={userGoal}
-              />
-            ))}
-          </div>
-          {tasks.length < maxTasks && (
-            <button
-              type="button"
-              onClick={handleAddTask}
-              className="mt-4 w-full py-3 px-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-[#ef725c] hover:text-[#ef725c] transition"
-            >
-              + Add Task
-            </button>
-          )}
-        </section>
+            {tasks.length < maxTasks && (
+              <Button variant="outline" onClick={handleAddTask} className="mt-4 w-full">
+                + Add Task
+              </Button>
+            )}
+          </CardContent>
+        </Card>
       )}
+
+      {/* Visual Separator */}
+      <div className="mb-8" style={{ marginBottom: spacing['2xl'], height: '1px', backgroundColor: colors.neutral.border, opacity: 0.3 }} />
 
       {/* Decision Log */}
       {hasPlan && !editingDecision && decision.decision && decision.decision.trim() ? (
-        <section className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-8 border-l-4 border-[#152b50] dark:border-[#152b50]/70">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-[#152b50] dark:text-[#E2E8F0] flex items-center gap-2">
-              <Zap className="w-5 h-5 text-[#152b50]" />
-              {lang.decisionLog}
-            </h2>
-            <button
-              type="button"
-              onClick={() => setEditingDecision(true)}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:text-[#152b50] transition"
-            >
-              <Edit2 className="w-4 h-4" />
-              Edit
-            </button>
-          </div>
+        <Card className="mb-8 bg-gray-50 dark:bg-gray-800" style={{ marginBottom: spacing['2xl'], borderLeft: `4px solid ${colors.navy.DEFAULT}` }}>
+          <CardHeader style={{ padding: spacing['xl'] }}>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
+                <Zap className="w-5 h-5" style={{ color: colors.navy.DEFAULT }} />
+                {lang.decisionLog}
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setEditingDecision(true)}>
+                  <Edit2 className="w-4 h-4 mr-1" />
+                  Edit
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteDecision(true)}
+                  className="p-2 text-gray-500 hover:text-red-500 transition-colors"
+                  aria-label="Delete decision"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent style={{ padding: spacing['xl'] }}>
           <div className="space-y-3">
-            <p className="text-gray-900 dark:text-[#E2E8F0] font-medium">
+            <p className="font-medium text-lg mb-3 text-gray-900 dark:text-white">
               {decision.decision}
             </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded capitalize">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <Badge variant="neutral">
                 {decision.decisionType === 'strategic' ? lang.strategicLabel : lang.tacticalLabel}
-              </span>
+              </Badge>
+              {planCreatedAt && (
+                <span className="text-xs text-gray-600 dark:text-gray-300">
+                  {format(planCreatedAt, 'h:mm a')}
+                </span>
+              )}
             </div>
             {decision.whyThisDecision && (
-              <p className="text-sm text-gray-600 dark:text-gray-300 mt-2 italic">
-                {decision.whyThisDecision}
-              </p>
+              <div className="mt-4 p-4 rounded-lg bg-white dark:bg-gray-700">
+                <p className="text-sm italic leading-relaxed text-gray-600 dark:text-gray-300">
+                  {decision.whyThisDecision}
+                </p>
+              </div>
             )}
           </div>
-        </section>
+          </CardContent>
+        </Card>
       ) : (
-        <section className="bg-white dark:bg-[#1A202C] rounded-xl shadow-lg p-6 mb-8 border-l-4 border-[#152b50] dark:border-[#152b50]/70">
-          <h2 className="text-xl font-semibold text-[#152b50] dark:text-[#E2E8F0] mb-4 flex items-center gap-2">
-            <Zap className="w-5 h-5 text-[#152b50]" />
-            Decision Log
-          </h2>
+        <Card className="mb-8 bg-gray-50 dark:bg-gray-800" style={{ marginBottom: spacing['2xl'], borderLeft: `4px solid ${colors.navy.DEFAULT}` }}>
+          <CardHeader style={{ padding: spacing['xl'] }}>
+            <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-[#152B50]">
+              <Zap className="w-5 h-5" style={{ color: colors.navy.DEFAULT }} />
+              Decision Log
+            </CardTitle>
+          </CardHeader>
+          <CardContent style={{ padding: spacing['xl'] }}>
           <div className="space-y-4">
           <div>
             <label
               htmlFor="decision"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+              className="block text-sm font-medium mb-1 text-gray-900 dark:text-white"
             >
               What's the key decision you're sitting on today?
             </label>
@@ -752,12 +965,15 @@ export default function MorningPage() {
                 setDecision((d) => ({ ...d, decision: e.target.value }))
               }
               placeholder="e.g. Hire a part-time ops lead"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#152b50] focus:border-transparent text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 rounded-lg focus:ring-2 focus:ring-offset-2 transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+              style={{
+                borderColor: colors.neutral.border,
+              }}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-white">
               {lang.strategicLabel} (🎯) vs {lang.tacticalLabel} (⚡)
             </label>
             <div className="flex gap-3">
@@ -766,11 +982,7 @@ export default function MorningPage() {
                 onClick={() =>
                   setDecision((d) => ({ ...d, decisionType: 'strategic' }))
                 }
-                className={`flex-1 py-2 px-4 rounded-lg font-medium transition ${
-                  decision.decisionType === 'strategic'
-                    ? 'bg-[#152b50] text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
+                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all duration-200 ${decision.decisionType === 'strategic' ? 'bg-[#152B50] text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
               >
                 🎯 {lang.strategicLabel}
               </button>
@@ -779,11 +991,7 @@ export default function MorningPage() {
                 onClick={() =>
                   setDecision((d) => ({ ...d, decisionType: 'tactical' }))
                 }
-                className={`flex-1 py-2 px-4 rounded-lg font-medium transition ${
-                  decision.decisionType === 'tactical'
-                    ? 'bg-[#152b50] text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
+                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all duration-200 ${decision.decisionType === 'tactical' ? 'bg-[#152B50] text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
               >
                 ⚡ {lang.tacticalLabel}
               </button>
@@ -793,7 +1001,7 @@ export default function MorningPage() {
           <div>
             <label
               htmlFor="why-decision"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+              className="block text-sm font-medium mb-1 text-gray-900 dark:text-white"
             >
               What's your gut telling you? Capture your reasoning.
             </label>
@@ -806,21 +1014,27 @@ export default function MorningPage() {
                 setDecision((d) => ({ ...d, whyThisDecision: e.target.value }))
               }
               placeholder="Capture your reasoning..."
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#152b50] focus:border-transparent resize-none text-gray-900 dark:text-[#E2E8F0] dark:bg-[#0F1419]"
+              className="w-full px-4 py-2 rounded-lg focus:ring-2 focus:ring-offset-2 resize-none transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700"
+              style={{
+                borderColor: colors.neutral.border,
+              }}
             />
           </div>
         </div>
-      </section>
+          </CardContent>
+        </Card>
       )}
 
       {/* Save/Cancel Buttons */}
       {(editingTasks || editingDecision || !hasPlan) && (
-        <div className="flex gap-3 mb-6">
-          <button
+        <div className="flex gap-3 mb-6 transition-all duration-200">
+          <Button
             type="button"
             onClick={savePlan}
             disabled={saving}
-            className="flex-1 py-2 px-4 bg-[#ef725c] text-white rounded-lg font-medium hover:bg-[#e8654d] disabled:opacity-70 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
+            isLoading={saving}
+            variant="primary"
+            className="flex-1"
           >
             {saving ? (
               <>
@@ -829,13 +1043,13 @@ export default function MorningPage() {
               </>
             ) : (
               <>
-                <Save className="w-4 h-4" />
+                <Save className="w-4 h-4 mr-2" />
                 Start my day
               </>
             )}
-          </button>
+          </Button>
           {(editingTasks || editingDecision) && (
-            <button
+            <Button
               type="button"
               onClick={() => {
                 setEditingTasks(false)
@@ -843,59 +1057,93 @@ export default function MorningPage() {
                 // Reload data to reset changes
                 window.location.reload()
               }}
-              className="px-4 py-2 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+              variant="outline"
+              className="flex items-center gap-2"
             >
               <XIcon className="w-4 h-4" />
               Cancel
-            </button>
+            </Button>
           )}
         </div>
       )}
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
+        <div className="mb-4 p-4 rounded-lg flex items-center gap-2 transition-all duration-200" style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', borderWidth: '1px', color: '#B91C1C' }}>
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
           {error}
         </div>
       )}
 
       {hasPlan && !editingTasks && !editingDecision && (
-        <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-sm">
+        <div className="mb-6 p-4 rounded-lg text-sm transition-all duration-200" style={{ backgroundColor: colors.emerald.soft, borderColor: colors.emerald.DEFAULT, borderWidth: '1px', color: colors.emerald.DEFAULT }}>
           <p className="font-medium">Your plan for today is set! You can adjust as needed.</p>
         </div>
       )}
 
-      {/* Mrs. Deer AI Coach - Plan Review Insight (permanent, always shown if exists) */}
-      {/* Post-morning insight: only after user has submitted morning input for this date */}
-      {hasPlan && postMorningInsight && (
-        <AICoachPrompt
-          message={postMorningInsight}
-          trigger="morning_after"
-          onClose={() => {
-            // Insights are permanent - don't actually close them
-            // This handler is kept for component compatibility but does nothing
-          }}
-        />
+      {/* Loading: Mrs. Deer reflecting after save */}
+      {saving && (
+        <div className="mt-4 p-4 rounded-lg border-2 flex items-center gap-3 mb-6 bg-amber-50 dark:bg-amber-950/30 border-amber-500 dark:border-amber-600">
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-amber-700 dark:border-amber-400 flex-shrink-0" />
+          <p className="text-amber-800 dark:text-amber-200 font-medium">Mrs. Deer, your AI companion is reflecting on your input...</p>
+        </div>
+      )}
+
+      {/* Mrs. Deer AI Coach - Plan Review: post-morning insight at BOTTOM, after Power List and Decision Log */}
+      {hasPlan && (postMorningInsight || isStreamingPostMorning || streamingError) && (
+        <>
+          {isStreamingPostMorning && <StreamingIndicator className="mb-4" />}
+          <AICoachPrompt
+            message={isStreamingPostMorning ? (streamingInsight || '...') : (streamingError ? `[AI ERROR] ${streamingError}` : postMorningInsight!)}
+            trigger="morning_after"
+            onClose={() => {}}
+          />
+        </>
       )}
 
       {/* Quick Actions */}
-      <div className="bg-white rounded-xl shadow p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href="/history"
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm font-medium"
-          >
-            View Full History
-          </Link>
-          <Link
-            href="/evening"
-            className="px-4 py-2 bg-[#152b50] text-white rounded-lg hover:bg-[#1a3565] transition text-sm font-medium"
-          >
-            Evening Review →
-          </Link>
-        </div>
-      </div>
+      <Card className="mb-8">
+        <CardHeader>
+          <CardTitle>Quick Actions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/history">
+              <Button variant="outline" size="sm">
+                View Full History
+              </Button>
+            </Link>
+            <Link href="/evening">
+              <Button variant="secondary" size="sm">
+                Evening Review →
+              </Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Delete Task Confirmation */}
+      <ConfirmModal
+        isOpen={!!confirmDeleteTask}
+        title="Delete task?"
+        message="Are you sure you want to delete this task?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleDeleteTaskConfirm}
+        onCancel={() => setConfirmDeleteTask(null)}
+      />
+
+      {/* Delete Decision Confirmation */}
+      <ConfirmModal
+        isOpen={confirmDeleteDecision}
+        title="Delete decision?"
+        message="Are you sure you want to delete this decision?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleDeleteDecisionConfirm}
+        onCancel={() => setConfirmDeleteDecision(false)}
+      />
 
       {/* 4th Task Warning Modal */}
       {showAddFourthModal && (
@@ -904,20 +1152,20 @@ export default function MorningPage() {
           onClick={cancelAddFourthTask}
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-md w-full p-6"
+            className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-xl font-semibold text-[#152b50] mb-2">
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-2">
               Add 4th Task?
             </h3>
-            <p className="text-gray-600 mb-6">
+            <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-6">
               Research shows 3 tasks optimizes focus. Add anyway?
             </p>
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={cancelAddFourthTask}
-                className="flex-1 py-2 px-4 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50"
+                className="flex-1 py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-lg font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800"
               >
                 Cancel
               </button>
@@ -941,57 +1189,62 @@ function TaskCard({
   task,
   index,
   onChange,
-  onRemove,
+  onDelete,
   lang,
   userGoal,
 }: {
   task: Task
   index: number
   onChange: (updates: Partial<Task>) => void
-  onRemove?: () => void
+  onDelete?: () => void
   lang: ReturnType<typeof useUserLanguage>
-  userGoal: string | null
+  userGoal: UserGoal | null
 }) {
   return (
-    <div className="p-4 rounded-lg border border-gray-200 bg-gray-50/50 space-y-3">
+    <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-[#152b50]">Task {index + 1}</span>
-        {onRemove && (
+        <span className="text-sm font-medium text-gray-900 dark:text-gray-100 dark:text-white">Task {index + 1}</span>
+        {onDelete && (
           <button
             type="button"
-            onClick={onRemove}
-            className="text-gray-500 hover:text-red-500 p-1"
-            aria-label="Remove task"
+            onClick={onDelete}
+            className="text-gray-500 dark:text-gray-400 hover:text-red-500 p-1 transition-colors"
+            aria-label="Delete task"
           >
-            <X className="w-4 h-4" />
+            <Trash2 className="w-4 h-4" />
           </button>
         )}
       </div>
 
-      <SpeechToTextInput
-        type="text"
-        value={task.description}
-        onChange={(e) => onChange({ description: e.target.value })}
-        placeholder={lang.taskLabel}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#152b50] focus:border-transparent text-gray-900"
-      />
-
-      <SpeechToTextInput
-        type="text"
-        value={task.whyThisMatters}
-        onChange={(e) => onChange({ whyThisMatters: e.target.value })}
-        placeholder={lang.priorityLabel}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#152b50] focus:border-transparent text-gray-900"
-      />
-
+      {/* Task, Why, How - stacked */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">
-          {lang.actionPlanLabel}
-        </label>
+        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Task</label>
+        <SpeechToTextInput
+          as="textarea"
+          rows={1}
+          value={task.description}
+          onChange={(e) => onChange({ description: e.target.value })}
+          placeholder={lang.taskLabel}
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-[#152b50] dark:focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800 resize-none"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Why</label>
+        <SpeechToTextInput
+          as="textarea"
+          rows={1}
+          value={task.whyThisMatters}
+          onChange={(e) => onChange({ whyThisMatters: e.target.value })}
+          placeholder={lang.priorityLabel}
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-[#152b50] dark:focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800 resize-none"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">How</label>
         <select
           value={task.actionPlan}
           onChange={(e) => onChange({ actionPlan: e.target.value as ActionPlanOption2 })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
         >
           {getActionPlanOptions(userGoal).map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -1001,75 +1254,54 @@ function TaskCard({
         </select>
       </div>
 
-      {/* Task Classification */}
-      <div className="pt-2 border-t border-gray-200">
-        <div className="grid grid-cols-2 gap-3">
-          {/* Needle Mover */}
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-1.5">
-              <label className="text-xs font-medium text-gray-700 whitespace-nowrap">
-                {lang.needleMover}?
-              </label>
-              <InfoTooltip text={lang.needleMoverTooltip} />
-            </div>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => onChange({ needleMover: true })}
-                className={`flex-1 py-1.5 px-2 rounded text-xs font-medium transition ${
-                  task.needleMover === true
-                    ? 'bg-[#152b50] text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                Yes
-              </button>
-              <button
-                type="button"
-                onClick={() => onChange({ needleMover: false })}
-                className={`flex-1 py-1.5 px-2 rounded text-xs font-medium transition ${
-                  task.needleMover === false
-                    ? 'bg-[#152b50] text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                No
-              </button>
-            </div>
+      {/* Milestone Mover + Initiative on same line */}
+      <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-gray-200 dark:border-gray-700 dark:border-gray-700">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">{lang.needleMover}?</span>
+          <InfoTooltip text={lang.needleMoverTooltip} />
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => onChange({ needleMover: true })}
+              className={`py-1.5 px-3 rounded-lg text-xs font-medium transition ${
+                task.needleMover === true ? 'bg-[#152b50] text-white' : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
+              }`}
+            >
+              Yes
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange({ needleMover: false })}
+              className={`py-1.5 px-3 rounded-lg text-xs font-medium transition ${
+                task.needleMover === false ? 'bg-[#152b50] text-white' : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
+              }`}
+            >
+              No
+            </button>
           </div>
-
-          {/* Initiative */}
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-1.5">
-              <label className="text-xs font-medium text-gray-700 whitespace-nowrap">
-                Initiative:
-              </label>
-              <InfoTooltip text="Did you initiate this (Proactive) or respond to something (Reactive)?" />
-            </div>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => onChange({ isProactive: true })}
-                className={`flex-1 py-1.5 px-2 rounded text-xs font-medium transition ${
-                  task.isProactive === true
-                    ? 'bg-[#152b50] text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                Proactive
-              </button>
-              <button
-                type="button"
-                onClick={() => onChange({ isProactive: false })}
-                className={`flex-1 py-1.5 px-2 rounded text-xs font-medium transition ${
-                  task.isProactive === false
-                    ? 'bg-[#152b50] text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                Reactive
-              </button>
-            </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">Initiative</span>
+          <InfoTooltip text="Did you initiate this (Proactive) or respond to something (Reactive)?" />
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => onChange({ isProactive: true })}
+              className={`py-1.5 px-3 rounded-lg text-xs font-medium transition ${
+                task.isProactive === true ? 'bg-[#152b50] text-white' : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
+              }`}
+            >
+              Proactive
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange({ isProactive: false })}
+              className={`py-1.5 px-3 rounded-lg text-xs font-medium transition ${
+                task.isProactive === false ? 'bg-[#152b50] text-white' : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
+              }`}
+            >
+              Reactive
+            </button>
           </div>
         </div>
       </div>

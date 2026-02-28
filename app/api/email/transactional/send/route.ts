@@ -3,6 +3,9 @@ import { getUserSession } from '@/lib/auth'
 import { sendTransactionalEmail } from '@/lib/email/transactional'
 import { getServerSupabase } from '@/lib/server-supabase'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 const VALID_TEMPLATES = ['welcome', 'export_ready', 'weekly_digest'] as const
 
 /**
@@ -44,11 +47,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
       const db = getServerSupabase()
-      const { data: profile } = await db
+      const { data: profileData } = await db
         .from('user_profiles')
         .select('email_address')
         .eq('id', session.user.id)
         .maybeSingle()
+      const profile = profileData as { email_address?: string } | null
       const userEmail = profile?.email_address || session.user.email
       if (!userEmail || email.toLowerCase() !== userEmail.toLowerCase()) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -109,7 +113,7 @@ function buildTemplate(
 <div style="padding: 24px;">
 <p>Hi ${name},</p>
 <p>Welcome! You're all set. Start your day with the Morning Power List, capture decisions, and end with an Evening Review.</p>
-<p>Mrs. Deer will share insights as you build your pattern.</p>
+<p>Mrs. Deer, your AI companion will share insights as you build your pattern.</p>
 <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://wheeloffounders.com'}" class="btn">Open App</a>
 </div></div></div></body></html>`
       const text = `Hi ${name}, Welcome to Wheel of Founders! Start your day with the Morning Power List, capture decisions, and end with an Evening Review. Open: ${process.env.NEXT_PUBLIC_APP_URL || 'https://wheeloffounders.com'}`

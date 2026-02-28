@@ -4,7 +4,7 @@ test.describe('Authentication', () => {
   test('login page loads and has expected elements', async ({ page }) => {
     await page.goto('/login')
     await expect(page).toHaveTitle(/Wheel of Founders/i)
-    await expect(page.getByRole('heading', { name: /log in|sign in|wheel of founders/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /welcome founder|log in|sign in/i })).toBeVisible()
   })
 
   test('redirects to login when visiting protected route unauthenticated', async ({ page }) => {

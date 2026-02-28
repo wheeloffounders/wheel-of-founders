@@ -6,6 +6,9 @@ import { generateProPlusPrompt } from '@/lib/personal-coaching'
 import { detectFounderStage, updateUserStage } from '@/lib/stage-detection'
 import { getFeatureAccess } from '@/lib/features'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * Hourly Timezone-Aware Batch Analysis Cron Endpoint
  * Runs every hour, analyzes users in their local 2-5 AM window
