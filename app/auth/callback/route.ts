@@ -57,8 +57,12 @@ export async function GET(request: NextRequest) {
           admin_role: 'super_admin',
           updated_at: new Date().toISOString(),
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit user_profiles in this context
-        await (db.from('user_profiles') as any).upsert(founderPayload, { onConflict: 'id' })
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit user_profiles in this context
+          await (db.from('user_profiles') as any).upsert(founderPayload, { onConflict: 'id' })
+        } catch (err) {
+          console.error('Error upserting founder profile:', err)
+        }
       }
 
       // Check if user profile exists, create if not (use db to see upserted founder row)
@@ -85,12 +89,13 @@ export async function GET(request: NextRequest) {
           is_admin: data.user.email === FOUNDER_EMAIL ? true : false,
           admin_role: data.user.email === FOUNDER_EMAIL ? 'super_admin' : null,
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit user_profiles in this context
-        await (db.from('user_profiles') as any)
-          .upsert(profilePayload, { onConflict: 'id' })
-          .catch((err: unknown) => {
-            console.error('Error creating user profile:', err)
-          })
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit user_profiles in this context
+          await (db.from('user_profiles') as any)
+            .upsert(profilePayload, { onConflict: 'id' })
+        } catch (err) {
+          console.error('Error creating user profile:', err)
+        }
 
         // Send welcome transactional email (if enabled - new users default to true)
         const emailAddr = data.user.email

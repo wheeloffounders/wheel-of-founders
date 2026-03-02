@@ -374,10 +374,12 @@ export default function MorningPage() {
     [fireFunnelStep]
   )
 
-  const maxTasks = planningMode === 'light' ? 2 : 3
+  const suggestedMaxTasks = planningMode === 'light' ? 2 : 3
+  const maxTasksForDisplay = 20 // Allow up to 20 tasks; show Add Task until then
   const handleAddTask = () => {
-    if (tasks.length >= maxTasks) {
-      if (maxTasks === 3) setShowAddFourthModal(true)
+    if (tasks.length >= maxTasksForDisplay) return
+    if (tasks.length === suggestedMaxTasks) {
+      setShowAddFourthModal(true)
       return
     }
     setTasks((prev) => [...prev, { ...EMPTY_TASK, id: generateTaskId() }])
@@ -386,6 +388,7 @@ export default function MorningPage() {
   const confirmAddFourthTask = () => {
     setTasks((prev) => [...prev, { ...EMPTY_TASK, id: generateTaskId() }])
     setShowAddFourthModal(false)
+    window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Focus tip: 3 tasks often optimizes focus—but you can add more anytime.', type: 'info' } }))
   }
 
   const cancelAddFourthTask = () => setShowAddFourthModal(false)
@@ -453,8 +456,8 @@ export default function MorningPage() {
     try {
       const filteredTasks = tasks.filter((t) => t.description.trim())
       
-      // Database constraint limits task_order to 1-3, so only save first 3 tasks
-      const tasksToSave = filteredTasks.slice(0, 3).map((t, i) => ({
+      // Database allows unlimited tasks (migration 002)
+      const tasksToSave = filteredTasks.map((t, i) => ({
         user_id: session.user.id,
         plan_date: planDate,
         task_order: i + 1,
@@ -465,12 +468,6 @@ export default function MorningPage() {
         action_plan: t.actionPlan || null,
         completed: t.completed || false,
       }))
-      
-      // Warn if more than 3 tasks (database constraint limits to 3)
-      if (filteredTasks.length > 3) {
-        console.warn(`Note: ${filteredTasks.length} tasks provided, but database constraint limits to 3. Only the first 3 tasks will be saved.`)
-        setError(`Note: Only the first 3 tasks were saved. The database limits tasks to 3 per day.`)
-      }
 
       await supabase.from('morning_tasks').delete().eq('plan_date', planDate).eq('user_id', session.user.id)
       if (tasksToSave.length > 0) {
@@ -878,7 +875,7 @@ export default function MorningPage() {
                 />
               ))}
             </div>
-            {tasks.length < maxTasks && (
+            {tasks.length < maxTasksForDisplay && (
               <Button variant="outline" onClick={handleAddTask} className="mt-4 w-full">
                 + Add Task
               </Button>

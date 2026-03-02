@@ -28,19 +28,40 @@ if [ -z "$VERCEL_CMD" ]; then
   exit 1
 fi
 
-echo "🚀 Deploying to PRODUCTION..."
+echo "🚀 PRODUCTION DEPLOYMENT"
+echo "========================"
 
-# Bump version using timestamp (must run before build so new version is baked in)
-echo "📝 Bumping version..."
+# Step 1: Sync Preview env vars (Preview deployments need these too)
+echo ""
+echo "🔍 Step 1: Syncing Preview environment variables..."
+if [ -f ./scripts/fix-preview-supabase-env.sh ]; then
+  ./scripts/fix-preview-supabase-env.sh
+else
+  echo "⚠️  Preview sync script not found, skipping..."
+fi
+
+# Step 2: Check Production env vars
+if ! $VERCEL_CMD env ls 2>/dev/null | grep -q "NEXT_PUBLIC_SUPABASE_URL.*Production"; then
+  echo "❌ Production environment variables may be missing!"
+  echo "   Run ./scripts/sync-env-to-vercel.sh first"
+  exit 1
+fi
+echo "✅ Production env vars present"
+
+# Step 3: Bump version (must run before build so new version is baked in)
+echo ""
+echo "📝 Step 3: Bumping version..."
 node scripts/version-bump.js
 echo "✅ Version updated (see above). New version will be live after deploy."
 
-# Build
-echo "🏗️  Building..."
+# Step 4: Build
+echo ""
+echo "🏗️  Step 4: Building..."
 NEXT_PUBLIC_APP_ENV=production npm run build
 
-# Deploy
-echo "📦 Deploying to Vercel..."
+# Step 5: Deploy
+echo ""
+echo "📦 Step 5: Deploying to Vercel..."
 $VERCEL_CMD --prod --force
 
 echo "✅ Production deployment complete!"

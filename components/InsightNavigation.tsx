@@ -24,10 +24,19 @@ export function InsightNavigation({
   onNavigate,
 }: InsightNavigationProps) {
   const idx = periods.indexOf(currentPeriod)
-  const hasPrev = idx >= 0 && idx < periods.length - 1
+  // When viewing a period not in list (e.g. current month with no insight yet),
+  // Previous = go to most recent period with insight (periods[0])
+  const hasPrev =
+    idx >= 0
+      ? idx < periods.length - 1
+      : periods.length > 0 // current not in list but we have history
   const hasNext = idx > 0
 
-  const prevPeriod = hasPrev ? periods[idx + 1] : null
+  const prevPeriod = hasPrev
+    ? idx >= 0
+      ? periods[idx + 1]
+      : periods[0]
+    : null
   const nextPeriod = hasNext ? periods[idx - 1] : null
 
   return (

@@ -514,7 +514,7 @@ async function getUserDataForPrompt(
   }
 }
 
-const FIRST_DAY_MIRROR_RULES = `CRITICAL: User has NO prior history. ONLY use what's in TODAY'S or YESTERDAY'S entry. DO NOT say "I recall" or reference past conversations. DO NOT interpret what it "represents"—just observe. Be a mirror, not a coach. Notice: multiple entries at same timestamp? Tension named clearly (e.g. "gut yes, risk no")? What did they do differently than most?`
+const FIRST_DAY_MIRROR_RULES = `CRITICAL: User has NO prior history. ONLY use what's in TODAY'S or YESTERDAY'S entry. DO NOT say "I recall", "lately you've been", or reference past conversations. DO NOT claim to see patterns. DO NOT interpret what it "represents"—just observe. Be a mirror, not a coach. Notice: multiple entries at same timestamp? Tension named clearly (e.g. "gut yes, risk no")? What did they do differently than most?`
 
 type OnChunk = (chunk: string) => void
 
@@ -553,7 +553,8 @@ async function generateGentleArchitectPrompt(
   }
 
   const historyNote = hasHistory ? '' : `\n\n${FIRST_DAY_MIRROR_RULES}`
-  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Morning insight: max 100 words. STRUCTURE (internal only—do not output these as labels): OBSERVE (something specific from their data—quote their exact words) → VALIDATE (if low mood/energy or struggles) → REFRAME lightly → One open question. MUST use at least one of their exact phrases.' + NO_LABELS + ' BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes, clichés, "futures you imagine", "save the space", "keep the day open", "trading in futures", "the weight of only the top priority", abstract metaphors. Think with them, not at them.' + historyNote
+  const historyContext = hasHistory ? '' : "\n\nHISTORY: This appears to be their first entry or they have very limited history. DO NOT claim to see patterns or mention 'lately'—just focus on today's entry."
+  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Morning insight: 80-120 words. STRUCTURE (internal only—do not output these as labels): OBSERVE (something specific from their data—quote their exact words) → VALIDATE (if low mood/energy or struggles) → REFRAME lightly → One open question. MUST use at least one of their exact phrases.' + NO_LABELS + ' BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes, clichés, "futures you imagine", "save the space", "keep the day open", "trading in futures", "the weight of only the top priority", abstract metaphors. Think with them, not at them.' + historyNote
 
   const userGoal = await getUserGoal(userData.userId)
   const profileData = await getUserProfileData(userData.userId)
@@ -564,7 +565,7 @@ async function generateGentleArchitectPrompt(
   const contextBlock = hasHistory && profileData.context ? '\n\nCONTEXT ABOUT THIS FOUNDER (use to sound like you know them; reference struggles/fears when relevant):\n' + profileData.context : ''
   const challengesBlock = hasHistory && recentChallenges ? '\n\nRECENT CHALLENGES / REPEATED LESSONS (reference when it deepens the insight):\n' + recentChallenges : ''
   const hasYesterdayData = yesterdayData && (yesterdayData.wins || yesterdayData.lessons || yesterdayData.journal)
-  const userPrompt = `Generate a personalized morning insight for a founder${displayName ? ` named ${displayName}` : ''}. Goal: ${userGoal || 'clarity and sustainable progress'}.${contextBlock}${challengesBlock}
+  const userPrompt = `Generate a personalized morning insight for a founder${displayName ? ` named ${displayName}` : ''}. Goal: ${userGoal || 'clarity and sustainable progress'}.${contextBlock}${challengesBlock}${historyContext}
 
 CRITICAL: USE THEIR EXACT PHRASES from yesterday's data below. ${hasYesterdayData ? 'Quote at least one phrase they wrote.' : 'If data is sparse, reference what they did record (mood/energy)—do NOT say "blank" or "nothing to reflect on".'}
 
@@ -587,6 +588,10 @@ Use stage naturally. BANNED: Needle Mover, Action Plan, Smart Constraints, raw s
     { systemPrompt, userPrompt, maxTokens: 150, temperature: 0.7 },
     onChunk
   )
+  if (process.env.NODE_ENV === 'development') {
+    const words = raw.split(/\s+/).length
+    console.log('[morning insight word count]:', words)
+  }
   return filterInsightLabels(raw)
 }
 
@@ -602,7 +607,8 @@ async function analyzeMorningPlan(userData: UserData, userLang: ReturnType<typeo
   console.log('[analyzeMorningPlan] todayPlan count:', todayPlan.length, 'targetDate:', userData.targetDate, 'descriptions:', todayPlan.map((t: any) => t.description).filter(Boolean))
 
   const historyNote = hasHistory ? '' : `\n\n${FIRST_DAY_MIRROR_RULES}`
-  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Post-morning insight: max 100 words. STRUCTURE (internal only—do not output these as labels): OBSERVE (quote their exact task/decision text) → VALIDATE what they wrote → REFRAME lightly → One open question. MUST use at least one of their exact phrases from their tasks or decision. Address the specific tension they named.' + NO_LABELS + ' BANNED: Needle Mover, Action Plan, Smart Constraints, "top priority", "marked as top priority", stage codes, statistics, percentages, "futures you imagine", "save the space", "keep the day open", "the weight of only the top priority", abstract metaphors. Use qualitative observations only. Think with them, not at them.' + historyNote
+  const historyContext = hasHistory ? '' : "\n\nHISTORY: This appears to be their first entry or they have very limited history. DO NOT claim to see patterns or mention 'lately'—just focus on today's entry."
+  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Post-morning insight: 70-110 words. STRUCTURE (internal only—do not output these as labels): OBSERVE (quote their exact task/decision text) → VALIDATE what they wrote → REFRAME lightly → One open question. MUST use at least one of their exact phrases from their tasks or decision. Address the specific tension they named.' + NO_LABELS + ' BANNED: Needle Mover, Action Plan, Smart Constraints, "top priority", "marked as top priority", stage codes, statistics, percentages, "futures you imagine", "save the space", "keep the day open", "the weight of only the top priority", abstract metaphors. Use qualitative observations only. Think with them, not at them.' + historyNote
 
   const profileData = await getUserProfileData(userData.userId)
   const displayName = profileData.preferredName || profileData.name
@@ -612,7 +618,7 @@ async function analyzeMorningPlan(userData: UserData, userLang: ReturnType<typeo
     ? taskDescriptions.map((d: string) => `"${d}"`).join(', ')
     : 'None recorded'
 
-  const userPrompt = `Generate a personalized plan review for a founder${displayName ? ` named ${displayName}` : ''} who just saved their morning plan.${contextBlock}
+  const userPrompt = `Generate a personalized plan review for a founder${displayName ? ` named ${displayName}` : ''} who just saved their morning plan.${contextBlock}${historyContext}
 
 CRITICAL: You MUST reference their actual tasks or decision. ${taskDescriptions.length > 0 ? `They wrote these tasks: ${taskListForAI}. Quote at least one by name.` : 'They may have written only a decision below. Reference what they wrote—do NOT say "zero tasks", "blank slate", or "empty plan".'}
 
@@ -640,6 +646,10 @@ ${hasHistory ? `PATTERN CONTEXT (last 14 days):
     { systemPrompt, userPrompt, maxTokens: 150, temperature: 0.7 },
     onChunk
   )
+  if (process.env.NODE_ENV === 'development') {
+    const words = raw.split(/\s+/).length
+    console.log('[post_morning insight word count]:', words)
+  }
   return filterInsightLabels(raw)
 }
 
@@ -677,13 +687,14 @@ async function reflectOnDay(userData: UserData, userLang: ReturnType<typeof getU
   }
 
   const historyNote = hasHistory ? '' : `\n\n${FIRST_DAY_MIRROR_RULES}`
-  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Evening insight: max 120 words. STRUCTURE (internal only—do not output these as labels): OBSERVE (quote their exact wins/lessons/journal) → VALIDATE emotional state if relevant → REFRAME lightly → One open question. MUST use at least one of their exact phrases from wins, lessons, or journal. Address what they actually wrote.' + NO_LABELS + ' BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes, clichés, "futures you imagine", "save the space", "keep the day open", "the weight of only the top priority", abstract metaphors. Think with them, not at them. Treat fear and exhaustion as part of growth.' + historyNote
+  const historyContext = hasHistory ? '' : "\n\nHISTORY: This appears to be their first entry or they have very limited history. DO NOT claim to see patterns or mention 'lately'—just focus on today's entry."
+  const systemPrompt = MRS_DEER_RULES + '\n\nYou are Mrs. Deer. Evening insight: 100-150 words. STRUCTURE (internal only—do not output these as labels): OBSERVE (quote their exact wins/lessons/journal) → VALIDATE emotional state if relevant → REFRAME lightly → One open question. MUST use at least one of their exact phrases from wins, lessons, or journal. Address what they actually wrote.' + NO_LABELS + ' BANNED: Needle Mover, Action Plan, Smart Constraints, stage codes, clichés, "futures you imagine", "save the space", "keep the day open", "the weight of only the top priority", abstract metaphors. Think with them, not at them. Treat fear and exhaustion as part of growth.' + historyNote
 
   const profileData = await getUserProfileData(userData.userId)
   const displayName = profileData.preferredName || profileData.name
   const contextBlock = hasHistory && profileData.context ? '\n\nCONTEXT (reference struggles/fears when relevant; validate as part of growth):\n' + profileData.context : ''
   const hasEveningData = winsText || lessonsText || todayReview?.journal
-  const userPrompt = `Generate a personalized evening reflection for a founder${displayName ? ` named ${displayName}` : ''}.${contextBlock}
+  const userPrompt = `Generate a personalized evening reflection for a founder${displayName ? ` named ${displayName}` : ''}.${contextBlock}${historyContext}
 
 CRITICAL: USE THEIR EXACT PHRASES from the data below. ${hasEveningData ? 'Quote at least one phrase from their wins, lessons, or journal.' : 'Reference what they did record (tasks, mood, energy)—do NOT say "blank", "nothing", or "empty reflection".'}
 
@@ -710,6 +721,10 @@ ${hasHistory ? `PATTERN CONTEXT (last 14 days):
     { systemPrompt, userPrompt, maxTokens: 200, temperature: 0.7 },
     onChunk
   )
+  if (process.env.NODE_ENV === 'development') {
+    const words = raw.split(/\s+/).length
+    console.log('[evening insight word count]:', words)
+  }
   return filterInsightLabels(raw)
 }
 

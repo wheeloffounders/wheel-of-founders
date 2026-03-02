@@ -1,10 +1,7 @@
-import { createBrowserClient } from '@supabase/ssr'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
 /**
- * Browser Supabase client - uses cookies to match server-side session.
- * Required for OAuth: auth callback sets cookies, this client reads them.
+ * @deprecated Use `import { browserSupabase } from '@/lib/supabase'` instead.
+ * This file re-exports for backward compatibility.
  */
-export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
+import { browserSupabase } from './supabase/client'
+
+export const supabase = browserSupabase

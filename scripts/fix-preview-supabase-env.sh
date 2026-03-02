@@ -1,42 +1,60 @@
 #!/bin/bash
-# Fix Supabase env vars in Vercel Preview by syncing from .env.local
+# Sync env vars from .env.local to Vercel Preview
+# Idempotent - safe to run multiple times
 # Run from project root: ./scripts/fix-preview-supabase-env.sh
 
 set -e
 
-ENV_FILE=".env.local"
-if [ ! -f "$ENV_FILE" ]; then
-  echo "❌ $ENV_FILE not found"
+echo "🔧 PREVIEW ENVIRONMENT VARIABLE SYNC"
+echo "===================================="
+
+if [ ! -f .env.local ]; then
+  echo "❌ .env.local not found. Cannot sync Preview environment."
   exit 1
 fi
 
-echo "=== Syncing Supabase keys from .env.local to Vercel Preview ==="
+echo "📖 Reading from .env.local..."
 
 get_val() {
-  grep "^$1=" "$ENV_FILE" | sed "s/^$1=//;s/^\"//;s/\"$//" | head -1
+  local key=$1
+  grep -E "^${key}=" .env.local 2>/dev/null | sed -E 's/^[^=]+=//' | sed -e 's/^["\x27]//' -e 's/["\x27]$//' | tr -d '\n\r' | head -1
 }
 
-ANON_KEY=$(get_val "NEXT_PUBLIC_SUPABASE_ANON_KEY")
-URL=$(get_val "NEXT_PUBLIC_SUPABASE_URL")
-SERVICE_KEY=$(get_val "SUPABASE_SERVICE_ROLE_KEY")
+NEXT_PUBLIC_SUPABASE_URL=$(get_val "NEXT_PUBLIC_SUPABASE_URL")
+NEXT_PUBLIC_SUPABASE_ANON_KEY=$(get_val "NEXT_PUBLIC_SUPABASE_ANON_KEY")
+SUPABASE_SERVICE_ROLE_KEY=$(get_val "SUPABASE_SERVICE_ROLE_KEY")
+OPENROUTER_API_KEY=$(get_val "OPENROUTER_API_KEY")
+CRON_SECRET=$(get_val "CRON_SECRET")
 
-if [ -z "$ANON_KEY" ] || [ -z "$URL" ] || [ -z "$SERVICE_KEY" ]; then
-  echo "❌ Missing values in .env.local (NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)"
+if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+  echo "❌ Missing required Supabase variables in .env.local"
   exit 1
 fi
 
-echo "Removing existing Preview env vars (ignore 'not found' errors)..."
-npx vercel env rm NEXT_PUBLIC_SUPABASE_ANON_KEY preview --yes 2>/dev/null || true
-npx vercel env rm NEXT_PUBLIC_SUPABASE_URL preview --yes 2>/dev/null || true
-npx vercel env rm SUPABASE_SERVICE_ROLE_KEY preview --yes 2>/dev/null || true
+echo "✅ Required variables found"
 
-# Use 'main' branch for Preview (CLI requires branch for non-interactive)
-BRANCH="${VERCEL_PREVIEW_BRANCH:-main}"
-echo "Adding correct values for Preview (branch: $BRANCH)..."
-npx vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY preview "$BRANCH" --value "$ANON_KEY" --yes
-npx vercel env add NEXT_PUBLIC_SUPABASE_URL preview "$BRANCH" --value "$URL" --yes
-npx vercel env add SUPABASE_SERVICE_ROLE_KEY preview "$BRANCH" --value "$SERVICE_KEY" --yes
+add_env() {
+  local key=$1
+  local value=$2
+
+  if [ -n "$value" ]; then
+    echo "  📌 $key"
+    npx vercel env rm "$key" preview --yes 2>/dev/null || true
+    printf '%s' "$value" | npx vercel env add "$key" preview --yes
+  fi
+}
 
 echo ""
-echo "✅ Done. Verify with: npx vercel env ls"
-echo "Redeploy preview with: ./scripts/deploy-dev.sh"
+echo "📦 Syncing to Preview environment..."
+echo "-----------------------------------"
+
+add_env "NEXT_PUBLIC_SUPABASE_URL" "$NEXT_PUBLIC_SUPABASE_URL"
+add_env "NEXT_PUBLIC_SUPABASE_ANON_KEY" "$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+add_env "SUPABASE_SERVICE_ROLE_KEY" "$SUPABASE_SERVICE_ROLE_KEY"
+add_env "OPENROUTER_API_KEY" "$OPENROUTER_API_KEY"
+add_env "CRON_SECRET" "$CRON_SECRET"
+
+echo "-----------------------------------"
+echo "✅ Preview environment synced successfully!"
+echo ""
+echo "📋 Verify: npx vercel env ls | grep -A2 Preview"

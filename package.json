@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "NEXT_PUBLIC_APP_ENV=development next dev -p 3000",
     "build": "next build",
+    "vercel-build": "node scripts/validate-env.js && next build",
+    "validate-env": "node scripts/validate-env.js",
+    "preview:sync": "./scripts/fix-preview-supabase-env.sh",
     "build:dev": "NEXT_PUBLIC_APP_ENV=development next build",
     "build:prod": "NEXT_PUBLIC_APP_ENV=production next build",
     "start": "next start",
