@@ -1,7 +1,7 @@
 // lib/version.ts
 export const APP_VERSION =
   process.env.NEXT_PUBLIC_APP_VERSION ||
-  '2026.03.01-2000-tb7ypd' // older versions are forced to update
+  '2026.03.02-1243-tb994l' // older versions are forced to update
 
 export const MINIMUM_SUPPORTED_VERSION = '2024.01.01-0000'
 

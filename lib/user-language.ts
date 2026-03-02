@@ -248,10 +248,13 @@ export function getUserLanguage(primaryGoal: UserGoal | null | undefined): UserL
 
 /**
  * Get user's primary goal from database
+ * Uses browser client when in client (RLS allows reading own profile); server client when on server
  */
 export async function getUserGoal(userId: string): Promise<UserGoal | null> {
-  const { getServerSupabase } = await import('./server-supabase')
-  const db = getServerSupabase()
+  const db =
+    typeof window !== 'undefined'
+      ? (await import('./supabase')).supabase
+      : (await import('./server-supabase')).getServerSupabase()
   const { data } = await db
     .from('user_profiles')
     .select('primary_goal')
