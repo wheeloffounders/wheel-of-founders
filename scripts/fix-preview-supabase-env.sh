@@ -17,7 +17,10 @@ echo "📖 Reading from .env.local..."
 
 get_val() {
   local key=$1
-  grep -E "^${key}=" .env.local 2>/dev/null | sed -E 's/^[^=]+=//' | sed -e 's/^["\x27]//' -e 's/["\x27]$//' | tr -d '\n\r' | head -1
+  local raw
+  raw=$(grep -E "^${key}=" .env.local 2>/dev/null | sed -E 's/^[^=]+=//' | sed -e 's/^["\x27]//' -e 's/["\x27]$//' | tr -d '\n\r' | head -1)
+  # Strip \n that cause "invalid API key" errors
+  echo "$raw" | sed 's/\\n//g'
 }
 
 NEXT_PUBLIC_SUPABASE_URL=$(get_val "NEXT_PUBLIC_SUPABASE_URL")
@@ -40,7 +43,13 @@ add_env() {
   if [ -n "$value" ]; then
     echo "  📌 $key"
     npx vercel env rm "$key" preview --yes 2>/dev/null || true
-    printf '%s' "$value" | npx vercel env add "$key" preview --yes
+    # CRITICAL: Pass empty string as branch to skip prompt (--yes alone isn't enough)
+    if printf '%s' "$value" | npx vercel env add "$key" preview "" --yes; then
+      echo "  ✅ Added $key to preview"
+    else
+      echo "  ❌ Failed to add $key to preview"
+      exit 1
+    fi
   fi
 }
 
@@ -57,4 +66,16 @@ add_env "CRON_SECRET" "$CRON_SECRET"
 echo "-----------------------------------"
 echo "✅ Preview environment synced successfully!"
 echo ""
-echo "📋 Verify: npx vercel env ls | grep -A2 Preview"
+
+# Wait for Vercel to register the new vars
+sleep 2
+
+echo "🔍 Verifying Preview environment variables..."
+if npx vercel env ls 2>/dev/null | grep -A20 "Preview" | grep -q "NEXT_PUBLIC_SUPABASE_URL"; then
+  echo "✅ Preview variables verified"
+else
+  echo "⚠️  Warning: Preview vars may still be missing!"
+  echo "   Run: npx vercel env ls | grep -A5 Preview"
+  echo "   Manually add with: npx vercel env add [KEY] preview \"\" --yes"
+  exit 1
+fi

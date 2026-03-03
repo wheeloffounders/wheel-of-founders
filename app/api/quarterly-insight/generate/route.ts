@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+import { withRateLimit } from '@/lib/rate-limit-middleware'
 import { isDevelopment, isAdmin } from '@/lib/admin'
 import { generateAIPrompt, AIError } from '@/lib/ai-client'
 import { checkUserHistory } from '@/lib/user-history'
@@ -52,95 +53,94 @@ export const revalidate = 0
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSessionFromRequest(req)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    return withRateLimit(req, 'quarterly', async (req) => {
+      const session = await getServerSessionFromRequest(req)
+      if (!session) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
 
-    if (!isDevelopment() && !(await isAdmin(session.user.id))) {
-      console.warn('[quarterly-insight] Generate called in production by non-admin:', session.user.id)
-      return NextResponse.json({ error: 'On-demand generation is disabled in production. Insights are pre-generated quarterly.' }, { status: 403 })
-    }
+      if (!isDevelopment() && !(await isAdmin(session.user.id))) {
+        console.warn('[quarterly-insight] Generate called in production by non-admin:', session.user.id)
+        return NextResponse.json({ error: 'On-demand generation is disabled in production. Insights are pre-generated quarterly.' }, { status: 403 })
+      }
 
-    const body = (await req.json()) as GenerateBody
-    const { quarterStart, quarterEnd } = body
+      const body = (await req.json()) as GenerateBody
+      const { quarterStart, quarterEnd } = body
 
-    if (!quarterStart || !quarterEnd) {
-      return NextResponse.json({ error: 'quarterStart and quarterEnd required' }, { status: 400 })
-    }
+      if (!quarterStart || !quarterEnd) {
+        return NextResponse.json({ error: 'quarterStart and quarterEnd required' }, { status: 400 })
+      }
 
-    const db = getServerSupabase()
+      const db = getServerSupabase()
 
-    // Get months in the quarter
-    const quarterStartDate = new Date(quarterStart)
-    const months: { start: string; end: string; label: string }[] = []
-    for (let i = 0; i < 3; i++) {
-      const m = addMonths(quarterStartDate, i)
-      months.push({
-        start: format(startOfMonth(m), 'yyyy-MM-dd'),
-        end: format(endOfMonth(m), 'yyyy-MM-dd'),
-        label: m.toLocaleString('default', { month: 'long', year: 'numeric' }),
-      })
-    }
+      const quarterStartDate = new Date(quarterStart)
+      const months: { start: string; end: string; label: string }[] = []
+      for (let i = 0; i < 3; i++) {
+        const m = addMonths(quarterStartDate, i)
+        months.push({
+          start: format(startOfMonth(m), 'yyyy-MM-dd'),
+          end: format(endOfMonth(m), 'yyyy-MM-dd'),
+          label: m.toLocaleString('default', { month: 'long', year: 'numeric' }),
+        })
+      }
 
-    // Fetch reviews for the quarter
-    const { data: reviews } = await db
-      .from('evening_reviews')
-      .select('review_date, wins, lessons, mood, energy')
-      .eq('user_id', session.user.id)
-      .gte('review_date', quarterStart)
-      .lte('review_date', quarterEnd)
-      .order('review_date', { ascending: true })
-
-    const winsWithDate: WinWithDate[] = []
-    const lessonsByMonth: Record<string, string[]> = {}
-    const winsByMonth: Record<string, string[]> = {}
-    const moods: number[] = []
-    const energies: number[] = []
-
-    for (const r of reviews ?? []) {
-      const date = (r as { review_date?: string }).review_date || ''
-      const monthKey = date.slice(0, 7)
-      if (!lessonsByMonth[monthKey]) lessonsByMonth[monthKey] = []
-      if (!winsByMonth[monthKey]) winsByMonth[monthKey] = []
-      const w = parseWins((r as { wins?: unknown }).wins, date)
-      const l = parseLessons((r as { lessons?: unknown }).lessons, date)
-      winsWithDate.push(...w)
-      lessonsByMonth[monthKey].push(...l)
-      winsByMonth[monthKey].push(...w.map((x) => x.text))
-      const m = (r as { mood?: number }).mood
-      const e = (r as { energy?: number }).energy
-      if (typeof m === 'number') moods.push(m)
-      if (typeof e === 'number') energies.push(e)
-    }
-
-    const [tasksRes, profileRes] = await Promise.all([
-      db
-        .from('morning_tasks')
-        .select('needle_mover, completed')
+      const { data: reviews } = await db
+        .from('evening_reviews')
+        .select('review_date, wins, lessons, mood, energy')
         .eq('user_id', session.user.id)
-        .gte('plan_date', quarterStart)
-        .lte('plan_date', quarterEnd),
-      db.from('user_profiles').select('primary_goal_text').eq('id', session.user.id).maybeSingle(),
-    ])
+        .gte('review_date', quarterStart)
+        .lte('review_date', quarterEnd)
+        .order('review_date', { ascending: true })
 
-    const tasks = (tasksRes.data ?? []) as any[]
-    const needleMoversTotal = tasks.filter((t) => t.needle_mover).length
-    const needleMoversCompleted = tasks.filter((t) => t.needle_mover && t.completed).length
-    const primaryGoal = (profileRes.data as { primary_goal_text?: string } | null)?.primary_goal_text ?? null
-    const topThemes = detectWinThemes(winsWithDate).slice(0, 5)
-    const avgMood = moods.length > 0 ? Math.round(moods.reduce((a, b) => a + b, 0) / moods.length * 10) / 10 : null
-    const avgEnergy = energies.length > 0 ? Math.round(energies.reduce((a, b) => a + b, 0) / energies.length * 10) / 10 : null
+      const winsWithDate: WinWithDate[] = []
+      const lessonsByMonth: Record<string, string[]> = {}
+      const winsByMonth: Record<string, string[]> = {}
+      const moods: number[] = []
+      const energies: number[] = []
 
-    const monthSummaries = months
-      .map((m) => {
-        const wins = winsByMonth[m.start.slice(0, 7)] ?? []
-        const lessons = lessonsByMonth[m.start.slice(0, 7)] ?? []
-        return `${m.label}: Wins (${wins.length}): ${wins.slice(0, 5).join('; ') || '—'} | Lessons (${lessons.length}): ${lessons.slice(0, 5).join('; ') || '—'}`
-      })
-      .join('\n')
+      for (const r of reviews ?? []) {
+        const date = (r as { review_date?: string }).review_date || ''
+        const monthKey = date.slice(0, 7)
+        if (!lessonsByMonth[monthKey]) lessonsByMonth[monthKey] = []
+        if (!winsByMonth[monthKey]) winsByMonth[monthKey] = []
+        const w = parseWins((r as { wins?: unknown }).wins, date)
+        const l = parseLessons((r as { lessons?: unknown }).lessons, date)
+        winsWithDate.push(...w)
+        lessonsByMonth[monthKey].push(...l)
+        winsByMonth[monthKey].push(...w.map((x) => x.text))
+        const m = (r as { mood?: number }).mood
+        const e = (r as { energy?: number }).energy
+        if (typeof m === 'number') moods.push(m)
+        if (typeof e === 'number') energies.push(e)
+      }
 
-    const userPrompt = `You are Mrs. Deer, a warm, wise coach for founders.
+      const [tasksRes, profileRes] = await Promise.all([
+        db
+          .from('morning_tasks')
+          .select('needle_mover, completed')
+          .eq('user_id', session.user.id)
+          .gte('plan_date', quarterStart)
+          .lte('plan_date', quarterEnd),
+        db.from('user_profiles').select('primary_goal_text').eq('id', session.user.id).maybeSingle(),
+      ])
+
+      const tasks = (tasksRes.data ?? []) as any[]
+      const needleMoversTotal = tasks.filter((t) => t.needle_mover).length
+      const needleMoversCompleted = tasks.filter((t) => t.needle_mover && t.completed).length
+      const primaryGoal = (profileRes.data as { primary_goal_text?: string } | null)?.primary_goal_text ?? null
+      const topThemes = detectWinThemes(winsWithDate).slice(0, 5)
+      const avgMood = moods.length > 0 ? Math.round(moods.reduce((a, b) => a + b, 0) / moods.length * 10) / 10 : null
+      const avgEnergy = energies.length > 0 ? Math.round(energies.reduce((a, b) => a + b, 0) / energies.length * 10) / 10 : null
+
+      const monthSummaries = months
+        .map((m) => {
+          const wins = winsByMonth[m.start.slice(0, 7)] ?? []
+          const lessons = lessonsByMonth[m.start.slice(0, 7)] ?? []
+          return `${m.label}: Wins (${wins.length}): ${wins.slice(0, 5).join('; ') || '—'} | Lessons (${lessons.length}): ${lessons.slice(0, 5).join('; ') || '—'}`
+        })
+        .join('\n')
+
+      const userPrompt = `You are Mrs. Deer, a warm, wise coach for founders.
 
 This user had the following quarter (${quarterStart} to ${quarterEnd}):
 
@@ -171,50 +171,50 @@ Generate a quarterly reflection with exactly 4 sections:
 
 OUTPUT FORMAT: Use markdown ## headers. Exactly 4 sections with blank lines between. Let AI choose warm, natural titles. Use their words. Strategic, not tactical. Milestone feeling.`
 
-    const { hasHistory } = await checkUserHistory(session.user.id)
-    console.log(`[quarterly-insight] User hasHistory=${hasHistory}, template=${hasHistory ? 'pattern' : 'mirror'}`)
+      const { hasHistory } = await checkUserHistory(session.user.id)
+      console.log(`[quarterly-insight] User hasHistory=${hasHistory}, template=${hasHistory ? 'pattern' : 'mirror'}`)
 
-    const historyNote = hasHistory ? '' : ' CRITICAL: User has NO prior history. ONLY use what they wrote this quarter. DO NOT say "I recall" or invent context. Be a mirror, not a coach.'
-    const systemPrompt = `${MRS_DEER_RULES}
+      const historyNote = hasHistory ? '' : ' CRITICAL: User has NO prior history. ONLY use what they wrote this quarter. DO NOT say "I recall" or invent context. Be a mirror, not a coach.'
+      const systemPrompt = `${MRS_DEER_RULES}
 
 Quarterly insight: max 550 words. BIG PICTURE focus. Output exactly 4 sections with ## markdown headers. Find the throughline and ONE big shift. Strategic direction, not tactical advice. BANNED: needle mover, action plan, smart constraint, power list. Use natural language only. Make it feel like a milestone.${historyNote}`
 
-    const insight = await generateAIPrompt({
-      systemPrompt,
-      userPrompt,
-      maxTokens: 2000,
-      temperature: 0.7,
-    })
+      const insight = await generateAIPrompt({
+        systemPrompt,
+        userPrompt,
+        maxTokens: 2000,
+        temperature: 0.7,
+      })
 
-    const { error: insertError } = await (db.from('personal_prompts') as any).insert({
-      user_id: session.user.id,
-      prompt_text: insight,
-      prompt_type: 'quarterly',
-      prompt_date: quarterStart,
-      stage_context: null,
-      generation_count: 1,
-    })
-
-    if (insertError) {
-      console.error('[quarterly-insight] Failed to save:', insertError)
-    }
-
-    // Save to insight_history for revisiting
-    await (db.from('insight_history') as any).upsert(
-      {
+      const { error: insertError } = await (db.from('personal_prompts') as any).insert({
         user_id: session.user.id,
-        insight_type: 'quarterly',
-        period_start: quarterStart,
-        period_end: quarterEnd,
-        insight_text: insight,
-      },
-      { onConflict: 'user_id,insight_type,period_start,period_end' }
-    )
+        prompt_text: insight,
+        prompt_type: 'quarterly',
+        prompt_date: quarterStart,
+        stage_context: null,
+        generation_count: 1,
+      })
 
-    return NextResponse.json({
-      prompt: insight,
-      quarterStart,
-      quarterEnd,
+      if (insertError) {
+        console.error('[quarterly-insight] Failed to save:', insertError)
+      }
+
+      await (db.from('insight_history') as any).upsert(
+        {
+          user_id: session.user.id,
+          insight_type: 'quarterly',
+          period_start: quarterStart,
+          period_end: quarterEnd,
+          insight_text: insight,
+        },
+        { onConflict: 'user_id,insight_type,period_start,period_end' }
+      )
+
+      return NextResponse.json({
+        prompt: insight,
+        quarterStart,
+        quarterEnd,
+      })
     })
   } catch (error) {
     console.error('[quarterly-insight] Error:', error)

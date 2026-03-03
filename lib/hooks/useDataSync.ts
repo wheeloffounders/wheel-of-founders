@@ -1,12 +1,25 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
+
+const MIN_SYNC_INTERVAL_MS = 5000
+const TOAST_COOLDOWN_MS = 30000
 
 export function useDataSync() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [lastSynced, setLastSynced] = useState<Date | null>(null)
+  const lastSyncTimeRef = useRef<number>(0)
+  const lastToastTimeRef = useRef<number>(0)
 
   const syncData = useCallback(async (showToast = true) => {
+    const now = Date.now()
+
+    // Rate limit: skip if we synced recently (unless showToast is explicitly false = background sync)
+    if (showToast && now - lastSyncTimeRef.current < MIN_SYNC_INTERVAL_MS) {
+      return
+    }
+    lastSyncTimeRef.current = now
+
     setIsSyncing(true)
     try {
       // Clear any stale PWA caches
@@ -23,14 +36,18 @@ export function useDataSync() {
       window.dispatchEvent(new CustomEvent('data-sync-request'))
 
       setLastSynced(new Date())
-      
+
+      // Only show success toast if manual sync AND enough time since last toast
       if (showToast) {
-        // Dispatch toast event (components can listen for this)
-        window.dispatchEvent(
-          new CustomEvent('toast', {
-            detail: { message: 'Data synced successfully', type: 'success' },
-          })
-        )
+        const timeSinceLastToast = now - lastToastTimeRef.current
+        if (timeSinceLastToast >= TOAST_COOLDOWN_MS) {
+          lastToastTimeRef.current = now
+          window.dispatchEvent(
+            new CustomEvent('toast', {
+              detail: { message: 'Data synced successfully', type: 'success' },
+            })
+          )
+        }
       }
     } catch (error) {
       console.error('Sync failed:', error)

@@ -92,7 +92,18 @@ Set this to your **final** production URL (no trailing slash). If you don’t ha
 |----------|--------|
 | `OPENROUTER_API_KEY` | `sk-or-...` from OpenRouter dashboard |
 
-### 2.6 Optional (add if you use them)
+### 2.6 Push notifications (optional)
+
+For web push notifications (morning/evening reminders, profile reminders):
+
+| Variable | Notes |
+|----------|--------|
+| `VAPID_PUBLIC_KEY` | From `npx web-push generate-vapid-keys` |
+| `VAPID_PRIVATE_KEY` | From same command (keep secret) |
+| `VAPID_SUBJECT` | e.g. `mailto:support@wheeloffounders.com` |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Same as `VAPID_PUBLIC_KEY` (client needs it) |
+
+### 2.7 Optional (add if you use them)
 
 | Variable | Notes |
 |----------|--------|

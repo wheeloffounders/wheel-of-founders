@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react'
 import { filterInsightLabels } from '@/lib/insight-utils'
+import { getSignedHeadersCached } from '@/lib/api-client'
 
 export type StreamingPromptType = 'morning' | 'post_morning' | 'post_evening' | 'emergency'
 
@@ -57,11 +58,13 @@ export function useStreamingInsight(): UseStreamingInsightResult {
     onCompleteRef.current = onComplete ?? null
 
     try {
+      const signedHeaders = await getSignedHeadersCached(params.accessToken)
       const res = await fetch('/api/personal-coaching/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(params.accessToken && { Authorization: `Bearer ${params.accessToken}` }),
+          ...signedHeaders,
         },
         body: JSON.stringify({
           promptType: params.promptType,

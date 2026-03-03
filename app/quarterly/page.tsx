@@ -8,6 +8,7 @@ import {
   endOfQuarter,
   isSameQuarter,
   differenceInDays,
+  addMonths,
 } from 'date-fns'
 import { TrendingUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -22,6 +23,7 @@ import { InsightNavigation } from '@/components/InsightNavigation'
 import { LockedFeature } from '@/components/LockedFeature'
 import { getQuarterlyProgress } from '@/lib/progress'
 import { colors } from '@/lib/design-tokens'
+import { showRefreshButton } from '@/lib/env'
 
 function parseQuarterParam(q: string): Date | null {
   const m = q.match(/^(\d{4})-Q([1-4])$/)
@@ -45,6 +47,7 @@ export default function QuarterlyPage() {
     : new Date()
   const [loading, setLoading] = useState(true)
   const [selectedQuarter, setSelectedQuarter] = useState(initialQuarter)
+  const [initialRedirectDone, setInitialRedirectDone] = useState(false)
   const [periods, setPeriods] = useState<string[]>([])
   const [stats, setStats] = useState({
     totalTasks: 0,
@@ -65,12 +68,50 @@ export default function QuarterlyPage() {
   const isEndOfQuarter = differenceInDays(endOfQuarter(selectedQuarter), new Date()) <= 7 || !isSameQuarter(selectedQuarter, new Date())
   const showFullQuarterly = isEndOfQuarter
 
+  const currentQuarterStr = toQuarterParam(selectedQuarter)
+  const nextQuarterStart = addMonths(selectedQuarter, 3)
+  const nextQuarterStr = toQuarterParam(nextQuarterStart)
+  const hasNextQuarterInsight = periods.some((p) => p === nextQuarterStr)
+  const getNextDisabledMessage = () => {
+    const qNum = Math.ceil((nextQuarterStart.getMonth() + 1) / 3)
+    const availableMonth = qNum * 3 // 0-indexed: Q1->3(Apr), Q2->6(Jul), Q3->9(Oct), Q4->0(Jan)
+    const availableYear = qNum === 4 ? nextQuarterStart.getFullYear() + 1 : nextQuarterStart.getFullYear()
+    const availableMonthNum = qNum === 4 ? 0 : availableMonth
+    const monthName = new Date(availableYear, availableMonthNum, 1).toLocaleString('default', { month: 'long' })
+    return `Q${qNum} ${nextQuarterStart.getFullYear()} insights will be available on ${monthName} 1, ${availableYear}`
+  }
+
   useEffect(() => {
     if (quarterParam && /^\d{4}-Q[1-4]$/.test(quarterParam)) {
       const parsed = parseQuarterParam(quarterParam)
       if (parsed) setSelectedQuarter(parsed)
     }
   }, [quarterParam])
+
+  // When no quarter in URL, redirect to most recent quarter WITH data
+  useEffect(() => {
+    if (quarterParam || initialRedirectDone) return
+    const redirectToLatest = async () => {
+      const session = await getUserSession()
+      if (!session) return
+      try {
+        const { data: { session: supabaseSession } } = await supabase.auth.getSession()
+        const headers: Record<string, string> = {}
+        if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
+        const res = await fetch('/api/insights/periods?type=quarterly', { headers })
+        const json = await res.json()
+        if (json.periods?.length > 0) {
+          const latestQuarter = toQuarterParam(new Date(json.periods[0]))
+          router.replace(`/quarterly?quarter=${latestQuarter}`)
+        }
+      } catch {
+        // ignore
+      } finally {
+        setInitialRedirectDone(true)
+      }
+    }
+    redirectToLatest()
+  }, [quarterParam, initialRedirectDone, router])
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -104,7 +145,13 @@ export default function QuarterlyPage() {
         const qStr = toQuarterParam(selectedQuarter)
         const res = await fetch(`/api/insights/periods?type=quarterly&current=${qStr}`, { headers })
         const json = await res.json()
-        if (json.periods) setPeriods(json.periods)
+        if (json.periods) {
+          // API returns YYYY-MM-DD; convert to YYYY-Q# for navigation
+          const converted = json.periods.map((p: string) =>
+            /^\d{4}-Q[1-4]$/.test(p) ? p : toQuarterParam(new Date(p))
+          )
+          setPeriods(converted)
+        }
       } catch {
         // ignore
       }
@@ -217,6 +264,7 @@ export default function QuarterlyPage() {
       const { data: { session: supabaseSession } } = await supabase.auth.getSession()
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
+      Object.assign(headers, await import('@/lib/api-client').then((m) => m.getSignedHeadersCached(supabaseSession?.access_token)))
       const quarterStart = format(startOfQuarter(selectedQuarter), 'yyyy-MM-dd')
       const quarterEnd = format(endOfQuarter(selectedQuarter), 'yyyy-MM-dd')
       const res = await fetch('/api/quarterly-insight/generate', {
@@ -257,6 +305,7 @@ export default function QuarterlyPage() {
         const { data: { session: supabaseSession } } = await supabase.auth.getSession()
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
+        Object.assign(headers, await import('@/lib/api-client').then((m) => m.getSignedHeadersCached(supabaseSession?.access_token)))
         const quarterStart = format(startOfQuarter(selectedQuarter), 'yyyy-MM-dd')
         const quarterEnd = format(endOfQuarter(selectedQuarter), 'yyyy-MM-dd')
         const res = await fetch('/api/quarterly-insight/generate', {
@@ -312,11 +361,12 @@ export default function QuarterlyPage() {
           currentPeriod={toQuarterParam(selectedQuarter)}
           periods={periods.length > 0 ? periods : [toQuarterParam(selectedQuarter)]}
           onNavigate={(period) => router.push(`/quarterly?quarter=${period}`)}
+          nextDisabledMessage={!hasNextQuarterInsight ? getNextDisabledMessage() : undefined}
         />
       </div>
 
-      {/* Quarter in Progress - teaser */}
-      {!showFullQuarterly && (
+      {/* Quarter in Progress - only when viewing current quarter with no insight yet */}
+      {!showFullQuarterly && isSameQuarter(selectedQuarter, new Date()) && !periods.includes(currentQuarterStr) && (
         <QuarterlyPreview
           quarterLabel={quarterLabel}
           stats={{
@@ -336,7 +386,7 @@ export default function QuarterlyPage() {
           <TrajectoryWisdom
             insight={quarterlyInsightOverride ?? quarterlyInsight}
             quarterLabel={quarterLabel}
-            onRefresh={handleGenerateInsight}
+            onRefresh={showRefreshButton ? handleGenerateInsight : undefined}
             generating={generating}
             generateError={generateError}
           />

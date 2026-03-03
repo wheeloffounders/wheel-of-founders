@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserSession } from '@/lib/auth'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
+import { withRateLimit } from '@/lib/rate-limit-middleware'
+import { addWatermark } from '@/lib/watermark'
 import { generateProPlusPrompt, PromptType, MorningOverride } from '@/lib/personal-coaching'
 import { AIError } from '@/lib/ai-client'
 import { format } from 'date-fns'
@@ -36,24 +38,7 @@ export async function POST(req: NextRequest) {
 
     console.log('🟢 Request body:', { promptType, userId: userId?.substring(0, 8) + '...', promptDate })
 
-    // Handle emergency insights (special case)
-    if (body.emergencyDescription && body.severity) {
-      const { generateEmergencyInsight } = await import('@/lib/personal-coaching')
-      if (!userId) {
-        const session = await getUserSession()
-        if (!session) {
-          return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-        }
-        userId = session.user.id
-      }
-      const emergencyDate = body.promptDate || format(new Date(), 'yyyy-MM-dd')
-      console.log(`[API] Generating emergency insight for user ${userId} for date ${emergencyDate}`)
-      const insight = await generateEmergencyInsight(userId, body.emergencyDescription, body.severity, emergencyDate)
-      console.log(`[API] Successfully generated emergency insight (length: ${insight.length} chars)`)
-      return NextResponse.json({ prompt: insight })
-    }
-
-    // Test handler: debug env vars and Supabase at runtime (no auth required)
+    // Test handler: debug env vars and Supabase at runtime (no auth required) - skip rate limit
     if (promptType === 'test') {
       let supabaseOk = false
       let supabaseError: string | null = null
@@ -85,30 +70,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid prompt type' }, { status: 400 })
     }
 
-    // Verify auth: prefer server session (Bearer token or cookies), fall back to body userId with client session
-    const serverSession = await getServerSessionFromRequest(req)
-    console.log('🟢 Server session from request:', !!serverSession, 'userId:', serverSession?.user?.id?.substring(0, 8))
-    if (serverSession?.user?.id) {
-      if (userId && userId !== serverSession.user.id) {
-        console.log('🟢 WARNING: userId in body does not match authenticated user')
-      }
-      userId = serverSession.user.id
-    } else if (!userId) {
-      const clientSession = await getUserSession()
-      console.log('🟢 Fallback getUserSession:', !!clientSession)
-      if (!clientSession) {
-        console.log('🟢 FAIL: Not authenticated')
-        return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-      }
-      userId = clientSession.user.id
-    }
+    const insightType = body.emergencyDescription && body.severity ? 'emergency' : (promptType as 'morning' | 'post_morning' | 'post_evening' | 'weekly' | 'monthly')
 
-    console.log('🟢 Calling generateProPlusPrompt:', { promptType, userId: userId.substring(0, 8) + '...', promptDate })
-    const prompt = await generateProPlusPrompt(userId, promptType, promptDate, {
-      morningOverride: promptType === 'morning' ? body.morningOverride : undefined,
+    return withRateLimit(req, insightType, async () => {
+      let resolvedUserId = userId
+      const serverSession = await getServerSessionFromRequest(req)
+      if (serverSession?.user?.id) {
+        resolvedUserId = serverSession.user.id
+      } else if (!resolvedUserId) {
+        const clientSession = await getUserSession()
+        if (!clientSession) {
+          return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+        }
+        resolvedUserId = clientSession.user.id
+      }
+
+      if (body.emergencyDescription && body.severity) {
+        const { generateEmergencyInsight } = await import('@/lib/personal-coaching')
+        const emergencyDate = body.promptDate || format(new Date(), 'yyyy-MM-dd')
+        const insight = await generateEmergencyInsight(resolvedUserId!, body.emergencyDescription, body.severity, emergencyDate)
+        return NextResponse.json({ prompt: addWatermark(insight, resolvedUserId!) })
+      }
+
+      const prompt = await generateProPlusPrompt(resolvedUserId!, promptType, promptDate, {
+        morningOverride: promptType === 'morning' ? body.morningOverride : undefined,
+      })
+      return NextResponse.json({ prompt: addWatermark(prompt, resolvedUserId!) })
     })
-    console.log('🟢 AI response received, length:', prompt?.length, '- returning to client. Check [SAVE INSIGHT] logs for DB insert.')
-    return NextResponse.json({ prompt })
   } catch (error) {
     console.error('🟢 API ERROR:', error)
     if (error instanceof AIError) {

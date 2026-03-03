@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { format, isToday } from 'date-fns'
 import { Moon, Heart, Award, Lightbulb, AlertCircle, Check, Mountain, Plus, X, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -26,6 +26,7 @@ import { LoadingWithRetry } from '@/components/LoadingWithRetry'
 import { ConfirmModal } from '@/components/ConfirmModal'
 import { useStreamingInsight } from '@/lib/hooks/useStreamingInsight'
 import { StreamingIndicator } from '@/components/StreamingIndicator'
+import { TutorialProgress } from '@/components/TutorialProgress'
 
 const MOOD_OPTIONS = [
   { value: 5, label: 'Great', emoji: '😊' },
@@ -52,12 +53,15 @@ interface Task {
 
 export default function EveningPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isTutorial = searchParams?.get('tutorial') === 'true'
   const lang = useUserLanguage() // Personalized language
   
   // All hooks must be at the top level - no conditional calls
   const [userTier, setUserTier] = useState<string>('beta')
   const [aiCoachMessage, setAiCoachMessage] = useState<string | null>(null)
   const [aiCoachTrigger, setAiCoachTrigger] = useState<'evening_after' | null>(null)
+  const [eveningInsightId, setEveningInsightId] = useState<string | null>(null)
   const [journal, setJournal] = useState('')
   const [mood, setMood] = useState<number | null>(null)
   const [energy, setEnergy] = useState<number | null>(null)
@@ -226,9 +230,12 @@ export default function EveningPage() {
       if (insightToShow) {
         setAiCoachMessage(insightToShow)
         setAiCoachTrigger('evening_after')
+        const row = postEveningInsightRes.data as { id?: string }
+        if (row?.id) setEveningInsightId(row.id)
       } else {
         setAiCoachMessage(null)
         setAiCoachTrigger(null)
+        setEveningInsightId(null)
       }
 
       // Check for pattern-based Mrs. Deer feedback (3+ mentions of same theme in last 14 days)
@@ -448,6 +455,20 @@ export default function EveningPage() {
 
       if (insertError) throw insertError
 
+      // Tutorial mode: complete onboarding and redirect to dashboard
+      if (isTutorial) {
+        await (supabase.from('user_profiles') as any)
+          .update({
+            onboarding_step: 3,
+            onboarding_completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', session.user.id)
+        router.push('/dashboard?welcome=true')
+        setSaving(false)
+        return
+      }
+
       fireFunnelStep(3, 'review_complete')
 
       trackEvent('evening_review_saved', {
@@ -547,7 +568,8 @@ export default function EveningPage() {
                 console.error('❌ CRITICAL - Post-evening insight save failed:', upsertErr)
                 window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to save evening insight. Please try again.', type: 'error' } }))
               } else {
-                console.log('✅ Post-evening insight SAVED, id:', (saved as { id?: string }[])?.[0]?.id)
+                const savedId = (saved as { id?: string }[])?.[0]?.id
+                if (savedId) setEveningInsightId(savedId)
                 window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Evening insight saved', type: 'success' } }))
               }
             }
@@ -562,11 +584,13 @@ export default function EveningPage() {
           tomorrow.setDate(tomorrow.getDate() + 1)
           const nextDay = format(tomorrow, 'yyyy-MM-dd')
           console.log('🔵 STEP 6: Calling morning insight API for next day:', nextDay)
+          const signedHeaders = await import('@/lib/api-client').then((m) => m.getSignedHeadersCached(session?.access_token))
           const morningRes = await fetch('/api/personal-coaching', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }),
+              ...signedHeaders,
             },
             body: JSON.stringify({
               promptType: 'morning',
@@ -704,6 +728,8 @@ export default function EveningPage() {
       className="max-w-3xl mx-auto px-4 md:px-5 py-8 transition-all duration-200"
       style={{ paddingTop: spacing['3xl'], paddingBottom: spacing['2xl'] }}
     >
+      {isTutorial && <TutorialProgress currentStep={3} />}
+
       {/* Header with Mrs. Deer - responsive: avatar above on mobile, left on desktop */}
       <div className="mb-8" style={{ marginBottom: spacing['2xl'] }}>
         <div className="flex flex-col md:flex-row md:items-start gap-4 mb-4">
@@ -730,12 +756,12 @@ export default function EveningPage() {
         <DateSelector selectedDate={reviewDate} onDateChange={setReviewDate} maxDaysBack={30} className="mb-6" />
       </div>
 
-      {/* Today's Journey: What You Accomplished */}
+      {/* Today's History: What You Accomplished */}
       <Card highlighted className="mb-8" style={{ marginBottom: spacing['2xl'], borderLeft: `3px solid ${colors.emerald.DEFAULT}` }}>
         <CardHeader style={{ padding: spacing['xl'] }}>
           <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
             <Mountain className="w-5 h-5" style={{ color: colors.emerald.DEFAULT }} />
-            {isToday(new Date(reviewDate)) ? lang.eveningTitle : `Journey for ${format(new Date(reviewDate), 'MMMM d')}: ${lang.eveningTitle.split(': ')[1] || 'What You Accomplished'}`}
+            {isToday(new Date(reviewDate)) ? lang.eveningTitle : `History for ${format(new Date(reviewDate), 'MMMM d')}: ${lang.eveningTitle.split(': ')[1] || 'What You Accomplished'}`}
           </CardTitle>
           <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
             Celebrate what you moved forward today—every step counts.
@@ -1050,21 +1076,12 @@ export default function EveningPage() {
         type="button"
         onClick={handleSave}
         disabled={saving}
-        isLoading={saving}
         variant="primary"
         size="lg"
         className="w-full"
       >
-        {saving ? 'Completing...' : 'Complete my day'}
+        {saving ? 'Mrs. Deer is writing...' : 'Save & Complete My Day'}
       </Button>
-
-      {/* Loading: Mrs. Deer reflecting after save */}
-      {saving && (
-        <div className="mt-4 p-4 rounded-lg border-2 flex items-center gap-3 mb-6 bg-amber-50 dark:bg-amber-950/30 border-amber-500 dark:border-amber-600">
-          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-amber-700 dark:border-amber-400 flex-shrink-0" />
-          <p className="text-amber-800 dark:text-amber-200 font-medium">Mrs. Deer, your AI companion is reflecting on your input...</p>
-        </div>
-      )}
 
       {/* Mrs. Deer AI Coach - Evening Reflection Insight (permanent, always shown if exists) */}
       {aiCoachTrigger === 'evening_after' && (aiCoachMessage || isStreaming || streamingError) && (
@@ -1073,9 +1090,8 @@ export default function EveningPage() {
           <AICoachPrompt
             message={isStreaming ? (streamingInsight || '...') : (streamingError ? `[AI ERROR] ${streamingError}` : aiCoachMessage!)}
             trigger={aiCoachTrigger}
-            onClose={() => {
-              // Insights are permanent - don't actually close them
-            }}
+            onClose={() => {}}
+            insightId={eveningInsightId ?? undefined}
           />
         </>
       )}

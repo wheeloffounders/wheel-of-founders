@@ -1,0 +1,101 @@
+id,description,completed,needle_mover,is_proactive,action_plan,plan_date,created_at
+74549a4d-6d15-4b3f-bc2d-371f9a480dda,Continue on executing weekly marketing plan,false,false,true,systemize,2026-03-02,2026-03-02 05:34:50.767352+00
+4be773dc-3c0f-47fe-ae76-2621cec18632,Wave 1 Beta Launch,false,true,true,quick_win_founder,2026-03-02,2026-03-02 05:34:50.767352+00
+940379f9-afe5-4155-be74-e16d5b1da1a2,LinkedIn Temporary Restriction Follow Up,false,true,false,delegate_founder,2026-03-02,2026-03-02 05:34:50.767352+00
+eae43925-054f-425c-b767-54c98c4d5278,Start the marketing weekly plan,true,true,true,quick_win_founder,2026-03-01,2026-03-01 03:13:23.744634+00
+6fe0ccb7-7388-425e-a720-ed9a1c4432f0,Email automation,true,true,true,systemize,2026-03-01,2026-03-01 03:13:23.744634+00
+65588d57-6290-4c09-bd5f-0d54d712a10d,LinkedIn Outreach,true,true,true,systemize,2026-03-01,2026-03-01 03:13:23.744634+00
+8227f8ba-56ba-4280-9775-0bf4b4393412,Linkedin outreach,true,true,true,my_zone,2026-02-28,2026-02-28 03:33:36.054539+00
+24c734e5-33f6-4b8e-8fb4-18dd06d87672,Facebook group networking,true,false,true,my_zone,2026-02-28,2026-02-28 03:33:36.054539+00
+817cc1af-c659-4857-9984-dbf609b543c9,X Outreach,true,true,true,quick_win_founder,2026-02-28,2026-02-28 03:33:36.054539+00
+e4a7cb0d-3002-449b-87bf-e4a1e36ace5f,Journalist network,true,true,true,my_zone,2026-02-27,2026-02-27 12:34:48.72401+00
+b8fdb9d0-688e-4188-8e52-9f759a6c7d7a,Personalized Email set up,true,true,true,my_zone,2026-02-27,2026-02-27 12:34:48.72401+00
+52d74533-de18-444d-b3aa-239ae7dbab73,Outreach,true,true,true,my_zone,2026-02-27,2026-02-27 12:34:48.72401+00
+5ae4755d-903f-4061-a00c-0add099c463d,App Debug,true,false,true,my_zone,2026-02-26,2026-02-26 10:01:45.537175+00
+e2e24bcf-4c1a-4bb2-9a5d-9ceb8f07e48c,Execute timer method with son,true,false,true,my_zone,2026-02-26,2026-02-26 10:01:45.537175+00
+99a65288-d398-4acc-8755-4c0d274c13bb,Email segmentation,true,true,true,my_zone,2026-02-26,2026-02-26 10:01:45.537175+00
+bf76556c-7c44-45fc-b6d2-5b0663733fcf,App bug fix,true,false,false,my_zone,2026-02-25,2026-02-25 02:17:59.139811+00
+b89c17d2-9552-4b44-b82a-61299872fa37,Start timer method,true,false,true,my_zone,2026-02-25,2026-02-25 02:17:59.139811+00
+118b3879-3ca4-4c6f-836b-e5795d5d77e7,Email automation and user segmentation,true,true,true,my_zone,2026-02-25,2026-02-25 02:17:59.139811+00
+bd825f29-7b22-40f1-be64-2cd7bdfdb4cf,Create email automations & segment beta users,false,true,true,my_zone,2026-02-24,2026-02-25 02:01:14.006712+00
+96d3c511-839c-4e8b-8281-b9c3e76cb63d,Debug app,true,false,false,my_zone,2026-02-24,2026-02-25 02:01:14.006712+00
+639e6508-b267-4976-a459-88fb79f829d9,Beta Launch Preparation,true,true,true,my_zone,2026-02-23,2026-02-23 04:12:55.53506+00
+bf78ff5e-4565-4699-ae91-bb4ea906fc03,Beta Launch videos or screenshots?,true,true,true,my_zone,2026-02-23,2026-02-23 04:12:55.53506+00
+2655aa57-a2ad-47e8-abae-db2933d7ce9f,Balancing work and husband's us time,true,true,false,my_zone,2026-02-23,2026-02-23 04:12:55.53506+00
+e7ca48e5-bdf9-45ab-8900-5ee35953984d,Transformation video,true,true,true,my_zone,2026-02-22,2026-02-22 15:53:17.437253+00
+7f6db05a-915a-4f98-b0d5-7eb9107d8c25,App debug,true,true,false,my_zone,2026-02-22,2026-02-22 15:53:17.437253+00
+c80ec063-7a68-4985-a112-a0f94d8f7b41,"Sunday, family day",true,false,true,my_zone,2026-02-22,2026-02-22 15:53:17.437253+00
+06783de9-2400-4f8d-be5d-ebd8bf53b0b5,"Rest day, will only do brainless jobs when back home at night.",true,false,true,quick_win_founder,2026-02-21,2026-02-21 05:06:46.470359+00
+fe0dee83-891b-496c-bfb9-a0ffa3b8380d,Transformation Video,false,true,true,my_zone,2026-02-20,2026-02-20 12:40:34.78455+00
+58583834-a493-4ac3-a78c-606b0bb08e1a,App debug,false,true,false,my_zone,2026-02-20,2026-02-20 12:40:34.78455+00
+af216e25-4c95-4ca5-ae71-4e9e5df71bd3,Beta Launch Preparation,false,true,true,systemize,2026-02-20,2026-02-20 12:40:34.78455+00
+f1282855-b835-4002-a4bd-352e54d5c3ee,Celebrate Day 30—family time,false,false,true,my_zone,2026-02-19,2026-02-19 05:16:38.098061+00
+4730e897-a63f-4bfd-8a7f-6237283105a1,Finish enough version of app to close laptop,true,true,true,my_zone,2026-02-19,2026-02-19 05:16:38.098061+00
+2aac190c-3456-4f7e-9deb-90ae048f0d44,"Continue app UX—debug, polish until ready",true,true,true,my_zone,2026-02-18,2026-02-18 16:48:31.987994+00
+deade599-e427-4069-98e4-ff2a87192738,"Beta launch prep: emails, screenshots",false,true,true,my_zone,2026-02-18,2026-02-18 16:48:32.236006+00
+406563fb-8cf0-4b62-b910-a0bc36acbadf,"Holiday mode: family time, presence over productivity",false,true,true,my_zone,2026-02-18,2026-02-18 16:48:32.116966+00
+dbb51fed-f992-4fcc-9b43-de2c0398768f,"Beta launch prep: emails, screenshots",true,true,true,my_zone,2026-02-17,2026-02-18 16:48:31.524386+00
+8570bbec-ed54-4961-9145-b363c7fd870e,Family time—uninterrupted when they need me,true,true,true,my_zone,2026-02-17,2026-02-18 16:48:31.639635+00
+027efb1a-b4d5-412c-8e2e-ce5dc056dfc2,Continue app UX + debugging,true,true,true,my_zone,2026-02-17,2026-02-18 16:48:31.399631+00
+2efb3150-fc3f-4ecc-b225-d74ec1c2ba2e,Wrap up app building,true,true,true,my_zone,2026-02-16,2026-02-18 16:48:30.790518+00
+0eceb94c-6be0-4d84-b4e3-0982f8df73ec,Plan beta launch—Tuesday next week,true,true,true,my_zone,2026-02-16,2026-02-18 16:48:31.053682+00
+725ebed1-b063-413f-a6eb-f0c3ea6c4355,Outreach + evaluate—sharper pain point,true,true,true,my_zone,2026-02-16,2026-02-18 16:48:30.906415+00
+c3983188-6a20-487b-98d4-2df81c31d9fc,Build app—near 90% done,true,true,true,my_zone,2026-02-15,2026-02-18 16:48:30.190644+00
+9fdb6169-c864-4cc7-965a-e79307608aba,"Son time—no agenda, whatever he needs",true,true,true,my_zone,2026-02-15,2026-02-18 16:48:30.420009+00
+1382fa79-f28a-4da2-85b1-75b41b73a1da,Outreach continues,true,true,true,my_zone,2026-02-15,2026-02-18 16:48:30.304942+00
+43cd8611-1773-4c36-a199-3e4c11086e23,"Outreach: Reddit, Twitter",true,false,null,quick_win_founder,2026-02-14,2026-02-18 16:48:29.837019+00
+5b9a8144-5c1f-4d9f-8abb-39d841da0818,Morning build with husband at Starbucks,true,true,true,my_zone,2026-02-14,2026-02-18 16:48:29.590725+00
+a6347b2f-7214-46bc-b86d-287413a6cab6,Son quality time: lunch + playground with Charlotte,true,true,true,my_zone,2026-02-14,2026-02-18 16:48:29.724403+00
+10192ed9-1408-4b99-83ca-149042aa5f93,"Outreach: Reddit back online, Marketing OS bug fixed",true,true,true,my_zone,2026-02-13,2026-02-18 16:48:29.109496+00
+23960240-076b-4589-8f03-e60bae515f0f,Continue building app—what's missing before strangers touch it?,true,true,true,my_zone,2026-02-13,2026-02-18 16:48:28.985956+00
+9f91ba2c-347c-4b27-94f7-9adc99ea341f,"Son's quality time—cherish, not optimize",true,true,true,my_zone,2026-02-13,2026-02-18 16:48:29.226066+00
+c81c84a8-bb56-445d-baad-55502fb41610,Implement husband's Marketing OS enhancement,true,true,true,my_zone,2026-02-12,2026-02-18 16:48:28.494172+00
+5f586890-1ada-47e5-a151-47eb09aa936c,Connect Mrs. Deer to AI—give her voice an engine,true,true,true,my_zone,2026-02-12,2026-02-18 16:48:28.333614+00
+ec59c4a8-b1c8-4e6c-b503-5ec29745c962,Grow beta list in crack time,true,false,null,quick_win_founder,2026-02-12,2026-02-18 16:48:28.621556+00
+6cd5d072-bb0a-49a3-9aa6-b4feecb89dc8,Grow beta list in crack times,true,false,null,quick_win_founder,2026-02-11,2026-02-18 16:48:27.955534+00
+34ff2dd7-111e-45e8-ae68-514887c77041,Network & test Marketing OS in Reddit/FB communities,true,true,true,my_zone,2026-02-11,2026-02-18 16:48:27.835416+00
+f3cc843f-2aee-4b33-9c12-9245a4ca5eb5,Full Turbo on Core App—deep immersive build,true,true,true,my_zone,2026-02-11,2026-02-18 16:48:27.531892+00
+88a3e4da-e24b-4ef9-87c6-4ef5b9154f54,"Beta launch prep: emails, screenshots",true,true,true,my_zone,2026-02-10,2026-02-18 16:48:27.052473+00
+4ec23353-011a-4723-9219-baf620fe6caa,Family time—uninterrupted when they need me,true,true,true,my_zone,2026-02-10,2026-02-18 16:48:27.175296+00
+f8724e65-5157-411b-b556-9a457958fb32,Continue app UX + debugging,true,true,true,my_zone,2026-02-10,2026-02-18 16:48:26.936301+00
+7af300c8-71e9-46a6-8d41-7eabff3a1403,Plan beta launch—Tuesday next week,true,true,true,my_zone,2026-02-09,2026-02-18 16:48:26.573165+00
+da390eea-796b-49a7-a870-44d4c4dbb2aa,Wrap up app building,true,true,true,my_zone,2026-02-09,2026-02-18 16:48:26.340382+00
+4ec74997-478f-4ec1-9e1d-64c2b8325c3f,Outreach + evaluate—sharper pain point,true,true,true,my_zone,2026-02-09,2026-02-18 16:48:26.458399+00
+22cf0589-ef42-4b3f-8ff2-3c9efd8c3aee,"Son time—no agenda, whatever he needs",true,true,true,my_zone,2026-02-08,2026-02-18 16:48:25.977714+00
+d168d038-981f-4ad8-aed0-8041784c8ab8,Outreach continues—permission to DM 8-10%,true,true,true,my_zone,2026-02-08,2026-02-18 16:48:25.863718+00
+a539b7fb-c712-4f0f-ba80-5e1a8cdee1bf,Build app—near 90% done,true,true,true,my_zone,2026-02-08,2026-02-18 16:48:25.748611+00
+8403ead2-c1c9-4698-b78a-98b4cb085f64,Morning build with husband at Starbucks,true,true,true,my_zone,2026-02-07,2026-02-18 16:48:24.812215+00
+f3e86438-421b-49fe-92c5-33e1cc12e908,"Outreach: Reddit, Twitter",true,false,null,quick_win_founder,2026-02-07,2026-02-18 16:48:25.084687+00
+478274f6-6e35-48cb-895d-47cac9e73854,Son quality time: lunch + playground with friend,true,true,true,my_zone,2026-02-07,2026-02-18 16:48:24.928504+00
+455c4700-730f-4a47-bdb2-b5d9a34fb4c8,"Outreach: Reddit back online, Marketing OS bug fixed",true,true,true,my_zone,2026-02-06,2026-02-18 16:48:24.343068+00
+76bcb0fd-815b-41c3-9fd8-6f11370ea98c,"Son's quality time—cherish, not optimize",true,true,true,my_zone,2026-02-06,2026-02-18 16:48:24.456082+00
+41859845-9c12-4ab8-ac7a-91513e506ef6,Continue app build—what's missing before strangers touch it?,true,true,true,my_zone,2026-02-06,2026-02-18 16:48:24.224618+00
+9c20e750-f96a-467b-8cda-033dd7b6f9b3,Implement husband's Marketing OS enhancement,true,true,true,my_zone,2026-02-05,2026-02-18 16:48:23.746866+00
+4edb970d-f80e-4a5d-b9c9-69b0a20747d5,Grow beta list in crack times,true,false,null,quick_win_founder,2026-02-05,2026-02-18 16:48:23.863332+00
+c284bf68-d35e-4527-a3b5-e67406d8bac7,Connect Mrs. Deer to AI engine,true,true,true,my_zone,2026-02-05,2026-02-18 16:48:23.545702+00
+88ffc060-6576-4ff7-a9a0-f4dd6da283e4,Husband feedback on Marketing OS,true,true,true,my_zone,2026-02-04,2026-02-18 16:48:23.066406+00
+85d048cd-5972-40e8-896b-640e9bec54ce,Core app: Virtuous Loop implementation,true,true,true,my_zone,2026-02-04,2026-02-18 16:48:23.183674+00
+e2212d97-6e63-44f5-b390-fc32be14b90a,Fix Marketing OS bug (Reddit tracking),true,true,true,my_zone,2026-02-04,2026-02-18 16:48:22.951385+00
+1e2ae2f6-000c-4336-96b4-cc5398f03d0f,Reddit DM templates,true,false,null,quick_win_founder,2026-02-03,2026-02-18 16:48:22.465498+00
+62384a58-a0cf-4afb-8f67-9352d4084b60,Son's nap = deep work block,true,true,true,my_zone,2026-02-03,2026-02-18 16:48:22.578986+00
+7ce5eb9b-e87d-4062-bcd2-6887be85a073,Beta list: 10 more signups,true,true,true,my_zone,2026-02-03,2026-02-18 16:48:22.307986+00
+7bc00b86-3927-479a-b675-40a34d0298f2,Personalize prompts from profile,true,true,true,my_zone,2026-02-02,2026-02-18 16:48:21.840457+00
+771dd63a-c967-4360-99b5-c85767fa8571,Family day—Starbucks build session with husband,true,true,true,my_zone,2026-02-02,2026-02-18 16:48:21.959006+00
+9c10fb71-17ba-422a-96b7-aeb51f3c143f,Profile page for user background,true,true,true,my_zone,2026-02-02,2026-02-18 16:48:21.712231+00
+d527555a-4c2e-4bbb-84d5-e473a04867ae,Improve Mrs. Deer response rules,true,true,true,my_zone,2026-02-01,2026-02-18 16:48:21.113261+00
+28d40423-ea20-4b7f-a448-6e4de2ea5105,Fix timezone handling,true,false,null,quick_win_founder,2026-02-01,2026-02-18 16:48:21.229629+00
+1366d0eb-4796-4322-8ab4-55a1496030a8,Weekly email automation setup,true,true,true,my_zone,2026-02-01,2026-02-18 16:48:21.001544+00
+e8181139-1d43-4f60-b486-fa73c1aa72cb,Add fires to dashboard,true,false,null,quick_win_founder,2026-01-31,2026-02-18 16:48:20.484365+00
+13ca5dd1-9ac2-4953-bd13-a2a1ac3db19b,Beta list: 5 new signups target,true,true,true,my_zone,2026-01-31,2026-02-18 16:48:20.603011+00
+a2065a0f-b099-4907-92bc-fb312807f780,Build emergency/firefighter mode,true,true,true,my_zone,2026-01-31,2026-02-18 16:48:20.362993+00
+f3c0512a-c067-47ea-b5b4-8fa289717f89,Son's playground time—fully present,true,true,true,my_zone,2026-01-30,2026-02-18 16:48:20.0011+00
+835f1f6e-1e59-4419-8d27-85415055d124,Implement proactive/reactive decision tracking,true,false,null,quick_win_founder,2026-01-30,2026-02-18 16:48:19.883725+00
+30e390a1-26e4-44bc-b5ad-ee7c1f457ae5,"Add action plan options (My Zone, Systemize, etc)",true,true,true,my_zone,2026-01-30,2026-02-18 16:48:19.762569+00
+786f3dfa-b482-4e3f-b36d-621c423edd93,Delegate husband to help with networking,true,true,true,my_zone,2026-01-29,2026-02-18 16:48:19.403352+00
+c753e92b-f436-4248-9bdd-b22d56a3d2b4,Track Reddit/Twitter outreach,true,false,null,quick_win_founder,2026-01-29,2026-02-18 16:48:19.280188+00
+d8dab25f-6852-43b5-826a-c89b9be22896,Create Marketing OS spreadsheet,true,true,true,my_zone,2026-01-29,2026-02-18 16:48:19.122321+00
+e3340d35-13dc-4981-a0bb-208933413cba,Start Reddit outreach for beta,true,true,true,my_zone,2026-01-28,2026-02-18 16:48:18.542344+00
+d47fa6a1-b56b-4264-9596-23a8203cb763,Fix mobile responsive issues,true,false,null,quick_win_founder,2026-01-28,2026-02-18 16:48:18.775244+00
+f50f56dd-3432-4b74-a750-d7688620bbf3,Write first build-in-public post,true,true,true,my_zone,2026-01-28,2026-02-18 16:48:18.658905+00
+766b7884-7661-421a-b25b-681680c475a7,Add needle mover indicators,true,true,true,my_zone,2026-01-27,2026-02-18 16:48:18.033077+00
+85b07a4b-d36f-4054-aedb-f9d6934f08d7,Test full flow with real data,true,true,true,my_zone,2026-01-27,2026-02-18 16:48:18.184563+00

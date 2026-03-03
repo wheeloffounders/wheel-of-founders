@@ -7,10 +7,11 @@ This guide covers how to manage environment variables across Vercel environments
 **Sync all environments at once:**
 
 ```bash
-./scripts/sync-env-to-vercel.sh
+./scripts/sync-all-envs.sh
+# or: npm run sync:envs
 ```
 
-This reads `.env.local` and syncs the key variables to Production, Preview, and Development on Vercel.
+This reads `.env.local` and syncs the key variables to Production, Preview, and Development on Vercel. It also verifies Preview and shows local env status.
 
 ---
 
@@ -94,10 +95,54 @@ When you need to rotate Supabase or other API keys:
 
 ### "Invalid API key" in Production or Preview
 
-1. Run `./scripts/sync-env-to-vercel.sh` to sync from `.env.local`
-2. Verify in Vercel Dashboard: Settings → Environment Variables
-3. Ensure **Production** and **Preview** both have the vars (check the environment checkboxes)
-4. Redeploy: `./scripts/deploy-prod.sh` or push a new commit for Preview
+**Common root cause:** `.env.local` contains literal `\n` characters at the end of values. These get synced to Vercel and break authentication.
+
+1. **Check for `\n` in .env.local:**
+   ```bash
+   grep '\\n' .env.local
+   ```
+   If you see output, run the cleanup script:
+   ```bash
+   ./scripts/clean-env.sh
+   ```
+
+2. **Sync clean values:**
+   ```bash
+   npm run sync:envs
+   ```
+
+3. **Verify** in Vercel Dashboard: Settings → Environment Variables
+
+4. **Redeploy:** `./scripts/deploy-prod.sh` or push a new commit for Preview
+
+### `.env.local` contains `\n` characters (causes invalid API key)
+
+If values in `.env.local` end with `\n` (e.g. `"eyJ...Uyso\n"`), they will be stored in Vercel with that extra text and cause "invalid API key" errors.
+
+**Fix:**
+```bash
+./scripts/clean-env.sh
+npm run sync:envs
+```
+
+The `clean-env.sh` script creates a backup, removes `\n` from all values, and tells you the next step. The sync scripts also strip `\n` when reading, but cleaning the file is the permanent fix.
+
+### Preview environment has zero variables (completely empty)
+
+If Preview deployments fail with missing env vars and `npx vercel env ls | grep -A5 Preview` shows nothing:
+
+1. **Manually add the required vars once** (paste values from `.env.local` when prompted):
+   ```bash
+   npx vercel env add NEXT_PUBLIC_SUPABASE_URL preview
+   npx vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY preview
+   npx vercel env add SUPABASE_SERVICE_ROLE_KEY preview
+   npx vercel env add OPENROUTER_API_KEY preview
+   npx vercel env add CRON_SECRET preview
+   ```
+
+2. **Verify:** `npx vercel env ls | grep -A5 Preview`
+
+3. **Future syncs** – The auto-sync in `deploy-dev.sh` and `fix-preview-supabase-env.sh` will keep them in sync from then on.
 
 ### deploy-prod.sh warns "Production environment variables may be missing"
 
@@ -169,9 +214,12 @@ The workflow `.github/workflows/sync-preview-env.yml` syncs Preview env vars on 
 
 | Script | Purpose |
 |--------|---------|
+| `clean-env.sh` | Remove `\n` characters from .env.local (fixes "invalid API key") |
+| `sync-all-envs.sh` | **One command** – syncs Production, Preview, Development + verifies local |
 | `sync-env-to-vercel.sh` | Sync .env.local to all Vercel environments (trims whitespace) |
 | `fix-preview-supabase-env.sh` | Sync Preview env from .env.local (idempotent, run by deploy-prod) |
 | `fix-cron-secret.sh` | One-time fix for CRON_SECRET whitespace (uses printf, no newline) |
 | `diagnose-cron-secret.sh` | Diagnose CRON_SECRET in Vercel and .env.local |
 | `deploy-prod.sh` | Deploy to production (auto-syncs Preview, then deploys) |
+| `deploy-dev.sh` | Deploy to Preview (auto-syncs env vars, verifies, then deploys) |
 | `validate-env.js` | Build-time check that required vars exist |

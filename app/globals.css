@@ -19,3 +19,86 @@ body {
   width: 100%;
   position: relative;
 }
+
+/* Z-index layers - consistent stacking order */
+:root {
+  --z-index-base: 1;
+  --z-index-content: 5;
+  --z-index-bottom-nav: 10;
+  --z-index-header: 25; /* Top nav above bottom nav */
+  --z-index-dropdown: 30;
+  --z-index-tooltip: 40;
+  --z-index-modal-overlay: 45;
+  --z-index-modal: 50;
+  --z-index-toast: 60;
+  --z-index-install-prompt: 70; /* Highest - above everything */
+  --z-index-version-banner: 65; /* Reserved, version now in Settings only */
+}
+
+/* Top nav - always visible above bottom nav */
+header,
+.app-header,
+[data-header] {
+  z-index: var(--z-index-header) !important;
+  position: sticky !important;
+  top: 0;
+  isolation: isolate; /* Own stacking context for reliable layering */
+}
+
+nav:not(.bottom-nav) {
+  z-index: var(--z-index-header) !important;
+}
+
+/* Bottom navigation */
+.bottom-nav {
+  z-index: var(--z-index-bottom-nav) !important;
+  isolation: isolate;
+}
+
+/* Bottom nav menus: above blur overlay when open */
+.bottom-nav.bottom-nav-menu-open {
+  z-index: var(--z-index-modal) !important;
+}
+
+/* Modals/dialogs */
+.modal,
+.dialog,
+[role="dialog"] {
+  z-index: var(--z-index-modal) !important;
+}
+
+.toast {
+  z-index: var(--z-index-toast) !important;
+}
+
+/* Install prompt / PWA download - top layer */
+.install-prompt,
+[data-testid="install-prompt"] {
+  z-index: var(--z-index-install-prompt) !important;
+  position: fixed !important;
+}
+
+.install-prompt-overlay {
+  z-index: calc(var(--z-index-install-prompt) - 1) !important;
+}
+
+/* Bottom nav blur overlay - behind menu panel */
+.bottom-nav-overlay {
+  z-index: var(--z-index-modal-overlay) !important;
+}
+
+/* Toast slide-in animation */
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}

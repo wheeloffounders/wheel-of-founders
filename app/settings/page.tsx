@@ -1,20 +1,18 @@
 'use client'
 
-import { sendNotification } from '@/lib/notifications'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Settings, Mail, Check, Download, FileText, Clock, Zap, CreditCard, MessageSquare, Loader2, Bell, Target, Moon, Sun } from 'lucide-react'
-import { useTheme } from '@/components/ThemeProvider'
+import { Settings, Mail, Check, Download, FileText, MessageSquare, Loader2, Bell, Target, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
 import { getFeatureAccess } from '@/lib/features'
 import { getUserGoal, saveUserGoals, UserGoal, getUserLanguage } from '@/lib/user-language'
 import Link from 'next/link'
 import SpeechToTextInput from '@/components/SpeechToTextInput'
+import { SettingsVersion } from '@/components/SettingsVersion'
 
 export default function SettingsPage() {
   const router = useRouter()
-  const { theme, toggleTheme } = useTheme()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(true)
@@ -32,6 +30,7 @@ export default function SettingsPage() {
   const [exportDateEnd, setExportDateEnd] = useState('')
   const [primaryGoal, setPrimaryGoal] = useState<UserGoal | null>(null)
   const [savingGoal, setSavingGoal] = useState(false)
+  const [hasDuo, setHasDuo] = useState(false)
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -53,7 +52,7 @@ export default function SettingsPage() {
     try {
       const { data, error } = await supabase
         .from('user_profiles')
-        .select('weekly_email_enabled, welcome_email_enabled, export_notification_enabled, community_insights_enabled, email_address, preferred_name, name')
+        .select('weekly_email_enabled, welcome_email_enabled, export_notification_enabled, community_insights_enabled, email_address, preferred_name, name, plan_type')
         .eq('id', userId)
         .maybeSingle()
 
@@ -72,6 +71,7 @@ export default function SettingsPage() {
         setCommunityInsightsEnabled(data.community_insights_enabled ?? true)
         setEmailAddress(data.email_address || '')
         setPreferredName(data.preferred_name || data.name || '')
+        setHasDuo((data as { plan_type?: string }).plan_type === 'duo_primary' || (data as { plan_type?: string }).plan_type === 'duo_secondary')
       } else {
         // Get email from auth user
         const { data: authData } = await supabase.auth.getUser()
@@ -162,34 +162,41 @@ export default function SettingsPage() {
         </Link>
       </div>
 
-      {/* Appearance */}
-     {/* <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg 
-px-4 
-md:px-5 py-4 md:py-5 mb-6 border-2 border-gray-200 dark:border-gray-700 dark:border-gray-700">
-        <div className="flex items-center gap-3 mb-4">
-          {theme === 'dark' ? <Moon className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" /> : <Sun className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />}
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Appearance</h2>
+      <div className="space-y-6">
+      {/* 1. Duo Plan */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-lg font-semibold flex items-center gap-2 text-gray-900 dark:text-white">
+              <Users className="w-5 h-5 text-[#ef725c]" />
+              Duo Plan
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Invite a partner and save up to 35%
+            </p>
+          </div>
+          <Link
+            href={hasDuo ? '/settings/duo' : '/checkout?plan=duo'}
+            className="px-4 py-2 bg-[#ef725c] text-white rounded-lg hover:bg-[#e8654d] text-sm font-medium shrink-0"
+          >
+            {hasDuo ? 'Manage Duo' : 'Join Plan'}
+          </Link>
         </div>
-        <button
-          type="button"
-          onClick={toggleTheme}
-          className="flex items-center gap-3 px-4 py-2.5 bg-[#ef725c] hover:bg-[#F28771] text-white rounded-lg border-2 border-[#c95a47] font-medium transition-colors"
-        >
-          {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
-          Switch to {theme === 'light' ? 'Dark' : 'Light'} Mode
-        </button>
-      </div> */}
+        <div className="mt-4 text-sm text-gray-600 dark:text-gray-400 space-y-1">
+          <p>✓ Two separate Pro accounts</p>
+          <p>✓ Single bill</p>
+          <p>✓ From $25/month each with yearly</p>
+        </div>
+      </div>
 
-      {/* Personalization */}
-      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 mb-6 border-2 border-gray-200 dark:border-gray-700 dark:border-gray-700">
+      {/* 2. Personalization */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3 mb-6">
           <Settings className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Personalization</h2>
         </div>
-
-        {/* Preferred Name */}
         <div className="mb-6">
-          <label htmlFor="preferred-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
+          <label htmlFor="preferred-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Preferred Name
           </label>
           <SpeechToTextInput
@@ -200,14 +207,94 @@ md:px-5 py-4 md:py-5 mb-6 border-2 border-gray-200 dark:border-gray-700 dark:bor
             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
             placeholder="How should we address you? (e.g., Vanie)"
           />
-          <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             This name will be used throughout the app instead of &quot;Founder&quot;. Leave empty to use &quot;Founder&quot;.
           </p>
         </div>
       </div>
 
-      {/* Email Preferences */}
-      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 mb-6 border-2 border-gray-200 dark:border-gray-700 dark:border-gray-700">
+      {/* 3. Notification Reminders */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white flex items-center gap-3">
+              <Bell className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
+              Notification Reminders
+            </h2>
+            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+              Choose when you&apos;d like gentle nudges for morning planning and evening reflection.
+            </p>
+          </div>
+          <Link
+            href="/settings/notifications"
+            className="px-4 py-2 text-gray-900 dark:text-gray-100 border border-[#152b50] dark:border-[#334155] rounded-lg hover:bg-gray-50 dark:bg-gray-900 transition text-sm font-medium shrink-0"
+          >
+            Manage Notifications
+          </Link>
+        </div>
+      </div>
+
+      {/* 4. Goals & Preferences */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
+        <div className="flex items-center gap-3 mb-6">
+          <Target className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Goals & Preferences</h2>
+        </div>
+        <div className="mb-6">
+          <label htmlFor="primary-goal" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            What brings you here?
+          </label>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            This helps us personalize your experience throughout the app.
+          </p>
+          <select
+            id="primary-goal"
+            value={primaryGoal || 'general_clarity'}
+            onChange={(e) => setPrimaryGoal(e.target.value as UserGoal)}
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
+          >
+            <option value="find_purpose">🎯 Finding my purpose</option>
+            <option value="build_significance">🌟 Build a meaningful business</option>
+            <option value="reduce_overwhelm">🌊 Reducing overwhelm</option>
+            <option value="break_through_stuck">🚀 Breaking through stuck</option>
+            <option value="improve_focus">🔍 Improving focus</option>
+            <option value="build_systems">⚙️ Building systems</option>
+            <option value="general_clarity">💡 General clarity</option>
+            <option value="stay_motivated">💪 Staying motivated</option>
+            <option value="find_calm">🧘 Finding calm</option>
+          </select>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!primaryGoal) return
+              setSavingGoal(true)
+              try {
+                const session = await getUserSession()
+                if (!session) return
+                await saveUserGoals(session.user.id, primaryGoal)
+                setMessage({ type: 'success', text: 'Personalization updated! The app will refresh to reflect your changes.' })
+                setTimeout(() => {
+                  window.location.reload()
+                }, 1500)
+              } catch (error) {
+                setMessage({
+                  type: 'error',
+                  text: error instanceof Error ? error.message : 'Failed to save personalization',
+                })
+              } finally {
+                setSavingGoal(false)
+              }
+            }}
+            disabled={savingGoal}
+            className="mt-3 px-4 py-2 bg-[#152b50] text-white rounded-lg text-sm font-medium hover:bg-[#1a3565] transition disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {savingGoal ? 'Saving...' : 'Save Personalization'}
+          </button>
+        </div>
+      </div>
+
+      {/* 5. Email Preferences */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3 mb-6">
           <Mail className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Email Preferences</h2>
@@ -361,158 +448,8 @@ md:px-5 py-4 md:py-5 mb-6 border-2 border-gray-200 dark:border-gray-700 dark:bor
         </button>
       </div>
 
-      {/* Timezone Section */}
-      {/* Notification Reminders */}
-      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 mt-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white flex items-center gap-3">
-              <Bell className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
-              Notification Reminders
-            </h2>
-            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-1">
-              Choose when you&apos;d like gentle nudges for morning planning and evening reflection.
-            </p>
-          </div>
-          <Link
-            href="/settings/notifications"
-            className="px-4 py-2 text-gray-900 dark:text-gray-100 dark:text-white border border-[#152b50] dark:border-[#334155] rounded-lg 
-hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 hover:text-white transition text-sm font-medium"
-          >
-            Manage Notifications
-          </Link>
-        </div>
-        
-        {/* Test notification buttons */}
-        <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Test Notifications</h3>
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => sendNotification(
-                '🛞 Morning reflection',
-                'Mrs. Deer, your AI companion is waiting to help you set your intention.'
-              )}
-              className="px-4 py-2 bg-[#ef725c] text-white rounded-lg hover:bg-[#f0886c] transition"
-            >
-              Test Morning Reminder
-            </button>
-            
-            <button
-              onClick={() => sendNotification(
-                '🌙 Evening check-in',
-                'How did your day go? Mrs. Deer, your AI companion would love to hear.'
-              )}
-              className="px-4 py-2 bg-[#152b50] text-white rounded-lg hover:bg-[#1a3565] transition"
-            >
-              Test Evening Reminder
-            </button>
-          </div>
-        </div>
-      </div>
-      {/* Manual Analysis Trigger */}
-      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 mt-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Zap className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Manual Analysis</h2>
-        </div>
-        <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-4">
-          Run analysis now if it was missed (e.g., you were offline). Analysis normally runs automatically between 2-5 AM your local time.
-        </p>
-        <button
-          onClick={async () => {
-            setMessage(null)
-            try {
-              const session = await getUserSession()
-              if (!session) return
-
-              const response = await fetch('/api/analyze-manual', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-              })
-
-              if (!response.ok) {
-                const data = await response.json()
-                throw new Error(data.error || 'Analysis failed')
-              }
-
-              setMessage({ type: 'success', text: 'Analysis triggered! Check your dashboard for new insights.' })
-            } catch (error) {
-              setMessage({
-                type: 'error',
-                text: error instanceof Error ? error.message : 'Failed to trigger analysis',
-              })
-            }
-          }}
-          className="px-6 py-3 bg-[#152b50] text-white rounded-lg font-semibold hover:bg-[#1a3565] transition"
-        >
-          Run Analysis Now
-        </button>
-      </div>
-
-      {/* Goals & Preferences Section */}
-      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 mt-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Target className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Goals & Preferences</h2>
-        </div>
-
-        <div className="mb-6">
-          <label htmlFor="primary-goal" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-            What brings you here?
-          </label>
-          <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mb-3">
-            This helps us personalize your experience throughout the app.
-          </p>
-          <select
-            id="primary-goal"
-            value={primaryGoal || 'general_clarity'}
-            onChange={(e) => setPrimaryGoal(e.target.value as UserGoal)}
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
-          >
-            <option value="find_purpose">🎯 Finding my purpose</option>
-            <option value="build_significance">🌟 Build a meaningful business</option>
-            <option value="reduce_overwhelm">🌊 Reducing overwhelm</option>
-            <option value="break_through_stuck">🚀 Breaking through stuck</option>
-            <option value="improve_focus">🔍 Improving focus</option>
-            <option value="build_systems">⚙️ Building systems</option>
-            <option value="general_clarity">💡 General clarity</option>
-            <option value="stay_motivated">💪 Staying motivated</option>
-            <option value="find_calm">🧘 Finding calm</option>
-          </select>
-          <button
-            type="button"
-            onClick={async () => {
-              if (!primaryGoal) return
-              setSavingGoal(true)
-              try {
-                const session = await getUserSession()
-                if (!session) return
-                await saveUserGoals(session.user.id, primaryGoal)
-                setMessage({ type: 'success', text: 'Personalization updated! The app will refresh to reflect your changes.' })
-                setTimeout(() => {
-                  window.location.reload()
-                }, 1500)
-              } catch (error) {
-                setMessage({
-                  type: 'error',
-                  text: error instanceof Error ? error.message : 'Failed to save personalization',
-                })
-              } finally {
-                setSavingGoal(false)
-              }
-            }}
-            disabled={savingGoal}
-            className="mt-3 px-4 py-2 bg-[#152b50] text-white rounded-lg text-sm font-medium hover:bg-[#1a3565] transition disabled:opacity-70 disabled:cursor-not-allowed"
-          >
-            {savingGoal ? 'Saving...' : 'Save Personalization'}
-          </button>
-        </div>
-      </div>
-
-      {/* Data Export Section */}
-      <div id="data-export" className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 mt-6">
+      {/* 6. Data Export */}
+      <div id="data-export" className="bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3 mb-6">
           <Download className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Data Export</h2>
@@ -613,23 +550,70 @@ hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 hover:text-white transition t
                   body.dateRangeEnd = exportDateEnd
                 }
 
+                const { data: sessionResult } = await supabase.auth.getSession()
+                const currentSession = sessionResult?.session
+                const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                if (currentSession?.access_token) {
+                  headers['Authorization'] = `Bearer ${currentSession.access_token}`
+                }
+
                 const response = await fetch('/api/export', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers,
                   body: JSON.stringify(body),
+                  credentials: 'include',
                 })
 
                 const data = await response.json()
 
                 if (!response.ok) {
+                  if (response.status === 401) {
+                    setMessage({ type: 'error', text: 'Session expired. Please log in again.' })
+                    router.push('/login?returnTo=/settings#data-export')
+                    return
+                  }
                   throw new Error(data.error || 'Export failed')
                 }
 
-                // Use storage download URL(s) if available, otherwise fall back to blob download
-                if (data.downloadUrl || data.csvDownloadUrl || data.pdfDownloadUrl) {
-                  const urls = [data.downloadUrl, data.csvDownloadUrl, data.pdfDownloadUrl].filter(Boolean)
-                  urls.forEach((url) => url && window.open(url, '_blank'))
+                // Use storage download URL(s) if available, otherwise fall back to inline/blob download
+                const primaryUrl = data.pdfDownloadUrl ?? data.csvDownloadUrl ?? data.downloadUrl
+                if (primaryUrl) {
+                  const a = document.createElement('a')
+                  a.href = primaryUrl
+                  a.download = data.pdfFileName ?? data.csvFileName ?? data.fileName ?? 'export'
+                  a.target = '_blank'
+                  a.rel = 'noopener noreferrer'
+                  document.body.appendChild(a)
+                  a.click()
+                  document.body.removeChild(a)
                   setMessage({ type: 'success', text: 'Export ready! Download started.' })
+                  setTimeout(() => setMessage(null), 5000)
+                } else if (data.pdfBase64) {
+                  const bin = atob(data.pdfBase64)
+                  const arr = new Uint8Array(bin.length)
+                  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+                  const blob = new Blob([arr], { type: 'application/pdf' })
+                  const blobUrl = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = blobUrl
+                  a.download = data.pdfFileName ?? 'export.pdf'
+                  document.body.appendChild(a)
+                  a.click()
+                  document.body.removeChild(a)
+                  URL.revokeObjectURL(blobUrl)
+                  setMessage({ type: 'success', text: 'Export downloaded successfully!' })
+                  setTimeout(() => setMessage(null), 5000)
+                } else if (data.csvContentInline) {
+                  const blob = new Blob([data.csvContentInline], { type: 'text/csv' })
+                  const blobUrl = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = blobUrl
+                  a.download = data.csvFileName ?? 'export.csv'
+                  document.body.appendChild(a)
+                  a.click()
+                  document.body.removeChild(a)
+                  URL.revokeObjectURL(blobUrl)
+                  setMessage({ type: 'success', text: 'Export downloaded successfully!' })
                   setTimeout(() => setMessage(null), 5000)
                 } else if (data.data != null) {
                   const blob = new Blob([JSON.stringify(data.data, null, 2)], { type: 'application/json' })
@@ -643,6 +627,29 @@ hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 hover:text-white transition t
                   URL.revokeObjectURL(url)
                   setMessage({ type: 'success', text: 'Export downloaded successfully!' })
                   setTimeout(() => setMessage(null), 5000)
+                } else if (data.exportId) {
+                  // Fallback: fetch signed URL from download endpoint
+                  const dlFormat = exportFormat === 'all' ? 'json' : exportFormat
+                  const dlRes = await fetch(`/api/export/${data.exportId}/download?format=${dlFormat}`, {
+                    credentials: 'include',
+                    headers: currentSession?.access_token
+                      ? { Authorization: `Bearer ${currentSession.access_token}` }
+                      : {},
+                  })
+                  const dlData = await dlRes.json()
+                  if (dlData.downloadUrl) {
+                    const a = document.createElement('a')
+                    a.href = dlData.downloadUrl
+                    a.download = data.pdfFileName ?? data.csvFileName ?? data.fileName ?? 'export'
+                    a.target = '_blank'
+                    document.body.appendChild(a)
+                    a.click()
+                    document.body.removeChild(a)
+                    setMessage({ type: 'success', text: 'Export downloaded successfully!' })
+                    setTimeout(() => setMessage(null), 5000)
+                  } else {
+                    setMessage({ type: 'error', text: 'Export ready but download failed. Try again.' })
+                  }
                 } else {
                   setMessage({ type: 'error', text: 'Export completed but no data received. Try again.' })
                 }
@@ -674,6 +681,13 @@ hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 hover:text-white transition t
               : 'Free tier exports include the last 2 days only. Upgrade to export full history.'}
           </p>
         </div>
+      </div>
+
+      {/* 7. App Information */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">App Information</h3>
+        <SettingsVersion />
+      </div>
       </div>
     </div>
   )

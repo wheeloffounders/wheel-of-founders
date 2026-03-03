@@ -13,6 +13,7 @@ import { useStreamingInsight } from '@/lib/hooks/useStreamingInsight'
 import { getFeatureAccess } from '@/lib/features'
 import { trackEvent } from '@/lib/analytics'
 import { DateSelector } from '@/components/DateSelector'
+import { EmergencyCard } from '@/components/EmergencyCard'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
@@ -45,6 +46,7 @@ export default function EmergencyPage() {
   const [todayFires, setTodayFires] = useState<Emergency[]>([])
   const [loadingFires, setLoadingFires] = useState(true)
   const [aiCoachMessage, setAiCoachMessage] = useState<string | null>(null)
+  const [emergencyInsightId, setEmergencyInsightId] = useState<string | null>(null)
   const [userTier, setUserTier] = useState<string>('beta')
   const [fireDate, setFireDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
   const { insight: streamingInsight, isStreaming, error: streamingError, startStream } = useStreamingInsight()
@@ -89,7 +91,7 @@ export default function EmergencyPage() {
               
               const { data, error } = await supabase
                 .from('personal_prompts')
-                .select('prompt_text, prompt_type, generated_at')
+                .select('id, prompt_text, prompt_type, generated_at')
                 .eq('user_id', session.user.id)
                 .gte('generated_at', fireDateStart.toISOString())
                 .lte('generated_at', fireDateEnd.toISOString())
@@ -121,13 +123,15 @@ export default function EmergencyPage() {
         if (emergencyInsightRes.data?.prompt_text) {
           // Found insight for this specific date
           insightToShow = emergencyInsightRes.data.prompt_text
+          const row = emergencyInsightRes.data as { id?: string }
+          if (row?.id) setEmergencyInsightId(row.id)
           console.log('✅ Loading emergency insight (date-specific):', insightToShow.substring(0, 50))
         } else {
           // No insight for this date - check for ANY emergency insight (most recent)
           console.log('⚠️ No emergency insight found for date:', fireDate, '- checking for ayn recent insight')
           const { data: anyInsight, error: anyError } = await supabase
             .from('personal_prompts')
-            .select('prompt_text, prompt_type, generated_at')
+            .select('id, prompt_text, prompt_type, generated_at')
             .eq('user_id', session.user.id)
             .eq('prompt_type', 'emergency')
             .order('generated_at', { ascending: false })
@@ -138,6 +142,8 @@ export default function EmergencyPage() {
             console.error('❌ Error loading any emergency insight:', anyError)
           } else if (anyInsight?.prompt_text) {
             insightToShow = anyInsight.prompt_text
+            const row = anyInsight as { id?: string }
+            if (row?.id) setEmergencyInsightId(row.id)
             console.log('✅ Found emergency insight (most recent):', insightToShow.substring(0, 50))
           } else {
             console.log('⚠️ No emergency insights found in database')
@@ -148,8 +154,8 @@ export default function EmergencyPage() {
         if (insightToShow) {
           setAiCoachMessage(insightToShow)
         } else {
-          // Only clear if we're sure there's no insight in database
           setAiCoachMessage(null)
+          setEmergencyInsightId(null)
         }
       
       setLoadingFires(false)
@@ -213,6 +219,7 @@ export default function EmergencyPage() {
               console.log('✅ Emergency insight received:', fullPrompt.substring(0, 50))
               setAiCoachMessage(fullPrompt)
               if (inserted?.id) {
+                setEmergencyInsightId(inserted.id)
                 const { error: updateError } = await supabase
                   .from('emergencies')
                   .update({ insight: fullPrompt })
@@ -243,6 +250,10 @@ export default function EmergencyPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleDelete = (id: string) => {
+    setTodayFires((prev) => prev.filter((e) => e.id !== id))
   }
 
   const toggleResolved = async (id: string, resolved: boolean) => {
@@ -399,58 +410,13 @@ export default function EmergencyPage() {
         ) : (
           <ul className="space-y-3">
             {todayFires.map((fire) => (
-              <li
+              <EmergencyCard
                 key={fire.id}
-                className={`p-4 rounded-lg border ${
-                  fire.resolved
-                    ? 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 border-gray-200 dark:border-gray-700 dark:border-gray-700 opacity-75'
-                    : 'bg-amber-50/50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span
-                        className={`text-xs font-medium px-2 py-0.5 rounded ${
-                          fire.severity === 'hot'
-                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-                            : fire.severity === 'warm'
-                            ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
-                            : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                        }`}
-                      >
-                        {SEVERITY_OPTIONS.find((s) => s.value === fire.severity)
-                          ?.emoji}{' '}
-                        {fire.severity}
-                      </span>
-                      <span className="text-xs text-gray-700 dark:text-gray-300 dark:text-gray-300">
-                        {format(new Date(fire.created_at), 'h:mm a')}
-                      </span>
-                    </div>
-                    <p
-                      className={`text-gray-900 dark:text-gray-100 dark:text-white ${
-                        fire.resolved ? 'line-through text-gray-700 dark:text-gray-300 dark:text-gray-300' : ''
-                      }`}
-                    >
-                      {fire.description}
-                    </p>
-                    {fire.notes && (
-                      <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-1">{fire.notes}</p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => toggleResolved(fire.id, !fire.resolved)}
-                    className={`text-sm font-medium px-2 py-1 rounded shrink-0 ${
-                      fire.resolved
-                        ? 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
-                        : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-800/40'
-                    }`}
-                  >
-                    {fire.resolved ? 'Reopen' : 'Resolved'}
-                  </button>
-                </div>
-              </li>
+                emergency={fire}
+                onDelete={handleDelete}
+                onToggleResolved={toggleResolved}
+                severityOptions={SEVERITY_OPTIONS}
+              />
             ))}
           </ul>
         )}
@@ -465,6 +431,7 @@ export default function EmergencyPage() {
             message={isStreaming ? (streamingInsight || '...') : (streamingError ? `[AI ERROR] ${streamingError}` : aiCoachMessage!)}
             trigger="emergency"
             onClose={() => {}}
+            insightId={emergencyInsightId ?? undefined}
           />
         </>
       )}

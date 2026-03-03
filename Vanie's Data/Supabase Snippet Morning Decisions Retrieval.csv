@@ -1,0 +1,66 @@
+id,decision,decision_type,why_this_decision,plan_date,created_at
+c4016d83-fae2-41ba-97fd-ec81a691f73a,Out of the box marketing plan,strategic,I knew this stage (when no bugs) would take a lot less time once I have all the weekly marketing plans in place. So I should start thinking of extra ways to do marketing,2026-03-02,2026-03-02 05:34:51.194682+00
+62e263c9-9484-498b-b705-727f7f5e7bd2,Find a nice cafe to finish all my tasks are once,strategic,"My plan here is to finish my tasks all in one go, and have spare time to work more at night",2026-03-01,2026-03-01 03:13:24.321109+00
+eef41212-6801-460d-b48e-fa0922320711,Taking things slow,strategic,Only work on the task when my son is napping or asleep. Otherwise will spend all time with him.,2026-02-28,2026-02-28 03:33:36.538685+00
+2db1e8fb-c253-4b86-9707-c53c2345326d,Half year marketing plan,strategic,"Need a bigger picture of distribution, planning a 3-6 months marketing plan and it's execution plan would be ideal",2026-02-27,2026-02-27 12:34:49.730536+00
+b33b755f-b304-4fd5-b8be-fb2efd1b92cd,Might have hiccups on first few tries on timer mothod,tactical,"Should give it some time for both of us to get used to, might have some hiccups at first. But i have hopes it could work",2026-02-26,2026-02-26 07:27:12.794724+00
+58ccf30b-6b11-43bb-b9a6-b29b804069c9,Try to put my son first,tactical,Maybe put my laptop down most the time. See if it makes a difference with a timer,2026-02-25,2026-02-25 02:16:50.153825+00
+b6cd6829-119a-4ca0-8563-651b6a9c91cc,Start teaching my son patience,tactical,"My son woke up today, and I already knew I'd be at this screen.
+
+I can't explain timers to a toddler. But maybe I can start something. A rhythm. A boundary he can feel even if he can't understand it.
+
+Timer for work. Timer for playing with him. Not perfect. But maybe enough for him to sense: sometimes Mama works, sometimes she's here. Both are real.
+
+I don't know if it'll work. But I have to try something. The guilt of these past days is too heavy to carry into next week.",2026-02-24,2026-02-25 02:00:43.004404+00
+1b96cd56-5dcb-4dc5-8c5c-cb61ee33bd4a,Launching beta next Tuesday,strategic,"This is only a soft set date. As we are still fine tuning any bugs we see. So far the bugs substantially determines the retention rate. I hope I've already fixed the backbone of the app. So moving forward, they are all not urgent bugs.",2026-02-23,2026-02-22 16:36:23.651506+00
+058d0af6-6003-4859-9a11-a83d9d1815ad,"I want to rush everything, but that is just not possible. Why don't I launch beta when I feel it's ready? Not rushed",tactical,Many bugs surfaced after I built the app. I guess it's normal. I shouldn't rush it if it's not ready.,2026-02-22,2026-02-22 08:15:15.855131+00
+b2ac0a70-402d-47e6-8fe6-d42546b7a805,A day off,tactical,"Seeing friends, hiking, eating is a way to give myself a reset on.",2026-02-21,2026-02-21 05:06:46.879406+00
+dd9c8160-8edb-43a5-86a2-c940781b2cb5,Focus on what matters,tactical,"Decision Log:
+Watched some success stories this morning. Immediately felt the self-doubt creep in:
+
+Did I build something good?
+Will people like it?
+Will anyone pay?
+What if nobody does?
+
+Then I caught myself.
+
+These thoughts are noise. They don't move the needle. They just take up space.
+
+But watching tactical tips? Viral video requirements? How to reach the right users? That's different. That's signal. That's fuel.
+
+So today's decision is simple:
+
+Focus on what's right in front of me.
+Let the noise stay noise.
+Let the signal become action.",2026-02-20,2026-02-20 07:24:19.73038+00
+6a9454de-aeac-4ffd-8c6b-2b77ccb865aa,Finished enough beats perfect. Close laptop and mean it.,strategic,"Cursor has reached its usage limits. It will be costly to continue to build with it. So right now I have to decide which feature is a must versus which feature is a nice to have. Mobile pwa needs to be fixed as it determines user's experience. Dark/light mode is only a nice to have to we will pause on this until we get an actual paid user. Family time comes second time, because I have to get the app off my chest and finally move on to beta luanch preparation once and for all.",2026-02-19,2026-02-18 16:48:32.958744+00
+efd5976d-1927-4d42-9bc8-78b905a855bb,"Banned from subreddit—pivot to Facebook, LinkedIn, Indie Hackers",strategic,,2026-02-18,2026-02-18 16:48:32.358313+00
+0cb75bc4-1cbf-491b-9054-6c7b42269d6d,"3 day holiday—system bends. App waits, his childhood doesn't.",strategic,,2026-02-17,2026-02-18 16:48:31.752328+00
+e0ceade5-dabb-456c-a42f-f9446392326b,"Pain point too broad—more specific: 17 tabs open, not founder overwhelm",strategic,,2026-02-16,2026-02-18 16:48:31.171257+00
+ce9ab4ff-fc64-4fb4-b4a2-9127db56aa0f,Validation comes from paid users. Rest when body says slow down.,strategic,,2026-02-15,2026-02-18 16:48:30.535339+00
+4e43d973-72f3-406b-8911-a1bf342433ae,"Explore better cafes—Starbucks table too small, chairs hard",strategic,,2026-02-14,2026-02-18 16:48:29.953097+00
+9a890b8e-8578-48a7-996a-3284714df175,Goal isn't same number every day—average trending up while life intact,strategic,,2026-02-13,2026-02-18 16:48:29.34116+00
+248165f5-f620-461b-a904-ff96ad9951b3,"When with son, 100% there. Work lives only in cracks.",strategic,,2026-02-12,2026-02-18 16:48:28.750907+00
+09df3456-b9a1-4d6a-ae58-b1a8718a5691,Marketing OS app closed during Core App build block—protect flow,strategic,,2026-02-11,2026-02-18 16:48:28.071202+00
+b630e0f9-946e-4d5f-9ce0-9eca4c24cd30,"If nap time disappears, building time does. That's not failure.",strategic,,2026-02-10,2026-02-18 16:48:27.295054+00
+cd473f18-ed0a-4e23-baaf-09938960e287,Pain point too broad—more specific next round,strategic,,2026-02-09,2026-02-18 16:48:26.696676+00
+0510320f-f0bf-4c1e-9365-dcabbd7d65f3,Rest when body says slow down—treat as data not failure,strategic,,2026-02-08,2026-02-18 16:48:26.109884+00
+8897509f-f37e-4d66-a840-ee77699e0bb3,Us time matters even if coffee shop isn't perfect,strategic,,2026-02-07,2026-02-18 16:48:25.504354+00
+c35f6731-9cba-43c4-9537-560010dca0db,"7 is a benchmark, not a cage",strategic,,2026-02-06,2026-02-18 16:48:24.574428+00
+3d8c9897-e2e0-4084-b5b8-2128536eb89c,"When with son, 100% there. Work in cracks only.",strategic,,2026-02-05,2026-02-18 16:48:23.980122+00
+49745795-a3a1-4e8d-b857-abf6634206dc,Husband using Marketing OS—close the feedback loop,strategic,,2026-02-04,2026-02-18 16:48:23.300445+00
+2567d4ef-547f-422a-b933-f393f9a21d8d,Nap time is sacred for focus,strategic,,2026-02-03,2026-02-18 16:48:22.697582+00
+b92e0b8c-f4a7-4167-a1e4-eaa1aa279a3c,Us time matters—schedule it,strategic,,2026-02-02,2026-02-18 16:48:22.077052+00
+0fc56376-f830-44af-8e43-a6b3dcc9edfd,Weekly digest = accountability without daily pressure,strategic,,2026-02-01,2026-02-18 16:48:21.341626+00
+b91dbed0-952b-4f7b-93b4-fdb16cf1bf14,"Fires happen—track them, don't pretend they don't",strategic,,2026-01-31,2026-02-18 16:48:20.720302+00
+a35ac676-db78-4664-b5a7-9ab9e6c0cec1,"When with son, phone away",strategic,,2026-01-30,2026-02-18 16:48:20.125251+00
+b2ddf7d1-14a4-49be-96c3-a8365fe2f0c2,Husband can own Reddit—I focus on product,strategic,,2026-01-29,2026-02-18 16:48:19.524041+00
+2256437c-ff4e-46af-a02f-213ce9d1c557,Build in public—share the journey,strategic,,2026-01-28,2026-02-18 16:48:18.889238+00
+81bfa8a7-7958-498e-b5a6-0a653787a390,Needle movers = what changes trajectory,strategic,,2026-01-27,2026-02-18 16:48:18.299366+00
+d6f53c92-2fcc-485e-9bd7-983b45b58811,Son's bedtime is sacred—no laptop after,strategic,,2026-01-26,2026-02-18 16:48:17.66039+00
+23f763d4-341b-418b-be8a-3a2f87b71eea,"Use AI for insight, not for replacing user input",strategic,,2026-01-25,2026-02-18 16:48:16.831777+00
+da713fc4-f53d-478c-bc9d-eb917cd9660b,"Mrs. Deer should feel gentle, not pushy",strategic,,2026-01-24,2026-02-18 16:48:16.14223+00
+acda597b-ae90-44e3-be1d-7a1bb75c5d8b,Wins and lessons as free text—don't over-structure,strategic,,2026-01-23,2026-02-18 16:48:15.3614+00
+e22b63e2-b524-4a42-8cc1-6c5cb34a1702,Max 3 tasks per day—constraint forces focus,strategic,,2026-01-22,2026-02-18 16:48:14.7101+00
+da0723a2-d431-445f-af7e-d06f5b93ca2b,Build for founders first—they need this most,strategic,,2026-01-21,2026-02-18 16:48:14.035085+00

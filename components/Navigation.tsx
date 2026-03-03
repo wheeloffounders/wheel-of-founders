@@ -111,7 +111,7 @@ export default function Navigation() {
     { name: 'Weekly', href: '/weekly', icon: Calendar },
     { name: 'Monthly', href: '/monthly-insight', icon: Calendar },
     { name: 'Quarterly', href: '/quarterly', icon: BarChart2 },
-    { name: 'Journey', href: '/history', icon: MapPin },
+    { name: 'Daily History', href: '/history', icon: MapPin },
   ]
 
   const profileItems: NavItem[] = [

@@ -2,6 +2,7 @@ import { getServerSupabase } from './server-supabase'
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns'
 import { detectFounderStage, getUserStage, updateUserStage } from './stage-detection'
 import { filterInsightLabels } from './insight-utils'
+import { getCurrentPrompts } from './prompt-rotation'
 import { GENTLE_ARCHITECT, MRS_DEER_RULES, FounderStage, toNaturalStage } from './mrs-deer'
 import {
   FIRST_DAY_RULES,
@@ -15,18 +16,30 @@ import {
   TONE_DETECTION_RULES,
 } from './mrs-deer-prompts'
 
-/** Tone detection for emotional intelligence */
-function detectTone(userData: {
+/** Evening review data from DB or override */
+interface EveningReviewData {
+  wins?: string | null
+  lessons?: string | null
+  journal?: string | null
+  mood?: number | null
+  energy?: number | null
+}
+
+/** Input for tone detection - accepts unknown for DB/override fields */
+interface ToneDetectionInput {
   focus?: string
   purposeCheck?: string
   tasks?: Array<{ description?: string }>
   notes?: string
-  wins?: string | unknown
-  lessons?: string | unknown
-  journal?: string | null
+  wins?: unknown
+  lessons?: unknown
+  journal?: unknown
   decision?: string
   why_this_decision?: string | null
-}): {
+}
+
+/** Tone detection for emotional intelligence */
+function detectTone(userData: ToneDetectionInput): {
   energy: 'burdened' | 'calm' | 'curious' | 'excited' | 'tired' | 'neutral'
   keywords: string[]
 } {
@@ -50,15 +63,16 @@ function detectTone(userData: {
     .join(' ')
     .toLowerCase()
 
-  const signals: Record<string, string[]> = {
+  const signals = {
     burdened: ['stuck', 'heavy', 'overwhelm', 'so much', 'behind', "can't", 'too much', 'drowning'],
     calm: ['space', 'easy', 'simple', 'clear', 'peace', 'settled', 'steady', 'breathe'],
     curious: ['what if', 'imagine', 'wonder', 'maybe', 'could', 'explore', 'thinking about', 'curious'],
     excited: ['excited', 'looking forward', "can't wait", 'amazing', 'love', 'thrilled', 'awesome'],
     tired: ['tired', 'exhausted', 'drained', 'sleep', 'rest', 'low energy', 'fatigue'],
-  }
+  } as const
 
-  const scores: Record<string, number> = {
+  type ToneKey = keyof typeof signals
+  const scores: Record<ToneKey, number> = {
     burdened: 0,
     calm: 0,
     curious: 0,
@@ -66,17 +80,25 @@ function detectTone(userData: {
     tired: 0,
   }
 
-  Object.entries(signals).forEach(([tone, words]) => {
-    words.forEach((word) => {
+  ;(Object.keys(signals) as ToneKey[]).forEach((tone) => {
+    signals[tone].forEach((word) => {
       if (text.includes(word)) scores[tone] += 1
     })
   })
 
-  const dominant = Object.entries(scores).reduce((a, b) => (a[1] > b[1] ? a : b))[0] as keyof typeof scores
+  let dominant: ToneKey = 'burdened'
+  let maxScore = 0
+  ;(Object.keys(scores) as ToneKey[]).forEach((tone) => {
+    if (scores[tone] > maxScore) {
+      maxScore = scores[tone]
+      dominant = tone
+    }
+  })
+
   const keywords = Object.values(signals).flatMap((words) => words.filter((w) => text.includes(w)))
 
   return {
-    energy: scores[dominant] > 0 ? dominant : 'neutral',
+    energy: maxScore > 0 ? dominant : 'neutral',
     keywords,
   }
 }
@@ -209,19 +231,22 @@ export async function generateProPlusPrompt(
     console.log('[Personal Coaching] Generating morning prompt for', targetDate, '— will use yesterday\'s (', format(subDays(new Date(targetDate), 1), 'yyyy-MM-dd'), ') evening review')
   }
 
+  // Get prompt overrides from rotation (optional)
+  const promptOverrides = await getCurrentPrompts()
+
   // Generate prompt based on type (throws on AI failure - no fallbacks)
   const optsFull = opts as { onChunk?: OnChunk; morningOverride?: MorningOverride | null }
   const onChunk = optsFull?.onChunk
   let promptText: string
   switch (promptType) {
     case 'morning':
-      promptText = await generateGentleArchitectPrompt(userData, userLang, hasHistory, onChunk, optsFull?.morningOverride)
+      promptText = await generateGentleArchitectPrompt(userData, userLang, hasHistory, onChunk, optsFull?.morningOverride, promptOverrides)
       break
     case 'post_morning':
-      promptText = await analyzeMorningPlan(userData, userLang, hasHistory, onChunk)
+      promptText = await analyzeMorningPlan(userData, userLang, hasHistory, onChunk, promptOverrides)
       break
     case 'post_evening':
-      promptText = await reflectOnDay(userData, userLang, hasHistory, onChunk)
+      promptText = await reflectOnDay(userData, userLang, hasHistory, onChunk, promptOverrides)
       break
     case 'weekly':
       promptText = await generateWeeklyInsight(userData, userLang)
@@ -600,7 +625,8 @@ async function generateGentleArchitectPrompt(
   userLang: ReturnType<typeof getUserLanguage>,
   hasHistory: boolean,
   onChunk?: OnChunk,
-  morningOverride?: MorningOverride | null
+  morningOverride?: MorningOverride | null,
+  promptOverrides?: { systemPrompt: string; toneRules: string } | null
 ): Promise<string> {
   const patterns = userData.patterns
   const targetDate = userData.targetDate
@@ -608,27 +634,29 @@ async function generateGentleArchitectPrompt(
     || format(new Date(), 'yyyy-MM-dd')
 
   // When client passes yesterday's review (e.g. from evening save), use it to avoid DB timing/race
-  let yesterdayData: Record<string, unknown> | null = null
+  let yesterdayData: EveningReviewData | null = null
   if (morningOverride?.yesterdayReview) {
-    yesterdayData = morningOverride.yesterdayReview as Record<string, unknown>
+    yesterdayData = morningOverride.yesterdayReview as EveningReviewData
   } else {
     const yesterday = subDays(new Date(targetDate), 1)
     const yesterdayStr = format(yesterday, 'yyyy-MM-dd')
     const db = getServerSupabase()
     const { data: yesterdayReview } = await db
       .from('evening_reviews')
-      .select('wins, lessons, mood, energy')
+      .select('wins, lessons, journal, mood, energy')
       .eq('user_id', userData.userId)
       .eq('review_date', yesterdayStr)
       .maybeSingle()
 
-    yesterdayData = yesterdayReview as Record<string, unknown> | null
+    yesterdayData = yesterdayReview as EveningReviewData | null
   }
 
   const historyNote = hasHistory ? '' : `\n\n${FIRST_DAY_RULES}`
   const historyContext = hasHistory ? '' : HISTORY_CONTEXT
+  const baseRules = promptOverrides?.systemPrompt || MRS_DEER_RULES
+  const toneRules = promptOverrides?.toneRules || TONE_DETECTION_RULES
   const systemPrompt =
-    MRS_DEER_RULES + '\n\n' + MORNING_STRUCTURE + TONE_DETECTION_RULES + historyNote
+    baseRules + '\n\n' + MORNING_STRUCTURE + toneRules + historyNote
 
   const tone = detectTone({
     wins: yesterdayData?.wins,
@@ -647,7 +675,7 @@ Match your response to this tone. Burdened→acknowledge gently. Calm→celebrat
   
   const contextBlock = hasHistory && profileData.context ? '\n\nCONTEXT ABOUT THIS FOUNDER (use to sound like you know them; reference struggles/fears when relevant):\n' + profileData.context : ''
   const challengesBlock = hasHistory && recentChallenges ? '\n\nRECENT CHALLENGES / REPEATED LESSONS (reference when it deepens the insight):\n' + recentChallenges : ''
-  const hasYesterdayData = yesterdayData && (yesterdayData.wins || yesterdayData.lessons || yesterdayData.journal)
+  const hasYesterdayData = Boolean(yesterdayData && (yesterdayData.wins || yesterdayData.lessons || yesterdayData.journal))
   const userPrompt = `Generate a personalized morning insight for a founder${displayName ? ` named ${displayName}` : ''}. Goal: ${userGoal || 'clarity and sustainable progress'}.${contextBlock}${challengesBlock}${toneContext}${historyContext}
 
 CRITICAL: USE THEIR EXACT PHRASES from yesterday's data below. ${hasYesterdayData ? 'Quote at least one phrase they wrote.' : 'If data is sparse, reference what they did record (mood/energy)—do NOT say "blank" or "nothing to reflect on".'}
@@ -681,7 +709,7 @@ Use stage naturally. BANNED: Needle Mover, Action Plan, Smart Constraints, raw s
 // Stub implementations for the other prompt types.
 // These are intentionally concise and pattern-focused.
 
-async function analyzeMorningPlan(userData: UserData, userLang: ReturnType<typeof getUserLanguage>, hasHistory: boolean, onChunk?: OnChunk): Promise<string> {
+async function analyzeMorningPlan(userData: UserData, userLang: ReturnType<typeof getUserLanguage>, hasHistory: boolean, onChunk?: OnChunk, promptOverrides?: { systemPrompt: string; toneRules: string } | null): Promise<string> {
   const totalTasks = userData.patterns?.taskPatterns.totalTasks ?? 0
   const needleRate = userData.patterns?.taskPatterns.needleMoversRate ?? 0
   const todayPlan = userData.todayPlan || []
@@ -691,8 +719,10 @@ async function analyzeMorningPlan(userData: UserData, userLang: ReturnType<typeo
 
   const historyNote = hasHistory ? '' : `\n\n${FIRST_DAY_RULES}`
   const historyContext = hasHistory ? '' : HISTORY_CONTEXT
+  const baseRules = promptOverrides?.systemPrompt || MRS_DEER_RULES
+  const toneRules = promptOverrides?.toneRules || TONE_DETECTION_RULES
   const systemPrompt =
-    MRS_DEER_RULES + '\n\n' + POST_MORNING_STRUCTURE + TONE_DETECTION_RULES + historyNote
+    baseRules + '\n\n' + POST_MORNING_STRUCTURE + toneRules + historyNote
 
   const tone = detectTone({
     tasks: todayPlan,
@@ -701,7 +731,8 @@ async function analyzeMorningPlan(userData: UserData, userLang: ReturnType<typeo
   })
   const toneContext = `
 USER'S EMOTIONAL TONE: ${tone.energy}${tone.keywords.length > 0 ? ` (keywords: ${tone.keywords.join(', ')})` : ''}
-Match your response to this tone. Burdened→acknowledge gently. Calm→celebrate space. Curious→lean into exploration. Excited→match joy. Tired→validate rest. Neutral→proceed normally.`
+Match your response to this tone. Burdened→acknowledge gently. Calm→celebrate space. Curious→lean into exploration. Excited→match joy. Tired→validate rest. Neutral→proceed normally.
+${tone.energy === 'neutral' ? 'NEUTRAL: Do NOT assume tasks are heavy or burdensome. Reflect what they wrote without adding weight.' : ''}`
 
   const profileData = await getUserProfileData(userData.userId)
   const displayName = profileData.preferredName || profileData.name
@@ -711,16 +742,24 @@ Match your response to this tone. Burdened→acknowledge gently. Calm→celebrat
     ? taskDescriptions.map((d: string) => `"${d}"`).join(', ')
     : 'None recorded'
 
+  // Only mention task-importance pattern when it's notable (none marked, or clear contrast)
+  const allMarkedImportant = todayPlan.length > 0 && needleMoversToday === todayPlan.length
+  const noneMarkedImportant = todayPlan.length > 0 && needleMoversToday === 0
+  const taskImportanceNote = allMarkedImportant
+    ? '(Do NOT comment on "all marked important"—not notable. Focus on the tasks themselves.)'
+    : noneMarkedImportant
+    ? '(Notable: no tasks marked most important. You may gently notice if it deepens insight.)'
+    : ''
+
   const userPrompt = `Generate a personalized plan review for a founder${displayName ? ` named ${displayName}` : ''} who just saved their morning plan.${contextBlock}${toneContext}${historyContext}
 
-CRITICAL: You MUST reference their actual tasks or decision. ${taskDescriptions.length > 0 ? `They wrote these tasks: ${taskListForAI}. Quote at least one by name.` : 'They may have written only a decision below. Reference what they wrote—do NOT say "zero tasks", "blank slate", or "empty plan".'}
+CRITICAL: You MUST reference their actual tasks or decision. ${taskDescriptions.length > 0 ? `They wrote these tasks: ${taskListForAI}. Optionally quote a particularly telling phrase if it deepens insight.` : 'They may have written only a decision below. Reference what they wrote—do NOT say "zero tasks", "blank slate", or "empty plan".'}
 
-VOICE: Warm, specific, earned. USE THEIR EXACT PHRASES from the data below—quote what they wrote. Address the specific tension they named (e.g. if they wrote "gut yes, risk no", name it back). Show what they hadn't noticed. End with ONE question that reframes. No product terms, no clichés, no abstract metaphors.
+VOICE: Warm, specific, earned. Focus on patterns, connections, and insights they haven't seen. If there's a particularly telling phrase, you MAY quote it back, shifted slightly. NEVER simply list their tasks back to them verbatim. End with ONE complete, specific question (no cut-offs). No product terms, no clichés, no abstract metaphors.
 
 TODAY'S PLAN:
 - Total tasks: ${todayPlan.length}
-- Tasks they marked as most important: ${needleMoversToday}
-- Task descriptions: ${taskDescriptions.join('; ') || 'None'}
+- Task descriptions: ${taskDescriptions.join('; ') || 'None'} ${taskImportanceNote}
 ${userData.todayDecision ? `
 TODAY'S DECISION:
 - Decision: ${userData.todayDecision.decision}
@@ -730,10 +769,9 @@ TODAY'S DECISION:
 
 ${hasHistory ? `PATTERN CONTEXT (last 14 days):
 - Total tasks: ${totalTasks}
-- Share of tasks they treat as most important: ${Math.round(needleRate * 100)}%
 - Stage (natural language only): ${toNaturalStage(userData.stage)}
 
-` : ''}Generate an insight that shows them something they hadn't seen. Use warm, human language. Do NOT include any statistics or percentages. Speak like a wise friend, not a data analyst. End with one reframing question. Feel like a person who knows their journey, not a template.`
+` : ''}Generate an insight that shows them something they hadn't seen. Use warm, human language. Do NOT include statistics, percentages, or commentary on "all tasks marked important". Speak like a wise friend, not a data analyst. End with one complete, specific reframing question (no cut-offs). Feel like a person who knows their journey, not a template.`
 
   const raw = await callAI(
     { systemPrompt, userPrompt, maxTokens: 150, temperature: 0.7 },
@@ -743,10 +781,22 @@ ${hasHistory ? `PATTERN CONTEXT (last 14 days):
     const words = raw.split(/\s+/).length
     console.log('[post_morning insight word count]:', words)
   }
-  return filterInsightLabels(raw)
+  const filtered = filterInsightLabels(raw)
+  return ensureCompleteQuestion(filtered)
 }
 
-async function reflectOnDay(userData: UserData, userLang: ReturnType<typeof getUserLanguage>, hasHistory: boolean, onChunk?: OnChunk): Promise<string> {
+/** Ensures post-morning insight ends with a complete question (prevents AI cut-offs near word limit) */
+function ensureCompleteQuestion(text: string): string {
+  const trimmed = text.trim()
+  if (trimmed.endsWith('?')) return text
+  const lastQ = trimmed.lastIndexOf('?')
+  if (lastQ >= 0) {
+    return trimmed.slice(0, lastQ + 1).trim()
+  }
+  return trimmed + ' What would make today feel like a step forward?'
+}
+
+async function reflectOnDay(userData: UserData, userLang: ReturnType<typeof getUserLanguage>, hasHistory: boolean, onChunk?: OnChunk, promptOverrides?: { systemPrompt: string; toneRules: string } | null): Promise<string> {
   const completionRate = userData.patterns?.taskPatterns.completionRate ?? 0
 
   // Get review data (already fetched for the target date in getUserDataForPrompt)
@@ -781,8 +831,10 @@ async function reflectOnDay(userData: UserData, userLang: ReturnType<typeof getU
 
   const historyNote = hasHistory ? '' : `\n\n${FIRST_DAY_RULES}`
   const historyContext = hasHistory ? '' : HISTORY_CONTEXT
+  const baseRules = promptOverrides?.systemPrompt || MRS_DEER_RULES
+  const toneRules = promptOverrides?.toneRules || TONE_DETECTION_RULES
   const systemPrompt =
-    MRS_DEER_RULES + '\n\n' + EVENING_STRUCTURE + TONE_DETECTION_RULES + historyNote
+    baseRules + '\n\n' + EVENING_STRUCTURE + toneRules + historyNote
 
   const tone = detectTone({
     wins: todayReview?.wins,

@@ -1,68 +1,65 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSessionFromRequest } from '@/lib/server-auth'
+import { getServerSupabase } from '@/lib/server-supabase'
+import { withRateLimit } from '@/lib/rate-limit-middleware'
+import { addWatermark } from '@/lib/watermark'
 import { supabase } from '@/lib/supabase'
 import { generateEmergencyInsight } from '@/lib/personal-coaching'
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { description, severity, userId } = await req.json()
+    return withRateLimit(req, 'emergency', async () => {
+      const { description, severity, userId } = await req.json()
 
-    // Get current user if userId not provided
-    let actualUserId = userId
-    if (!actualUserId) {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        return NextResponse.json(
-          { error: 'Not authenticated' },
-          { status: 401 }
+      let actualUserId = userId
+      if (!actualUserId) {
+        const session = await getServerSessionFromRequest(req)
+        if (!session?.user?.id) {
+          return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+        }
+        actualUserId = session.user.id
+      }
+
+      const db = getServerSupabase()
+
+      const { data: emergency, error: insertError } = await (db.from('emergencies') as any)
+        .insert({
+          user_id: actualUserId,
+          description,
+          severity: severity || 'contained',
+          resolved: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single()
+
+      if (insertError) throw insertError
+
+      let insight = null
+      try {
+        insight = await generateEmergencyInsight(
+          actualUserId,
+          description,
+          severity || 'contained',
+          new Date().toISOString().split('T')[0]
         )
-      }
-      actualUserId = user.id
-    }
 
-    // Insert the emergency
-    const { data: emergency, error: insertError } = await supabase
-      .from('emergencies')
-      .insert({
-        user_id: actualUserId,
-        description,
-        severity: severity || 'contained',
-        resolved: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        if (insight && emergency?.id) {
+          const watermarked = addWatermark(insight, actualUserId)
+          await (db.from('emergencies') as any).update({ insight: watermarked }).eq('id', emergency.id)
+          insight = watermarked
+        }
+      } catch (insightError) {
+        console.error('Failed to generate emergency insight:', insightError)
+      }
+
+      return NextResponse.json({
+        success: true,
+        emergency,
+        insight
       })
-      .select()
-      .single()
-
-    if (insertError) throw insertError
-
-    // Generate insight
-    let insight = null
-    try {
-      insight = await generateEmergencyInsight(
-        actualUserId,
-        description,
-        severity || 'contained',
-        new Date().toISOString().split('T')[0]
-      )
-
-      // Save insight to the emergency record
-      if (insight && emergency?.id) {
-        await supabase
-          .from('emergencies')
-          .update({ insight })
-          .eq('id', emergency.id)
-      }
-    } catch (insightError) {
-      console.error('Failed to generate emergency insight:', insightError)
-      // Continue without insight - don't fail the whole request
-    }
-
-    return NextResponse.json({ 
-      success: true, 
-      emergency,
-      insight 
     })
-
   } catch (error) {
     console.error('Emergency API error:', error)
     return NextResponse.json(

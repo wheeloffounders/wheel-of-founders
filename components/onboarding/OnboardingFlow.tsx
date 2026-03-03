@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { ProgressBar } from './ProgressBar'
 import { Step1Welcome } from './Step1Welcome'
+import { StepGoal } from './StepGoal'
 import { Step2Dashboard } from './Step2Dashboard'
 import { Step3Morning } from './Step3Morning'
 import { Step4Evening } from './Step4Evening'
@@ -14,7 +15,7 @@ import { markOnboardingCompleted } from '@/lib/onboarding'
 import { getUserSession } from '@/lib/auth'
 import { useOnboarding } from '@/lib/hooks/useOnboarding'
 
-const TOTAL_STEPS = 5
+const TOTAL_STEPS = 6
 
 interface OnboardingFlowProps {
   preferredName: string | null
@@ -25,7 +26,14 @@ interface OnboardingFlowProps {
 export function OnboardingFlow({ preferredName, onComplete, onSkip }: OnboardingFlowProps) {
   const router = useRouter()
   const [step, setStep] = useState(1)
+  const [userId, setUserId] = useState<string | null>(null)
   const { hideOnboarding, setHideForever } = useOnboarding()
+
+  useEffect(() => {
+    getUserSession().then((session) => {
+      if (session) setUserId(session.user.id)
+    })
+  }, [])
 
   const handleComplete = async () => {
     const session = await getUserSession()
@@ -54,10 +62,11 @@ export function OnboardingFlow({ preferredName, onComplete, onSkip }: Onboarding
           <ProgressBar current={step} total={TOTAL_STEPS} />
           <div className="mt-6 min-h-[320px]">
             {step === 1 && <Step1Welcome preferredName={preferredName} />}
-            {step === 2 && <Step2Dashboard />}
-            {step === 3 && <Step3Morning />}
-            {step === 4 && <Step4Evening />}
-            {step === 5 && <Step5Insights />}
+            {step === 2 && (userId ? <StepGoal userId={userId} onComplete={() => setStep((s) => s + 1)} onSkip={() => setStep((s) => s + 1)} /> : <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>)}
+            {step === 3 && <Step2Dashboard />}
+            {step === 4 && <Step3Morning />}
+            {step === 5 && <Step4Evening />}
+            {step === 6 && <Step5Insights />}
           </div>
 
           <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
@@ -96,7 +105,8 @@ export function OnboardingFlow({ preferredName, onComplete, onSkip }: Onboarding
                   Back
                 </button>
               )}
-              {step < TOTAL_STEPS ? (
+              {/* Step 2 (Goal) has its own Continue button inside StepGoal */}
+              {step === 2 ? null : step < TOTAL_STEPS ? (
                 <button
                   type="button"
                   onClick={goNext}
@@ -109,7 +119,7 @@ export function OnboardingFlow({ preferredName, onComplete, onSkip }: Onboarding
                   Next
                   <ChevronRight className="w-4 h-4" />
                 </button>
-              ) : (
+              ) : step === TOTAL_STEPS ? (
                 <button
                   type="button"
                   onClick={async () => {
@@ -124,7 +134,7 @@ export function OnboardingFlow({ preferredName, onComplete, onSkip }: Onboarding
                 >
                   Start my first morning →
                 </button>
-              )}
+              ) : null}
             </div>
             </div>
           </div>

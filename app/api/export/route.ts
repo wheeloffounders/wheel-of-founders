@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { getUserSession } from '@/lib/auth'
+import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { format, subDays, startOfYear, endOfYear } from 'date-fns'
 import { getFeatureAccess } from '@/lib/features'
 import { sendTransactionalEmail } from '@/lib/email/transactional'
@@ -13,18 +13,42 @@ const EXPORT_FORMATS = ['json', 'csv', 'pdf', 'all'] as const
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+export const runtime = 'nodejs' // jspdf requires Node.js (not Edge)
 
 /**
  * Generate data export for user
  */
 export async function POST(request: NextRequest) {
   try {
-    const session = await getUserSession()
-    if (!session) {
+    const body = await request.json().catch(() => ({}))
+    console.log('[Export API] Request received:', {
+      method: request.method,
+      url: request.url,
+      body: { exportType: body.exportType, format: body.format, dateRangeStart: body.dateRangeStart, dateRangeEnd: body.dateRangeEnd },
+    })
+    const serverSession = await getServerSessionFromRequest(request)
+    if (!serverSession) {
+      console.log('[Export] Unauthorized - no session from cookies or Bearer token')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json().catch(() => ({}))
+    // Fetch user profile for tier and pro features
+    const db = getServerSupabase()
+    const { data: profileData } = await db
+      .from('user_profiles')
+      .select('tier, pro_features_enabled, email_address')
+      .eq('id', serverSession.user.id)
+      .maybeSingle()
+    type ProfileRow = { tier?: string | null; pro_features_enabled?: boolean | null; email_address?: string | null }
+    const profile = profileData as ProfileRow | null
+    const session = {
+      user: {
+        id: serverSession.user.id,
+        email: serverSession.user.email ?? profile?.email_address ?? undefined,
+        tier: profile?.tier || 'beta',
+        pro_features_enabled: profile?.pro_features_enabled ?? true,
+      },
+    }
     const { exportType, dateRangeStart, dateRangeEnd, format: exportFormat = 'json' } = body
 
     const features = getFeatureAccess({
@@ -98,7 +122,6 @@ export async function POST(request: NextRequest) {
     const wantFormat = EXPORT_FORMATS.includes(exportFormat) ? exportFormat : 'json'
 
     // Create export record (service role bypasses RLS)
-    const db = getServerSupabase()
     const exportPayload = {
       user_id: session.user.id,
       export_type: exportType,
@@ -171,12 +194,17 @@ export async function POST(request: NextRequest) {
     const wantCsv = wantFormat === 'csv' || wantFormat === 'all'
     const wantPdf = wantFormat === 'pdf' || wantFormat === 'all'
 
+    console.log('[Export] Format requested:', body?.format ?? exportFormat, '→ wantJson:', wantJson, 'wantCsv:', wantCsv, 'wantPdf:', wantPdf)
+
     let fileUrl: string | null = null
     let csvDownloadUrl: string | null = null
     let pdfDownloadUrl: string | null = null
     const generatedFormats: string[] = []
 
     const basePath = `${session.user.id}/${exportRecord.id}`
+
+    let pdfBase64: string | undefined
+    let csvContentInline: string | undefined
 
     if (supabaseAdmin) {
       // Upload JSON
@@ -197,7 +225,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Upload CSV
+      // Upload CSV (fall back to inline if storage fails)
       if (wantCsv) {
         const csvPath = `${basePath}/${csvFileName}`
         const { error: csvErr } = await supabaseAdmin.storage
@@ -212,10 +240,14 @@ export async function POST(request: NextRequest) {
             .createSignedUrl(csvPath, SIGNED_URL_EXPIRY_SECONDS)
           csvDownloadUrl = urlData?.signedUrl ?? null
           generatedFormats.push('csv')
+        } else {
+          console.warn('[Export] CSV storage upload failed, falling back to inline:', csvErr.message)
+          csvContentInline = csvContent
+          generatedFormats.push('csv')
         }
       }
 
-      // Upload PDF
+      // Upload PDF (fall back to inline base64 if storage or generation fails)
       if (wantPdf) {
         try {
           const pdfBuffer = await generatePDF(exportData as ExportData)
@@ -232,10 +264,30 @@ export async function POST(request: NextRequest) {
               .createSignedUrl(pdfPath, SIGNED_URL_EXPIRY_SECONDS)
             pdfDownloadUrl = urlData?.signedUrl ?? null
             generatedFormats.push('pdf')
+          } else {
+            console.warn('[Export] PDF storage upload failed, falling back to inline:', pdfErr.message)
+            pdfBase64 = pdfBuffer.toString('base64')
+            generatedFormats.push('pdf')
           }
         } catch (pdfError) {
-          console.error('PDF generation failed:', pdfError)
+          console.error('[Export] PDF generation failed:', pdfError)
+          throw pdfError
         }
+      }
+    } else {
+      // Storage not configured: return inline for client-side download
+      if (wantPdf) {
+        try {
+          const pdfBuffer = await generatePDF(exportData as ExportData)
+          pdfBase64 = pdfBuffer.toString('base64')
+          generatedFormats.push('pdf')
+        } catch (pdfError) {
+          console.error('PDF generation failed (no storage):', pdfError)
+        }
+      }
+      if (wantCsv && !csvDownloadUrl) {
+        csvContentInline = csvContent
+        generatedFormats.push('csv')
       }
     }
 
@@ -252,10 +304,10 @@ export async function POST(request: NextRequest) {
       pdf_file_name: wantPdf ? pdfFileName : null,
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit data_exports
-    ;(db.from('data_exports') as any).update(updatePayload).eq('id', exportRecord.id)
+    await (db.from('data_exports') as any).update(updatePayload).eq('id', exportRecord.id)
 
     // Send export ready notification if user opted in
-    const { data: profileData } = await db
+    const { data: userProfileData } = await db
       .from('user_profiles')
       .select('email_address, export_notification_enabled')
       .eq('id', session.user.id)
@@ -264,9 +316,9 @@ export async function POST(request: NextRequest) {
       email_address?: string | null
       export_notification_enabled?: boolean | null
     }
-    const profile = profileData as UserProfileForExport | null
-    const notifyEmail = profile?.email_address || session.user.email
-    const notifyEnabled = profile?.export_notification_enabled ?? true
+    const userProfile = userProfileData as UserProfileForExport | null
+    const notifyEmail = userProfile?.email_address || session.user.email
+    const notifyEnabled = userProfile?.export_notification_enabled ?? true
     if (notifyEmail && notifyEnabled && (primaryUrl || exportData)) {
       sendTransactionalEmail({
         to: notifyEmail,
@@ -276,6 +328,11 @@ export async function POST(request: NextRequest) {
       }).catch((err) => console.error('Export notification email failed:', err))
     }
 
+    console.log('[Export] Success:', {
+      exportId: exportRecord.id,
+      hasDownloadUrl: !!primaryUrl,
+      formats: generatedFormats,
+    })
     return NextResponse.json({
       success: true,
       exportId: exportRecord.id,
@@ -283,12 +340,16 @@ export async function POST(request: NextRequest) {
       downloadUrl: primaryUrl,
       csvDownloadUrl: csvDownloadUrl ?? undefined,
       pdfDownloadUrl: pdfDownloadUrl ?? undefined,
+      pdfBase64: pdfBase64 ?? undefined,
+      csvContentInline: csvContentInline ?? undefined,
+      csvFileName: wantCsv ? csvFileName : undefined,
+      pdfFileName: wantPdf ? pdfFileName : undefined,
       formats: generatedFormats,
       data: wantJson ? exportData : undefined,
       csvPreview: wantCsv ? csvContent.substring(0, 1000) : undefined,
     })
   } catch (error) {
-    console.error('Export error:', error)
+    console.error('[Export] Error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Export failed' },
       { status: 500 }

@@ -5,12 +5,14 @@ import { useRouter } from 'next/navigation'
 import { Bell, Clock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
+import { NotificationRequest } from '@/components/NotificationRequest'
+
+const MORNING_TIME = '9:00 AM'
+const EVENING_TIME = '6:00 PM'
 
 type NotificationSettingsState = {
   morning_enabled: boolean
-  morning_time: string // HH:MM
   evening_enabled: boolean
-  evening_time: string // HH:MM
 }
 
 type MessageState = { type: 'success' | 'error'; text: string } | null
@@ -21,12 +23,8 @@ export default function NotificationSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [settings, setSettings] = useState<NotificationSettingsState>({
     morning_enabled: true,
-    morning_time: '08:00',
     evening_enabled: true,
-    evening_time: '20:00',
   })
-  const [pushSupported, setPushSupported] = useState(false)
-  const [pushEnabled, setPushEnabled] = useState(false)
   const [message, setMessage] = useState<MessageState>(null)
 
   useEffect(() => {
@@ -38,7 +36,6 @@ export default function NotificationSettingsPage() {
       }
 
       await loadSettings(session.user.id)
-      checkPushSupport()
     }
 
     init()
@@ -49,7 +46,7 @@ export default function NotificationSettingsPage() {
     try {
       const { data, error } = await supabase
         .from('user_notification_settings')
-        .select('morning_enabled, morning_time, evening_enabled, evening_time')
+        .select('morning_enabled, evening_enabled')
         .eq('user_id', userId)
         .maybeSingle()
 
@@ -62,9 +59,7 @@ export default function NotificationSettingsPage() {
       if (data) {
         setSettings({
           morning_enabled: data.morning_enabled ?? true,
-          morning_time: (data.morning_time as string | null)?.slice(0, 5) || '08:00',
           evening_enabled: data.evening_enabled ?? true,
-          evening_time: (data.evening_time as string | null)?.slice(0, 5) || '20:00',
         })
       }
     } catch (error) {
@@ -92,9 +87,7 @@ export default function NotificationSettingsPage() {
           {
             user_id: session.user.id,
             morning_enabled: settings.morning_enabled,
-            morning_time: `${settings.morning_time}:00`,
             evening_enabled: settings.evening_enabled,
-            evening_time: `${settings.evening_time}:00`,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'user_id' }
@@ -115,46 +108,6 @@ export default function NotificationSettingsPage() {
     }
   }
 
-  const checkPushSupport = () => {
-    if (typeof window === 'undefined') return
-
-    const hasSupport =
-      'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window
-    setPushSupported(hasSupport)
-
-    if (hasSupport) {
-      setPushEnabled(Notification.permission === 'granted')
-    }
-  }
-
-  const requestPushPermission = async () => {
-    try {
-      if (!('Notification' in window)) return
-
-      const permission = await Notification.requestPermission()
-      if (permission === 'granted') {
-        setPushEnabled(true)
-        await registerPushSubscription()
-        setMessage({ type: 'success', text: 'Browser notifications enabled' })
-        setTimeout(() => setMessage(null), 3000)
-      } else {
-        setMessage({ type: 'error', text: 'Notification permission denied' })
-      }
-    } catch (error) {
-      console.error('Error requesting notification permission:', error)
-      setMessage({ type: 'error', text: 'Failed to enable browser notifications' })
-    }
-  }
-
-  const registerPushSubscription = async () => {
-    // Placeholder for future web push implementation.
-    // This will eventually:
-    // - Register a service worker
-    // - Create a PushManager subscription
-    // - Store the subscription in user_notification_settings.push_subscription
-    console.info('Web push registration is not implemented yet.')
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -172,7 +125,7 @@ export default function NotificationSettingsPage() {
           Notification Settings
         </h1>
         <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-2">
-          Set your preferred times for gentle morning and evening reminders.
+          Enable morning and evening reminders at fixed times daily.
         </p>
       </div>
 
@@ -183,9 +136,8 @@ export default function NotificationSettingsPage() {
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Morning Reminder</h2>
         </div>
 
-        <p className="mb-4 text-sm text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/30 p-3 rounded-lg">
-          ℹ️ Notifications are checked once daily. You may receive reminders for the previous day&apos;s
-          planned times rather than the exact minute you chose.
+        <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
+          You&apos;ll receive push notifications on your device, even when the app is closed.
         </p>
 
         <div className="space-y-4">
@@ -200,24 +152,10 @@ export default function NotificationSettingsPage() {
             />
             <span className="text-gray-700 dark:text-gray-300 dark:text-gray-300">Enable morning reminder</span>
           </label>
-
           {settings.morning_enabled && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-                Reminder time (your local time)
-              </label>
-              <input
-                type="time"
-                value={settings.morning_time}
-                onChange={(e) =>
-                  setSettings((prev) => ({ ...prev, morning_time: e.target.value }))
-                }
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-gray-100"
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
-                We&apos;ll nudge you to set your morning focus and plan your day.
-              </p>
-            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Morning reminders: {MORNING_TIME} daily
+            </p>
           )}
         </div>
       </div>
@@ -241,52 +179,22 @@ export default function NotificationSettingsPage() {
             />
             <span className="text-gray-700 dark:text-gray-300 dark:text-gray-300">Enable evening reminder</span>
           </label>
-
           {settings.evening_enabled && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-                Reminder time (your local time)
-              </label>
-              <input
-                type="time"
-                value={settings.evening_time}
-                onChange={(e) =>
-                  setSettings((prev) => ({ ...prev, evening_time: e.target.value }))
-                }
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:text-gray-100"
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
-                We&apos;ll remind you to close the loop on your day with an evening reflection.
-              </p>
-            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Evening reminders: {EVENING_TIME} daily
+            </p>
           )}
         </div>
       </div>
 
-      {/* Browser Notifications */}
-      {pushSupported && (
-        <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-2">Browser Notifications</h2>
-          <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-4">
-            Enable browser notifications so Wheel of Founders can gently tap you on the shoulder,
-            even when the app is closed.
-          </p>
-
-          {pushEnabled ? (
-            <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 text-green-800 dark:text-green-200 p-4 rounded-lg text-sm">
-              ✅ Notifications are enabled in your browser.
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={requestPushPermission}
-              className="px-6 py-2 bg-[#152b50] text-white rounded-lg text-sm font-medium hover:bg-[#1a3565] transition"
-            >
-              Enable Browser Notifications
-            </button>
-          )}
-        </div>
-      )}
+      {/* Push Notifications */}
+      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-2">Push Notifications</h2>
+        <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-4">
+          Get notifications on your phone even when the app is closed. Enable push to receive morning and evening reminders.
+        </p>
+        <NotificationRequest />
+      </div>
 
       {/* Message */}
       {message && (

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { format, startOfWeek, endOfWeek, isSunday, addDays } from 'date-fns'
+import { format, startOfWeek, endOfWeek, isSunday, addDays, addWeeks, isSameWeek } from 'date-fns'
 import {
   Calendar,
   Target,
@@ -43,7 +43,9 @@ import { PatternQuestion } from '@/components/weekly/PatternQuestion'
 import { GoalProgress } from '@/components/weekly/GoalProgress'
 import { CelebrationHeader } from '@/components/weekly/CelebrationHeader'
 import { InsightNavigation } from '@/components/InsightNavigation'
+import { useNewInsights } from '@/lib/hooks/useNewInsights'
 import { colors } from '@/lib/design-tokens'
+import { showRefreshButton } from '@/lib/env'
 
 const MOOD_LABELS: Record<number, string> = {
   1: 'Tough',
@@ -116,14 +118,12 @@ function parseLessons(val: unknown, date: string): LessonWithDate[] {
   return lessons
 }
 
-// FORCE SUNDAY MODE FOR TESTING - REMOVE AFTER VERIFYING
-const FORCE_SUNDAY_MODE = true
-
 export default function WeeklyPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [periods, setPeriods] = useState<string[]>([])
+  const [initialRedirectDone, setInitialRedirectDone] = useState(false)
   const [data, setData] = useState<WeeklyData | null>(null)
   const [copied, setCopied] = useState(false)
   const [favoriteWinIndices, setFavoriteWinIndices] = useState<number[]>([])
@@ -134,6 +134,7 @@ export default function WeeklyPage() {
   const [feedbackSent, setFeedbackSent] = useState(false)
   const [weeklyPromptOverride, setWeeklyPromptOverride] = useState<string | null>(null)
   const [generateError, setGenerateError] = useState<string | null>(null)
+  const { markAsViewed } = useNewInsights()
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -144,11 +145,37 @@ export default function WeeklyPage() {
   }, [router])
 
   const weekStartParam = searchParams?.get('weekStart')
+  // When no weekStart in URL, redirect to most recent week WITH data
+  useEffect(() => {
+    if (weekStartParam || initialRedirectDone) return
+    const redirectToLatest = async () => {
+      const session = await getUserSession()
+      if (!session) return
+      try {
+        const { data: { session: supabaseSession } } = await supabase.auth.getSession()
+        const headers: Record<string, string> = {}
+        if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
+        const res = await fetch('/api/insights/periods?type=weekly', { headers })
+        const json = await res.json()
+        if (json.periods?.length > 0) {
+          router.replace(`/weekly?weekStart=${json.periods[0]}`)
+        }
+      } catch {
+        // ignore
+      } finally {
+        setInitialRedirectDone(true)
+      }
+    }
+    redirectToLatest()
+  }, [weekStartParam, initialRedirectDone, router])
   const effectiveWeekStart = weekStartParam && /^\d{4}-\d{2}-\d{2}$/.test(weekStartParam)
     ? weekStartParam
     : format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
 
   useEffect(() => {
+    // Don't fetch until we've either redirected to latest week or confirmed no periods
+    if (!weekStartParam && !initialRedirectDone) return
+
     const fetchWeekData = async () => {
       setLoading(true)
       const session = await getUserSession()
@@ -307,7 +334,7 @@ export default function WeeklyPage() {
 
       const primaryGoal = (profileRes.data as { primary_goal_text?: string } | null)?.primary_goal_text ?? null
       const isAdmin = (profileRes.data as { is_admin?: boolean } | null)?.is_admin === true
-      const canRegenerate = process.env.NODE_ENV === 'development' || isAdmin
+      const canRegenerate = showRefreshButton
 
       setData({
         dateRange: { start: startStr, end: endStr },
@@ -337,10 +364,12 @@ export default function WeeklyPage() {
       })
       setLoading(false)
       trackEvent('weekly_page_view', { date_range: `${startStr} to ${endStr}`, is_week_complete: isWeekComplete })
+      const currentWeekStart = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
+      if (startStr === currentWeekStart) markAsViewed('weekly')
     }
 
     fetchWeekData()
-  }, [effectiveWeekStart])
+  }, [effectiveWeekStart, weekStartParam, initialRedirectDone, markAsViewed])
 
   useEffect(() => {
     const fetchPeriods = async () => {
@@ -426,6 +455,7 @@ export default function WeeklyPage() {
       if (supabaseSession?.access_token) {
         headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
       }
+      Object.assign(headers, await import('@/lib/api-client').then((m) => m.getSignedHeadersCached(supabaseSession?.access_token)))
 
       const res = await fetch('/api/weekly-insight/generate', {
         method: 'POST',
@@ -574,6 +604,13 @@ export default function WeeklyPage() {
   const needlePct = data.needleMoversTotal > 0 ? Math.round((data.needleMoversCompleted / data.needleMoversTotal) * 100) : 0
   const pace = getPaceAssessment(data.needleMoversCompleted, data.needleMoversTotal, data.daysCompleted, data.daysInWeek)
 
+  const selectedWeekStart = new Date(data.dateRange.start)
+  const currentWeekStr = format(selectedWeekStart, 'yyyy-MM-dd')
+  const hasCurrentWeekInsight = periods.includes(currentWeekStr)
+  const showWeekInProgress =
+    !hasCurrentWeekInsight &&
+    isSameWeek(selectedWeekStart, new Date(), { weekStartsOn: 1 })
+
   const bestDayData = data.dayData
     .filter((d) => d.needleMoversCompleted > 0)
     .sort((a, b) => b.needleMoversCompleted - a.needleMoversCompleted)[0]
@@ -609,9 +646,9 @@ export default function WeeklyPage() {
               Weekly Insights
             </h1>
             <p className="text-sm mt-1 text-gray-600 dark:text-white">
-              {(data.isWeekComplete || FORCE_SUNDAY_MODE)
-                ? 'Week complete'
-                : `${data.daysCompleted} days completed · ${data.daysInWeek - data.daysCompleted} days left`}
+              {showWeekInProgress
+                ? `${data.daysCompleted} days completed · ${data.daysInWeek - data.daysCompleted} days left`
+                : 'Week complete'}
             </p>
           </div>
           <Button variant="outline" onClick={handleCopySummary} className="gap-2 shrink-0">
@@ -624,11 +661,20 @@ export default function WeeklyPage() {
           currentPeriod={data.dateRange.start}
           periods={periods.length > 0 ? periods : [data.dateRange.start]}
           onNavigate={(period) => router.push(`/weekly?weekStart=${period}`)}
+          nextDisabledMessage={
+            !periods.some((p) => p === format(addWeeks(new Date(data.dateRange.start), 1), 'yyyy-MM-dd'))
+              ? (() => {
+                  const nextWeekStart = addWeeks(new Date(data.dateRange.start), 1)
+                  const nextWeekEnd = endOfWeek(nextWeekStart, { weekStartsOn: 1 })
+                  return `Week of ${format(nextWeekStart, 'MMM d')}–${format(nextWeekEnd, 'MMM d, yyyy')} insights will be available on Monday`
+                })()
+              : undefined
+          }
         />
       </div>
 
-      {/* Before Sunday: Progress Snapshot */}
-      {!(data.isWeekComplete || FORCE_SUNDAY_MODE) && (
+      {/* Before Sunday: Progress Snapshot - only when viewing current week with no insight yet */}
+      {showWeekInProgress && (
         <Card highlighted className="mb-8" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
@@ -659,8 +705,8 @@ export default function WeeklyPage() {
         </Card>
       )}
 
-      {/* Sunday: Full Analysis - Insight first, then wins/lessons */}
-      {(data.isWeekComplete || FORCE_SUNDAY_MODE) && (
+      {/* Full Analysis - when not viewing current week in progress (or when current week has insight) */}
+      {!showWeekInProgress && (
         <div className="space-y-8">
           <CelebrationHeader
             quote={generateCelebrationQuote(data.wins, data.lessons)}

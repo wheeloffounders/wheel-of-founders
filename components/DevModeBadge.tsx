@@ -4,10 +4,10 @@
  * DevModeBadge - Shows "DEV MODE" indicator in development only.
  * Yellow background, black text. Fixed position, top-right.
  */
-import { isDevelopment } from '@/lib/env'
+import { showDebugTools } from '@/lib/env'
 
 export function DevModeBadge() {
-  if (!isDevelopment) return null
+  if (!showDebugTools) return null
 
   return (
     <div

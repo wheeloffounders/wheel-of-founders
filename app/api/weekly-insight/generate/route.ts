@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+import { withRateLimit } from '@/lib/rate-limit-middleware'
 import { isDevelopment, isAdmin } from '@/lib/admin'
 import { generateAIPrompt, AIError } from '@/lib/ai-client'
 import { checkUserHistory } from '@/lib/user-history'
@@ -140,22 +141,22 @@ Add a blank line between each section. Be specific. Use their words.`
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSessionFromRequest(req)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    return withRateLimit(req, 'weekly', async (req) => {
+      const session = await getServerSessionFromRequest(req)
+      if (!session) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
 
-    // Allow in development OR if user is admin
-    // Allow in development, preview, OR if user is admin
-    const isDev = process.env.NODE_ENV === 'development'
-    const isPreview = process.env.VERCEL_ENV === 'preview'
-    const isUserAdmin = await isAdmin(session.user.id)
-    
-    if (!isDev && !isPreview && !isUserAdmin) {
-      console.warn('[weekly-insight] Generate called in production by non-admin:', session.user.id)
-      return NextResponse.json({ error: 'On-demand generation is disabled in production. Insights are pre-generated weekly.' }, { status: 403 })
-    }
-    const body = (await req.json()) as GenerateBody
+      // Allow in development, preview, OR if user is admin
+      const isDev = process.env.NODE_ENV === 'development'
+      const isPreview = process.env.VERCEL_ENV === 'preview'
+      const isUserAdmin = await isAdmin(session.user.id)
+
+      if (!isDev && !isPreview && !isUserAdmin) {
+        console.warn('[weekly-insight] Generate called in production by non-admin:', session.user.id)
+        return NextResponse.json({ error: 'On-demand generation is disabled in production. Insights are pre-generated weekly.' }, { status: 403 })
+      }
+      const body = (await req.json()) as GenerateBody
     const {
       weekStart,
       weekEnd,
@@ -282,11 +283,12 @@ Weekly insight: max 350 words. Output exactly 4 sections with ## markdown header
       console.error('[weekly-insight] Background job failed:', error)
     })
 
-    // Return immediately with job ID
-    return NextResponse.json({
-      jobId: jobData.id,
-      status: 'processing',
-      message: 'Insight generation started. This may take up to 30 seconds.',
+      // Return immediately with job ID
+      return NextResponse.json({
+        jobId: jobData.id,
+        status: 'processing',
+        message: 'Insight generation started. This may take up to 30 seconds.',
+      })
     })
   } catch (error) {
     console.error('[weekly-insight] Error:', error)

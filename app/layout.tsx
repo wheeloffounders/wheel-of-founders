@@ -10,10 +10,10 @@ import { Toast } from '@/components/Toast'
 import { BottomNav } from '@/components/BottomNav'
 import { OfflineBanner } from '@/components/OfflineBanner'
 import { AppHeader } from '@/components/AppHeader'
+import { DuoUpgradeBanner } from '@/components/DuoUpgradeBanner'
 import { AppFooter } from '@/components/AppFooter'
 import { ThemeProvider } from '@/components/ThemeProvider'
 import { ForceUpdateChecker } from '@/components/ForceUpdateChecker'
-import { VersionChecker } from '@/components/VersionChecker'
 import { DevModeBadge } from '@/components/DevModeBadge'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -82,7 +82,6 @@ export default async function RootLayout({
       >
         <ForceUpdateChecker>
         <ThemeProvider>
-        <VersionChecker />
         <DevModeBadge />
         <PostHogProvider />
         <PageViewTracker />
@@ -90,6 +89,7 @@ export default async function RootLayout({
         <InstallPrompt />
         <OfflineBanner />
         <AppHeader />
+        <DuoUpgradeBanner />
         <main className="min-h-screen pt-4 pb-24">{children}</main>
         <BottomNav />
         <Toast />

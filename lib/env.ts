@@ -14,6 +14,12 @@ export const isDevelopment = APP_ENV === 'development'
 /** True when running in production mode */
 export const isProduction = APP_ENV === 'production'
 
+/** Show debug/refresh buttons - only in local development (npm run dev), NOT in preview or production */
+export const showDebugTools = process.env.NODE_ENV === 'development'
+
+/** Alias for insight regenerate buttons - dev only */
+export const showRefreshButton = showDebugTools
+
 /** Base URL for the app (no trailing slash) */
 export const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ||

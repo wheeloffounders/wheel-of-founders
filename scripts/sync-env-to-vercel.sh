@@ -22,16 +22,25 @@ trim_ws() {
   echo "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
 
-# Validate and warn if value had whitespace (writes to stderr so it doesn't pollute captured value)
+# Strip \n characters that cause "invalid API key" errors
+strip_backslash_n() {
+  echo "$1" | sed 's/\\n//g'
+}
+
+# Validate: trim whitespace, strip \n, warn if issues
 validate_env_value() {
   local key=$1
   local value=$2
-  local trimmed
-  trimmed=$(trim_ws "$value")
-  if [ "$value" != "$trimmed" ]; then
+  local cleaned
+  cleaned=$(strip_backslash_n "$value")
+  cleaned=$(trim_ws "$cleaned")
+  if [[ "$value" == *"\\n"* ]]; then
+    echo "⚠️  Warning: $key contained \\n characters - stripped" >&2
+  fi
+  if [ "$value" != "$(trim_ws "$value")" ]; then
     echo "⚠️  Warning: $key had leading/trailing whitespace - trimmed" >&2
   fi
-  echo "$trimmed"
+  echo "$cleaned"
 }
 
 # Load required vars (with trimming - Vercel rejects whitespace in header values)

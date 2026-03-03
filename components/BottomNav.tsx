@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Plus, Sun, Moon, BarChart2, User, Calendar, Settings, Home, MapPin, Bell, Download, Clock, LogOut, AlertCircle } from 'lucide-react'
+import { Plus, Sun, Moon, BarChart2, User, Calendar, Settings, Home, MapPin, Bell, MessageSquare, LogOut, AlertCircle, Book } from 'lucide-react'
+import { useNewInsights } from '@/lib/hooks/useNewInsights'
 import { supabase } from '@/lib/supabase'
 import { resetAnalytics } from '@/lib/analytics'
 import { colors } from '@/lib/design-tokens'
@@ -14,7 +15,7 @@ const insightsItems = [
   { name: 'Weekly Insight', href: '/weekly', icon: Calendar, showProgress: false },
   { name: 'Monthly Insight', href: '/monthly-insight', icon: Calendar, showProgress: true as const, progressKey: 'monthly' as const },
   { name: 'Quarterly Trajectory', href: '/quarterly', icon: BarChart2, showProgress: true as const, progressKey: 'quarterly' as const },
-  { name: 'Journey', href: '/history', icon: MapPin, showProgress: false },
+  { name: 'Daily History', href: '/history', icon: MapPin, showProgress: false },
 ]
 
 const todayItems = [
@@ -28,10 +29,10 @@ const profileItems = [
 ]
 
 const settingsItems = [
+  { name: 'Help', href: '/help', icon: Book },
   { name: 'Notifications', href: '/settings/notifications', icon: Bell },
-  { name: 'Export', href: '/settings#data-export', icon: Download },
-  { name: 'Timezone', href: '/settings/timezone', icon: Clock },
-  { name: 'All Settings', href: '/settings', icon: Settings },
+  { name: 'Feedback', href: '/feedback', icon: MessageSquare },
+  { name: 'Settings', href: '/settings', icon: Settings },
 ]
 
 const menuItemClass = 'flex items-center gap-3 px-4 min-h-[56px] text-sm font-medium hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 transition-colors mx-1 text-gray-900 dark:text-gray-100 dark:text-gray-100'
@@ -40,6 +41,7 @@ const navButtonClass = 'flex flex-col items-center gap-1 min-w-[56px] py-2 round
 export function BottomNav() {
   const pathname = usePathname()
   const { monthly, quarterly } = useProgress()
+  const { totalNew: newInsightsCount } = useNewInsights()
   const [insightsOpen, setInsightsOpen] = useState(false)
   const [todayOpen, setTodayOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -82,7 +84,7 @@ export function BottomNav() {
   const isInsightsActive = pathname === '/weekly' || pathname === '/history' || pathname === '/monthly-insight' || pathname === '/quarterly'
   const isTodayActive = pathname === '/morning' || pathname === '/evening' || pathname === '/emergency'
   const isProfileActive = pathname === '/profile' || pathname === '/history'
-  const isSettingsActive = pathname?.startsWith('/settings')
+  const isSettingsActive = pathname?.startsWith('/settings') || pathname === '/feedback'
 
   const menuOpen = insightsOpen || todayOpen || profileOpen || settingsOpen
 
@@ -107,14 +109,14 @@ export function BottomNav() {
           tabIndex={0}
           onClick={closeAll}
           onKeyDown={(e) => e.key === 'Escape' && closeAll()}
-          className="fixed inset-0 z-[39]"
-          style={{ backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', backgroundColor: 'rgba(0,0,0,0.1)' }}
+          className="bottom-nav-overlay fixed inset-0 bg-black/20 backdrop-blur-md"
           aria-hidden="true"
         />
       )}
 
+      {/* Nav bar + menus: higher z-index when open so menus appear above overlay */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-gray-800 dark:bg-gray-800 border-t-2 border-gray-200 dark:border-gray-700 dark:border-gray-700"
+        className={`bottom-nav fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 dark:bg-gray-800 border-t-2 border-gray-200 dark:border-gray-700 dark:border-gray-700 ${menuOpen ? 'bottom-nav-menu-open' : ''}`}
         aria-label="Bottom navigation"
       >
         {/* Bauhaus: 3 flat color rectangles - 24px height, 2px line */}
@@ -140,7 +142,12 @@ export function BottomNav() {
               onClick={() => { setInsightsOpen(!insightsOpen); if (!insightsOpen) { setTodayOpen(false); setProfileOpen(false); setSettingsOpen(false) } }}
               className={`${navButtonClass} ${isInsightsActive ? 'text-[#ef725c] dark:text-[#f0886c]' : 'text-gray-700 dark:text-gray-300 dark:text-gray-300'}`}
             >
-              <BarChart2 className="w-6 h-6" strokeWidth={isInsightsActive ? 2.5 : 2} />
+              <span className="relative inline-block">
+                <BarChart2 className="w-6 h-6" strokeWidth={isInsightsActive ? 2.5 : 2} />
+                {newInsightsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#ef725c] rounded-full" aria-hidden />
+                )}
+              </span>
               <span className={`text-xs font-medium ${isInsightsActive ? '' : 'text-gray-600 dark:text-gray-400 dark:text-gray-400'}`}>Insights</span>
             </button>
             {insightsOpen && (

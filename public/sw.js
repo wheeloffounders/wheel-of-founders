@@ -19,6 +19,45 @@ self.addEventListener('activate', event => {
   )
 })
 
+// Push notification handler
+self.addEventListener('push', function (event) {
+  if (!event.data) return
+  let data
+  try {
+    data = event.data.json()
+  } catch {
+    return
+  }
+  const options = {
+    body: data.body,
+    icon: data.icon || '/icon-192x192.png',
+    badge: data.badge || '/icon-192x192.png',
+    vibrate: data.vibrate || [200, 100, 200],
+    data: {
+      url: data.url || '/',
+      dateOfArrival: Date.now()
+    },
+    actions: [{ action: 'open', title: 'Open App' }]
+  }
+  event.waitUntil(self.registration.showNotification(data.title || 'Wheel of Founders', options))
+})
+
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close()
+  const url = event.notification.data?.url || '/'
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.navigate(url)
+          return client.focus()
+        }
+      }
+      if (clients.openWindow) return clients.openWindow(url)
+    })
+  )
+})
+
 self.addEventListener('fetch', event => {
   // For HTML pages (navigation requests) - ALWAYS go to network
   if (event.request.mode === 'navigate') {

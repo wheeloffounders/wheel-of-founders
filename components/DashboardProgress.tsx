@@ -24,7 +24,7 @@ export function DashboardProgress() {
       <div className="flex items-center gap-2 mb-4">
         <Sparkles className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          Your Journey Progress
+          Your Progress
         </h2>
       </div>
 

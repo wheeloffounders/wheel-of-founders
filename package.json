@@ -8,6 +8,8 @@
     "vercel-build": "node scripts/validate-env.js && next build",
     "validate-env": "node scripts/validate-env.js",
     "preview:sync": "./scripts/fix-preview-supabase-env.sh",
+    "sync:envs": "./scripts/sync-all-envs.sh",
+    "dev-deploy": "npm run preview:sync && ./scripts/deploy-dev.sh",
     "build:dev": "NEXT_PUBLIC_APP_ENV=development next build",
     "build:prod": "NEXT_PUBLIC_APP_ENV=production next build",
     "start": "next start",
@@ -35,7 +37,8 @@
     "react-markdown": "^10.1.0",
     "recharts": "^3.7.0",
     "remark-breaks": "^4.0.0",
-    "stripe": "^17.3.1"
+    "stripe": "^17.3.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
@@ -44,6 +47,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",

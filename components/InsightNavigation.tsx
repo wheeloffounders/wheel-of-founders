@@ -10,6 +10,8 @@ interface InsightNavigationProps {
   currentPeriod: string
   periods: string[]
   onNavigate: (period: string) => void
+  /** Tooltip when Next is disabled (e.g. "March insights will be available on April 1") */
+  nextDisabledMessage?: string
 }
 function formatPeriodDisplay(type: InsightType, period: string): string {
   if (type === 'weekly') return formatWeekRange(period)
@@ -22,6 +24,7 @@ export function InsightNavigation({
   currentPeriod,
   periods,
   onNavigate,
+  nextDisabledMessage,
 }: InsightNavigationProps) {
   const idx = periods.indexOf(currentPeriod)
   // When viewing a period not in list (e.g. current month with no insight yet),
@@ -58,6 +61,7 @@ export function InsightNavigation({
         type="button"
         onClick={() => nextPeriod && onNavigate(nextPeriod)}
         disabled={!hasNext}
+        title={!hasNext && nextDisabledMessage ? nextDisabledMessage : undefined}
         className="flex items-center gap-1 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:underline disabled:hover:no-underline text-gray-700 dark:text-gray-300"
         aria-label="Next period"
       >

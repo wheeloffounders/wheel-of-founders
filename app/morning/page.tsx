@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { format, formatDistanceToNow, isToday } from 'date-fns'
 import { Target, Zap, X, AlertCircle, Edit2, Check, Square, Save, X as XIcon, HelpCircle, Trash2 } from 'lucide-react'
@@ -25,9 +25,10 @@ import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
 import { ConfirmModal } from '@/components/ConfirmModal'
 import { StreamingIndicator } from '@/components/StreamingIndicator'
 import { useStreamingInsight } from '@/lib/hooks/useStreamingInsight'
+import { usePersonalizedExamples } from '@/lib/hooks/usePersonalizedExamples'
 import { colors, typography, spacing } from '@/lib/design-tokens'
 import { motion, useReducedMotion } from 'framer-motion'
-
+import { TutorialProgress } from '@/components/TutorialProgress'
 
 export type ActionPlanOption2 = 'my_zone' | 'systemize' | 'delegate_founder' | 'eliminate_founder' | 'quick_win_founder'
 
@@ -72,12 +73,15 @@ function generateTaskId(): string {
 
 export default function MorningPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isTutorial = searchParams?.get('tutorial') === 'true'
   const lang = useUserLanguage() // Personalized language
   const [userGoal, setUserGoal] = useState<UserGoal | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [userTier, setUserTier] = useState<string>('beta')
   const [morningInsight, setMorningInsight] = useState<string | null>(null)
   const [postMorningInsight, setPostMorningInsight] = useState<string | null>(null)
+  const [postMorningInsightId, setPostMorningInsightId] = useState<string | null>(null)
   const [showAddFourthModal, setShowAddFourthModal] = useState(false)
   const [decision, setDecision] = useState<Decision>({
     decision: '',
@@ -102,6 +106,7 @@ export default function MorningPage() {
   const funnelStepRef = useRef<Set<number>>(new Set())
   const prefersReducedMotion = useReducedMotion()
   const { insight: streamingInsight, isStreaming: isStreamingPostMorning, error: streamingError, startStream } = useStreamingInsight()
+  const personalizedExamples = usePersonalizedExamples()
 
   // Initialize planDate on client side to avoid hydration mismatch
   useEffect(() => {
@@ -141,7 +146,7 @@ export default function MorningPage() {
         supabase.from('morning_decisions').select('*').eq('plan_date', planDate).eq('user_id', session.user.id).maybeSingle(),
         features.dailyPostMorningPrompt
           ? (async () => {
-              const { data, error } = await supabase.from('personal_prompts').select('prompt_text, prompt_type, prompt_date, generated_at').eq('user_id', session.user.id).eq('prompt_date', planDate).eq('prompt_type', 'post_morning').order('generated_at', { ascending: false }).limit(1).maybeSingle()
+              const { data, error } = await supabase.from('personal_prompts').select('id, prompt_text, prompt_type, prompt_date, generated_at').eq('user_id', session.user.id).eq('prompt_date', planDate).eq('prompt_type', 'post_morning').order('generated_at', { ascending: false }).limit(1).maybeSingle()
               return { data, error }
             })()
           : Promise.resolve({ data: null, error: null }),
@@ -152,12 +157,15 @@ export default function MorningPage() {
       const hasPlanForDate = loadedTasks.length > 0 || decisionsRes.data
       if (hasPlanForDate && postMorningInsightRes?.data?.prompt_text) {
         const insight = postMorningInsightRes.data.prompt_text
+        const row = postMorningInsightRes.data as { id?: string }
+        if (row?.id) setPostMorningInsightId(row.id)
         if (insight && (insight.includes('top priority') || insight.includes('Needle Mover') || insight.includes('Smart Constraint') || insight.includes('🌿'))) {
           console.warn('[MORNING] Banned phrases in DB insight, showing anyway')
         }
         setPostMorningInsight(insight)
       } else if (!hasPlanForDate) {
         setPostMorningInsight(null)
+        setPostMorningInsightId(null)
       }
       if (loadedTasks.length > 0 || decisionsRes.data) {
         setHasPlan(true)
@@ -240,7 +248,8 @@ export default function MorningPage() {
             })
             window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to save insight. Please try again.', type: 'error' } }))
           } else {
-            console.log('✅ Post-morning insight SAVED, id:', (savedRow as { id?: string }[])?.[0]?.id)
+            const savedId = (savedRow as { id?: string }[])?.[0]?.id
+            if (savedId) setPostMorningInsightId(savedId)
             window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
           }
           loadTodayPlan({ silent: true })
@@ -529,6 +538,16 @@ export default function MorningPage() {
       setEditingTasks(false)
       setEditingDecision(false)
 
+      // Tutorial mode: advance to evening step and redirect
+      if (isTutorial) {
+        await (supabase.from('user_profiles') as any)
+          .update({ onboarding_step: 2, updated_at: new Date().toISOString() })
+          .eq('id', session.user.id)
+        router.push('/evening?tutorial=true')
+        setSaving(false)
+        return
+      }
+
       const features = getFeatureAccess({
         tier: session.user.tier,
         pro_features_enabled: session.user.pro_features_enabled,
@@ -631,7 +650,8 @@ export default function MorningPage() {
                 console.error('❌ CRITICAL - Post-morning insight save failed:', upsertErr)
                 window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to save insight. Please try again.', type: 'error' } }))
               } else {
-                console.log('✅ Post-morning insight SAVED on plan save, id:', (saved as { id?: string }[])?.[0]?.id)
+                const savedId = (saved as { id?: string }[])?.[0]?.id
+                if (savedId) setPostMorningInsightId(savedId)
                 window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
               }
               // Refresh plan data to ensure UI is in sync
@@ -706,6 +726,8 @@ export default function MorningPage() {
       className="max-w-3xl mx-auto px-4 md:px-5 py-8 transition-all duration-200"
       style={{ paddingTop: spacing['xl'] }}
     >
+      {isTutorial && <TutorialProgress currentStep={2} />}
+
       {/* Header with Mrs. Deer - responsive: avatar above on mobile, left on desktop */}
       <div className="mb-8" style={{ marginBottom: spacing['2xl'] }}>
         <div className="flex flex-col md:flex-row md:items-start gap-4 mb-4">
@@ -872,6 +894,7 @@ export default function MorningPage() {
                   onDelete={() => setConfirmDeleteTask(task)}
                   lang={lang}
                   userGoal={userGoal}
+                  personalizedExamples={personalizedExamples}
                 />
               ))}
             </div>
@@ -961,7 +984,7 @@ export default function MorningPage() {
               onChange={(e) =>
                 setDecision((d) => ({ ...d, decision: e.target.value }))
               }
-              placeholder="e.g. Hire a part-time ops lead"
+              placeholder={`e.g. ${personalizedExamples.decision}`}
               className="w-full px-4 py-2 rounded-lg focus:ring-2 focus:ring-offset-2 transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700"
               style={{
                 borderColor: colors.neutral.border,
@@ -1029,19 +1052,15 @@ export default function MorningPage() {
             type="button"
             onClick={savePlan}
             disabled={saving}
-            isLoading={saving}
             variant="primary"
             className="flex-1"
           >
             {saving ? (
-              <>
-                <span className="animate-spin">⏳</span>
-                Starting...
-              </>
+              isTutorial ? 'Saving...' : 'Mrs. Deer is writing...'
             ) : (
               <>
                 <Save className="w-4 h-4 mr-2" />
-                Start my day
+                {isTutorial ? 'Save & Continue to Evening →' : 'Save & Start My Day'}
               </>
             )}
           </Button>
@@ -1077,14 +1096,6 @@ export default function MorningPage() {
         </div>
       )}
 
-      {/* Loading: Mrs. Deer reflecting after save */}
-      {saving && (
-        <div className="mt-4 p-4 rounded-lg border-2 flex items-center gap-3 mb-6 bg-amber-50 dark:bg-amber-950/30 border-amber-500 dark:border-amber-600">
-          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-amber-700 dark:border-amber-400 flex-shrink-0" />
-          <p className="text-amber-800 dark:text-amber-200 font-medium">Mrs. Deer, your AI companion is reflecting on your input...</p>
-        </div>
-      )}
-
       {/* Mrs. Deer AI Coach - Plan Review: post-morning insight at BOTTOM, after Power List and Decision Log */}
       {hasPlan && (postMorningInsight || isStreamingPostMorning || streamingError) && (
         <>
@@ -1093,6 +1104,7 @@ export default function MorningPage() {
             message={isStreamingPostMorning ? (streamingInsight || '...') : (streamingError ? `[AI ERROR] ${streamingError}` : postMorningInsight!)}
             trigger="morning_after"
             onClose={() => {}}
+            insightId={postMorningInsightId ?? undefined}
           />
         </>
       )}
@@ -1189,6 +1201,7 @@ function TaskCard({
   onDelete,
   lang,
   userGoal,
+  personalizedExamples,
 }: {
   task: Task
   index: number
@@ -1196,6 +1209,7 @@ function TaskCard({
   onDelete?: () => void
   lang: ReturnType<typeof useUserLanguage>
   userGoal: UserGoal | null
+  personalizedExamples?: { task: string; action: Record<string, string>; loading: boolean }
 }) {
   return (
     <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 space-y-3">
@@ -1221,7 +1235,7 @@ function TaskCard({
           rows={1}
           value={task.description}
           onChange={(e) => onChange({ description: e.target.value })}
-          placeholder={lang.taskLabel}
+          placeholder={personalizedExamples?.loading ? lang.taskLabel : `e.g., ${personalizedExamples?.task ?? 'Write blog post, Research competitors'}`}
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-[#152b50] dark:focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800 resize-none"
         />
       </div>
@@ -1243,11 +1257,16 @@ function TaskCard({
           onChange={(e) => onChange({ actionPlan: e.target.value as ActionPlanOption2 })}
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
         >
-          {getActionPlanOptions(userGoal).map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.emoji} {opt.label} - {opt.description}
-            </option>
-          ))}
+          {getActionPlanOptions(userGoal).map((opt) => {
+            const desc = !personalizedExamples?.loading && personalizedExamples?.action?.[opt.value]
+              ? personalizedExamples.action[opt.value]
+              : opt.description
+            return (
+              <option key={opt.value} value={opt.value}>
+                {opt.emoji} {opt.label} - {desc}
+              </option>
+            )
+          })}
         </select>
       </div>
 

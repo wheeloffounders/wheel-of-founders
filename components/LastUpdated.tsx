@@ -11,7 +11,7 @@ export function LastUpdated({
 }: {
   timestamp: Date | null
   isSyncing: boolean
-  onRefresh: () => void
+  onRefresh?: () => void
 }) {
   if (!timestamp) return null
 
@@ -25,6 +25,7 @@ export function LastUpdated({
       }}
     >
       <span>Updated {formatDistanceToNow(timestamp, { addSuffix: true })}</span>
+      {onRefresh && (
       <button
         onClick={onRefresh}
         disabled={isSyncing}
@@ -44,6 +45,7 @@ export function LastUpdated({
           }}
         />
       </button>
+      )}
       <style jsx>{`
         @keyframes spin {
           from {

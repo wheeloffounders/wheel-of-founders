@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Menu, Home, Sun, Moon, Flame, BarChart2, Calendar, MapPin, User, Settings, MessageSquare, HelpCircle, Mail, Bug, TrendingUp, LogOut } from 'lucide-react'
+import { Menu, Home, Sun, Moon, Flame, BarChart2, Calendar, MapPin, User, Settings, MessageSquare, HelpCircle, Mail, Bug, TrendingUp, LogOut, CreditCard } from 'lucide-react'
+import { InsightNotificationBadge } from './InsightNotificationBadge'
 import { useTheme } from '@/components/ThemeProvider'
 import { supabase } from '@/lib/supabase'
 import { resetAnalytics } from '@/lib/analytics'
@@ -24,12 +25,13 @@ const menuSections = [
       { name: 'Weekly Insight', href: '/weekly', icon: BarChart2 },
       { name: 'Monthly Insight', href: '/monthly-insight', icon: Calendar },
       { name: 'Quarterly Trajectory', href: '/quarterly', icon: TrendingUp },
-      { name: 'Journey', href: '/history', icon: MapPin },
+      { name: 'Daily History', href: '/history', icon: MapPin },
     ],
   },
   {
     label: 'Account',
     items: [
+      { name: 'Pricing', href: '/pricing', icon: CreditCard },
       { name: 'Profile', href: '/profile', icon: User },
       { name: 'Settings', href: '/settings', icon: Settings },
       { name: 'Feedback', href: '/feedback', icon: MessageSquare },
@@ -85,13 +87,14 @@ export function AppHeader() {
 
   return (
     <header
-      className="sticky top-0 z-40 border-b-2 bg-white dark:bg-gray-800 dark:bg-gray-800 border-gray-200 dark:border-gray-700 dark:border-gray-700 px-4 py-3 flex items-center justify-between"
+      className="app-header sticky top-0 left-0 right-0 border-b-2 bg-white dark:bg-gray-800 dark:bg-gray-800 border-gray-200 dark:border-gray-700 dark:border-gray-700 px-4 py-3 flex items-center justify-between"
     >
       <Link href="/dashboard" className="text-lg font-medium text-gray-900 dark:text-gray-100 dark:text-white">
         Wheel of Founders
       </Link>
 
       <div ref={menuRef} className="relative flex items-center gap-2">
+        <InsightNotificationBadge />
         <Link
           href="/feedback"
           className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:text-[#ef725c] transition-colors"

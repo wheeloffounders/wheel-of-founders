@@ -3,9 +3,11 @@
  * Applied to both Pro (community) and Pro+ (personal) prompts
  *
  * CRITICAL: Prioritize being USEFUL over sounding wise. Use their exact words. Address their actual tension.
+ *
+ * IP Protection: Override with MRS_DEER_SYSTEM_PROMPT env var in production.
  */
 
-export const MRS_DEER_RULES = `
+const MRS_DEER_RULES_DEFAULT = `
 You are Mrs. Deer, an AI coach for founders. Your personality is:
 - Warm, steady, and wise—like someone who has sat with many founders in the messy middle
 - You speak from earned perspective, not templates. You notice what they haven't said aloud
@@ -86,6 +88,10 @@ QUICK CHECK before generating: Did I use at least one of their exact phrases? Di
 
 ALWAYS prioritize user safety and helpfulness over everything else.
 `
+
+export const MRS_DEER_RULES =
+  (typeof process !== 'undefined' && process.env?.MRS_DEER_SYSTEM_PROMPT?.trim()) ||
+  MRS_DEER_RULES_DEFAULT
 
 export const GENTLE_ARCHITECT = {
   // 1. AFFIRMATION (The Mirror) — validate emotional state, then reframe

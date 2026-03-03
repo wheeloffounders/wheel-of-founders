@@ -62,8 +62,8 @@ const LANGUAGE_MAP: Record<UserGoal, UserLanguage> = {
     eliminateLabel: 'Let Go',
     quickWinLabel: 'Quick Win',
     morningGreeting: 'Good morning. What matters most to you today?',
-    eveningTitle: "Today's Journey: What You Discovered",
-    dashboardTitle: 'Your Purpose Journey',
+    eveningTitle: "Today's History: What You Discovered",
+    dashboardTitle: 'Your Purpose Path',
   },
   
   build_significance: {
@@ -83,8 +83,8 @@ const LANGUAGE_MAP: Record<UserGoal, UserLanguage> = {
     eliminateLabel: 'Let Go',
     quickWinLabel: 'Quick Win',
     morningGreeting: 'Good morning. What milestone will you build toward today?',
-    eveningTitle: "Today's Journey: Milestones You Built",
-    dashboardTitle: 'Your Significance Journey',
+    eveningTitle: "Today's History: Milestones You Built",
+    dashboardTitle: 'Your Significance Path',
   },
   
   reduce_overwhelm: {
@@ -104,8 +104,8 @@ const LANGUAGE_MAP: Record<UserGoal, UserLanguage> = {
     eliminateLabel: 'Eliminate',
     quickWinLabel: 'Quick Win',
     morningGreeting: 'Good morning. Let\'s focus on what truly matters.',
-    eveningTitle: "Today's Journey: What You Focused On",
-    dashboardTitle: 'Your Focus Journey',
+    eveningTitle: "Today's History: What You Focused On",
+    dashboardTitle: 'Your Focus Path',
   },
   
   break_through_stuck: {
@@ -125,8 +125,8 @@ const LANGUAGE_MAP: Record<UserGoal, UserLanguage> = {
     eliminateLabel: 'Eliminate',
     quickWinLabel: 'Quick Win',
     morningGreeting: 'Good morning. What will break you through today?',
-    eveningTitle: "Today's Journey: What Moved You Forward",
-    dashboardTitle: 'Your Breakthrough Journey',
+    eveningTitle: "Today's History: What Moved You Forward",
+    dashboardTitle: 'Your Breakthrough Path',
   },
   
   improve_focus: {
@@ -146,8 +146,8 @@ const LANGUAGE_MAP: Record<UserGoal, UserLanguage> = {
     eliminateLabel: 'Eliminate',
     quickWinLabel: 'Quick Win',
     morningGreeting: 'Good morning. What deserves your focus today?',
-    eveningTitle: "Today's Journey: What You Focused On",
-    dashboardTitle: 'Your Focus Journey',
+    eveningTitle: "Today's History: What You Focused On",
+    dashboardTitle: 'Your Focus Path',
   },
   
   build_systems: {
@@ -167,8 +167,8 @@ const LANGUAGE_MAP: Record<UserGoal, UserLanguage> = {
     eliminateLabel: 'Eliminate',
     quickWinLabel: 'Quick Win',
     morningGreeting: 'Good morning. What system will you build today?',
-    eveningTitle: "Today's Journey: Systems You Built",
-    dashboardTitle: 'Your System Building Journey',
+    eveningTitle: "Today's History: Systems You Built",
+    dashboardTitle: 'Your System Building Path',
   },
   
   general_clarity: {
@@ -188,7 +188,7 @@ const LANGUAGE_MAP: Record<UserGoal, UserLanguage> = {
     eliminateLabel: 'Eliminate',
     quickWinLabel: 'Quick Win',
     morningGreeting: 'Good morning, Founder',
-    eveningTitle: "Today's Journey: What You Accomplished",
+    eveningTitle: "Today's History: What You Accomplished",
     dashboardTitle: 'Good morning, Founder',
   },
   
@@ -209,8 +209,8 @@ const LANGUAGE_MAP: Record<UserGoal, UserLanguage> = {
     eliminateLabel: 'Let Go',
     quickWinLabel: 'Quick Win',
     morningGreeting: 'Good morning. What will you commit to today?',
-    eveningTitle: "Today's Journey: What You Committed To",
-    dashboardTitle: 'Your Commitment Journey',
+    eveningTitle: "Today's History: What You Committed To",
+    dashboardTitle: 'Your Commitment Path',
   },
   
   find_calm: {
@@ -230,8 +230,8 @@ const LANGUAGE_MAP: Record<UserGoal, UserLanguage> = {
     eliminateLabel: 'Let Go',
     quickWinLabel: 'Quick Win',
     morningGreeting: 'Good morning. What will anchor you today?',
-    eveningTitle: "Today's Journey: What Anchored You",
-    dashboardTitle: 'Your Calm Journey',
+    eveningTitle: "Today's History: What Anchored You",
+    dashboardTitle: 'Your Calm Path',
   },
 }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+import { withRateLimit } from '@/lib/rate-limit-middleware'
 import { isDevelopment, isAdmin } from '@/lib/admin'
 import { generateAIPrompt, AIError } from '@/lib/ai-client'
 import { checkUserHistory } from '@/lib/user-history'
@@ -57,17 +58,18 @@ export const revalidate = 0
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSessionFromRequest(req)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    return withRateLimit(req, 'monthly', async (req) => {
+      const session = await getServerSessionFromRequest(req)
+      if (!session) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
 
-    if (!isDevelopment() && !(await isAdmin(session.user.id))) {
-      console.warn('[monthly-insight] Generate called in production by non-admin:', session.user.id)
-      return NextResponse.json({ error: 'On-demand generation is disabled in production. Insights are pre-generated monthly.' }, { status: 403 })
-    }
+      if (!isDevelopment() && !(await isAdmin(session.user.id))) {
+        console.warn('[monthly-insight] Generate called in production by non-admin:', session.user.id)
+        return NextResponse.json({ error: 'On-demand generation is disabled in production. Insights are pre-generated monthly.' }, { status: 403 })
+      }
 
-    const body = (await req.json()) as GenerateBody
+      const body = (await req.json()) as GenerateBody
     const { monthStart, monthEnd } = body
 
     if (!monthStart || !monthEnd) {
@@ -305,6 +307,7 @@ Monthly insight: max 800 words. Output 6-8 sections with ## markdown headers and
         avgMood,
         avgEnergy,
       },
+    })
     })
   } catch (error) {
     console.error('[monthly-insight] Error:', error)

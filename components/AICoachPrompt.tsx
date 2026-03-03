@@ -5,11 +5,15 @@ import { Sparkles, WifiOff } from 'lucide-react'
 import { MarkdownText } from './MarkdownText'
 import { MrsDeerMessageBubble } from './MrsDeerMessageBubble'
 import { filterInsightLabels } from '@/lib/insight-utils'
+import { NextStepPrompt } from './NextStepPrompt'
+import { InsightFeedback } from './InsightFeedback'
 
 interface AICoachPromptProps {
   message: string
   onClose: () => void
   trigger: 'morning_before' | 'morning_after' | 'evening_after' | 'profile' | 'emergency'
+  /** Optional: when provided, shows NextStepPrompt and InsightFeedback */
+  insightId?: string
 }
 
 const CONTEXT_LABELS: Record<AICoachPromptProps['trigger'], string> = {
@@ -20,7 +24,19 @@ const CONTEXT_LABELS: Record<AICoachPromptProps['trigger'], string> = {
   emergency: 'Firefighter Mode',
 }
 
-export function AICoachPrompt({ message, onClose, trigger }: AICoachPromptProps) {
+const TRIGGER_TO_NEXT_STEP: Record<string, 'post-morning' | 'evening' | 'emergency'> = {
+  morning_after: 'post-morning',
+  evening_after: 'evening',
+  emergency: 'emergency',
+}
+
+const TRIGGER_TO_INSIGHT_TYPE: Record<string, string> = {
+  morning_after: 'post-morning',
+  evening_after: 'evening',
+  emergency: 'emergency',
+}
+
+export function AICoachPrompt({ message, onClose, trigger, insightId }: AICoachPromptProps) {
   const [isOnline, setIsOnline] = useState(true)
   useEffect(() => {
     console.log('[AICoachPrompt] Rendered with trigger:', trigger, 'message length:', message?.length ?? 0)
@@ -60,6 +76,15 @@ export function AICoachPrompt({ message, onClose, trigger }: AICoachPromptProps)
           </MarkdownText>
         </div>
       </MrsDeerMessageBubble>
+      {TRIGGER_TO_NEXT_STEP[trigger] && (
+        <NextStepPrompt type={TRIGGER_TO_NEXT_STEP[trigger]} />
+      )}
+      {insightId && TRIGGER_TO_INSIGHT_TYPE[trigger] && (
+        <InsightFeedback
+          insightId={insightId}
+          insightType={TRIGGER_TO_INSIGHT_TYPE[trigger]}
+        />
+      )}
     </div>
   )
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { MessageSquare, Send, ArrowLeft } from 'lucide-react'
+import { MessageSquare, Send, ArrowLeft, AlertCircle, MessageCircle } from 'lucide-react'
 import SpeechToTextInput from '@/components/SpeechToTextInput'
 import Link from 'next/link'
 import { getUserSession } from '@/lib/auth'
@@ -13,6 +13,7 @@ export default function FeedbackPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const [whatsWorking, setWhatsWorking] = useState('')
   const [whatsConfusing, setWhatsConfusing] = useState('')
@@ -38,6 +39,7 @@ export default function FeedbackPage() {
     if (submitting) return
 
     setSubmitting(true)
+    setError(null)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -59,14 +61,15 @@ export default function FeedbackPage() {
         }),
       })
 
+      const data = await res.json()
+
       if (res.ok) {
         setSubmitted(true)
       } else {
-        const err = await res.json()
-        alert(err.error || 'Failed to submit')
+        setError(data.error || 'Failed to save feedback')
       }
     } catch {
-      alert('Failed to submit feedback')
+      setError('Failed to save feedback')
     } finally {
       setSubmitting(false)
     }
@@ -88,6 +91,18 @@ export default function FeedbackPage() {
           <p className="mb-6 text-gray-700 dark:text-gray-300 dark:text-gray-300">
             Your feedback helps make Wheel of Founders better for you and other founders.
           </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            For faster responses and community discussion, join our Discord:
+          </p>
+          <Link
+            href="https://discord.gg/5bUWUzhSbc"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-[#5865F2] text-white rounded-lg hover:bg-[#4752c4] transition-colors mb-6"
+          >
+            <MessageCircle className="h-5 w-5" />
+            Join Discord Community
+          </Link>
           <Link
             href="/"
             className="inline-flex items-center gap-2 text-[#ef725c] hover:underline"
@@ -118,6 +133,30 @@ export default function FeedbackPage() {
         <p className="mt-2 text-gray-700 dark:text-gray-300 dark:text-gray-300">
           Your thoughts shape what Wheel of Founders becomes.
         </p>
+      </div>
+
+      <div className="mb-8 p-6 bg-[#5865F2]/10 dark:bg-[#5865F2]/20 border border-[#5865F2]/30 rounded-lg">
+        <div className="flex items-start gap-4">
+          <div className="bg-[#5865F2] p-3 rounded-full flex-shrink-0">
+            <MessageCircle className="w-6 h-6 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-semibold mb-1 text-gray-900 dark:text-white">Join our Discord Community!</h2>
+            <p className="text-gray-600 dark:text-gray-300 mb-3">
+              For faster bug reports, real-time discussions, and to connect with other founders,
+              join our Discord server. Mrs. Deer is there too! 🦌
+            </p>
+            <Link
+              href="https://discord.gg/5bUWUzhSbc"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#5865F2] text-white rounded-lg hover:bg-[#4752c4] transition-colors text-sm"
+            >
+              <MessageCircle className="w-4 h-4" />
+              Join Discord
+            </Link>
+          </div>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6 rounded-xl bg-white dark:bg-gray-800 dark:bg-gray-800 p-6 shadow-md dark:bg-[#1A202C]">
@@ -176,6 +215,13 @@ export default function FeedbackPage() {
           />
         </div>
 
+        {error && (
+          <div className="flex items-center gap-2 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-red-600 dark:text-red-400">
+            <AlertCircle className="h-5 w-5 flex-shrink-0" />
+            {error}
+          </div>
+        )}
+
         <div>
           <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300">
             4. How likely are you to recommend WoF to another founder?
@@ -224,6 +270,18 @@ export default function FeedbackPage() {
           {submitting ? 'Sending...' : 'Submit Feedback'}
         </button>
       </form>
+
+      <p className="text-center text-xs text-gray-500 dark:text-gray-400 mt-6">
+        Prefer real-time chat?{' '}
+        <Link
+          href="https://discord.gg/5bUWUzhSbc"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#5865F2] hover:underline"
+        >
+          Join our Discord
+        </Link>
+      </p>
     </div>
   )
 }

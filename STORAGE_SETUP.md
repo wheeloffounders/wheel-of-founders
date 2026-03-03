@@ -77,8 +77,9 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
 
 ### Download Flow
 
-- **Immediate**: Response includes `downloadUrl` (signed URL)
-- **Later**: `GET /api/export/[exportId]/download` generates a new signed URL
+- **Immediate**: Response includes `downloadUrl`, `csvDownloadUrl`, or `pdfDownloadUrl` (signed URLs)
+- **Inline fallback**: If storage upload fails, response includes `csvContentInline` or `pdfBase64` for client-side blob download
+- **Later**: `GET /api/export/[exportId]/download?format=json|csv|pdf` generates a new signed URL for the requested format
 
 ### Expiration
 
@@ -110,6 +111,10 @@ exports/
 - Check Supabase Dashboard → Storage → Logs
 - Verify service role key is correct
 - Ensure bucket allows the file type
+
+### CSV/PDF download fails (JSON works)
+- **Storage**: If the `exports` bucket doesn't exist, the API falls back to inline `csvContentInline` / `pdfBase64`. The frontend creates a blob and triggers download. Ensure the bucket exists (see Step 1).
+- **PDF generation**: Uses `jspdf` (Node.js runtime). If you see "PDF generation failed", check server logs. Ensure `SUPABASE_SERVICE_ROLE_KEY` is set (required for storage; without it, inline fallback is used).
 
 ## Cleanup (Optional)
 

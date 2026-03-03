@@ -10,18 +10,46 @@ interface ToastMessage {
   id: string
 }
 
+// Prevent duplicate toasts within a time window
+const toastHistory = new Map<string, number>()
+const DEDUP_MS = 3000
+const MAX_RECENT_MS = 5000
+const MAX_RECENT_COUNT = 3
+
 export function Toast() {
   const [toasts, setToasts] = useState<ToastMessage[]>([])
 
   useEffect(() => {
+    const cleanupHistory = () => {
+      const now = Date.now()
+      toastHistory.forEach((timestamp, key) => {
+        if (now - timestamp > 10000) toastHistory.delete(key)
+      })
+    }
+    const cleanupInterval = setInterval(cleanupHistory, 10000)
+
     const handleToast = (event: CustomEvent<{ message: string; type: 'success' | 'error' | 'info' }>) => {
+      const { message, type = 'success' } = event.detail
+      const now = Date.now()
+      const messageKey = `${type}:${message}`
+
+      // Suppress duplicate messages within DEDUP_MS
+      const lastShown = toastHistory.get(messageKey)
+      if (lastShown && now - lastShown < DEDUP_MS) return
+
+      // Suppress if too many toasts in recent window
+      const recentTimestamps = Array.from(toastHistory.values()).filter((t) => now - t < MAX_RECENT_MS)
+      if (recentTimestamps.length >= MAX_RECENT_COUNT) return
+
+      toastHistory.set(messageKey, now)
+
       const newToast: ToastMessage = {
-        ...event.detail,
-        id: Date.now().toString(),
+        message,
+        type,
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       }
       setToasts((prev) => [...prev, newToast])
 
-      // Auto-dismiss after 3 seconds
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== newToast.id))
       }, 3000)
@@ -30,6 +58,7 @@ export function Toast() {
     window.addEventListener('toast', handleToast as EventListener)
     return () => {
       window.removeEventListener('toast', handleToast as EventListener)
+      clearInterval(cleanupInterval)
     }
   }, [])
 
@@ -40,11 +69,11 @@ export function Toast() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2">
+    <div className="toast fixed top-4 right-4 z-[var(--z-index-toast)] space-y-2">
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className="flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg min-w-[300px] max-w-md transition-all duration-200 animate-in slide-in-from-right"
+          className="flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg min-w-[300px] max-w-md transition-all duration-200 animate-slide-in"
           style={{
             backgroundColor: toast.type === 'error' ? '#FEF2F2' : toast.type === 'success' ? '#ECFDF3' : colors.neutral.card,
             borderColor: toast.type === 'error' ? '#FECACA' : toast.type === 'success' ? colors.emerald.DEFAULT : colors.neutral.border,
