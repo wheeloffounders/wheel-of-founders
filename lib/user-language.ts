@@ -182,7 +182,7 @@ const LANGUAGE_MAP: Record<UserGoal, UserLanguage> = {
     strategicLabel: 'Strategic',
     tacticalLabel: 'Tactical',
     actionPlanLabel: 'How will you approach this as a founder?',
-    myZoneLabel: 'My Zone',
+    myZoneLabel: 'Focus Time',
     systemizeLabel: 'Systemize',
     delegateLabel: 'Delegate',
     eliminateLabel: 'Eliminate',

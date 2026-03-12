@@ -1,7 +1,7 @@
 import { getServerSupabase } from './server-supabase'
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns'
 import { detectFounderStage, getUserStage, updateUserStage } from './stage-detection'
-import { filterInsightLabels } from './insight-utils'
+import { filterInsightLabels, ensureCompleteSentences } from './insight-utils'
 import { getCurrentPrompts } from './prompt-rotation'
 import { GENTLE_ARCHITECT, MRS_DEER_RULES, FounderStage, toNaturalStage } from './mrs-deer'
 import {
@@ -15,6 +15,16 @@ import {
   EMERGENCY_STRUCTURE,
   TONE_DETECTION_RULES,
 } from './mrs-deer-prompts'
+
+/** Ensure we don't leave em-dash thoughts hanging mid-sentence */
+function ensureThoughtComplete(text: string): string {
+  const trimmed = text.trimEnd()
+  if (trimmed.endsWith('—')) {
+    // Soft, generic completion that keeps the tone open-ended but complete
+    return `${trimmed} enough?`
+  }
+  return text
+}
 
 /** Evening review data from DB or override */
 interface EveningReviewData {
@@ -696,14 +706,16 @@ PATTERN CONTEXT (last 14 days):
 Use stage naturally. BANNED: Needle Mover, Action Plan, Smart Constraints, raw stage codes, Keep shining.`
 
   const raw = await callAI(
-    { systemPrompt, userPrompt, maxTokens: 150, temperature: 0.7 },
+    { systemPrompt, userPrompt, maxTokens: 400, temperature: 0.7 },
     onChunk
   )
   if (process.env.NODE_ENV === 'development') {
     const words = raw.split(/\s+/).length
     console.log('[morning insight word count]:', words)
   }
-  return filterInsightLabels(raw)
+  const filtered = filterInsightLabels(raw)
+  const completed = ensureThoughtComplete(filtered)
+  return ensureCompleteSentences(completed)
 }
 
 // Stub implementations for the other prompt types.
@@ -774,7 +786,7 @@ ${hasHistory ? `PATTERN CONTEXT (last 14 days):
 ` : ''}Generate an insight that shows them something they hadn't seen. Use warm, human language. Do NOT include statistics, percentages, or commentary on "all tasks marked important". Speak like a wise friend, not a data analyst. End with one complete, specific reframing question (no cut-offs). Feel like a person who knows their journey, not a template.`
 
   const raw = await callAI(
-    { systemPrompt, userPrompt, maxTokens: 150, temperature: 0.7 },
+    { systemPrompt, userPrompt, maxTokens: 400, temperature: 0.7 },
     onChunk
   )
   if (process.env.NODE_ENV === 'development') {
@@ -782,18 +794,8 @@ ${hasHistory ? `PATTERN CONTEXT (last 14 days):
     console.log('[post_morning insight word count]:', words)
   }
   const filtered = filterInsightLabels(raw)
-  return ensureCompleteQuestion(filtered)
-}
-
-/** Ensures post-morning insight ends with a complete question (prevents AI cut-offs near word limit) */
-function ensureCompleteQuestion(text: string): string {
-  const trimmed = text.trim()
-  if (trimmed.endsWith('?')) return text
-  const lastQ = trimmed.lastIndexOf('?')
-  if (lastQ >= 0) {
-    return trimmed.slice(0, lastQ + 1).trim()
-  }
-  return trimmed + ' What would make today feel like a step forward?'
+  const completed = ensureThoughtComplete(filtered)
+  return ensureCompleteSentences(completed)
 }
 
 async function reflectOnDay(userData: UserData, userLang: ReturnType<typeof getUserLanguage>, hasHistory: boolean, onChunk?: OnChunk, promptOverrides?: { systemPrompt: string; toneRules: string } | null): Promise<string> {
@@ -874,14 +876,16 @@ ${hasHistory ? `PATTERN CONTEXT (last 14 days):
 ` : ''}Write as a wise friend: one or two short paragraphs + one open question. Use natural stage language only. BANNED: Needle Mover, Action Plan, Smart Constraints, raw stage codes, Keep shining.`
 
   const raw = await callAI(
-    { systemPrompt, userPrompt, maxTokens: 200, temperature: 0.7 },
+    { systemPrompt, userPrompt, maxTokens: 400, temperature: 0.7 },
     onChunk
   )
   if (process.env.NODE_ENV === 'development') {
     const words = raw.split(/\s+/).length
     console.log('[evening insight word count]:', words)
   }
-  return filterInsightLabels(raw)
+  const filtered = filterInsightLabels(raw)
+  const completed = ensureThoughtComplete(filtered)
+  return ensureCompleteSentences(completed)
 }
 
 async function generateWeeklyInsight(userData: UserData, userLang: ReturnType<typeof getUserLanguage>): Promise<string> {
@@ -940,7 +944,8 @@ VOICE: Warm, specific. USE THEIR EXACT PHRASES from above—quote what they wrot
     maxTokens: 250,
     temperature: 0.7,
   })
-  return filterInsightLabels(raw)
+  const filtered = filterInsightLabels(raw)
+  return ensureThoughtComplete(filtered)
 }
 
 async function generateMonthlyInsight(userData: UserData, userLang: ReturnType<typeof getUserLanguage>): Promise<string> {
@@ -1023,7 +1028,8 @@ VOICE: USE THEIR EXACT PHRASES from above—quote what they wrote. Show what the
     maxTokens: 400,
     temperature: 0.7,
   })
-  return filterInsightLabels(raw)
+  const filtered = filterInsightLabels(raw)
+  return ensureThoughtComplete(filtered)
 }
 
 /**
@@ -1089,7 +1095,9 @@ VOICE: USE THEIR EXACT PHRASES from the fire description above—quote what they
     { systemPrompt, userPrompt, maxTokens: 200, temperature: 0.7 },
     onChunk
   )
-  const aiResponse = filterInsightLabels(rawResponse)
+  const filtered = filterInsightLabels(rawResponse)
+  const completed = ensureThoughtComplete(filtered)
+  const aiResponse = ensureCompleteSentences(completed)
 
   console.log('[Personal Coaching] Emergency: AI insight generated successfully')
   const existingCount = safeGet(existingPrompts, 'generation_count', 0) as number

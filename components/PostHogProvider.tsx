@@ -64,6 +64,14 @@ export default function PostHogProvider() {
         const tier = (session?.user as { tier?: string })?.tier
         trackPageView(pathname, tier)
       })
+      // Record to page_views table for funnel analysis (fire-and-forget)
+      // credentials: 'include' ensures session cookie is sent so user_id is recorded
+      fetch('/api/analytics/page-view', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: pathname }),
+        credentials: 'include',
+      }).catch(() => {})
     }
   }, [pathname])
 

@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Settings, Mail, Check, Download, FileText, MessageSquare, Loader2, Bell, Target, Users } from 'lucide-react'
+import { founderStruggles } from '@/lib/founder-struggles'
+import { InfoTooltip } from '@/components/InfoTooltip'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
 import { getFeatureAccess } from '@/lib/features'
@@ -29,6 +31,8 @@ export default function SettingsPage() {
   const [exportDateStart, setExportDateStart] = useState('')
   const [exportDateEnd, setExportDateEnd] = useState('')
   const [primaryGoal, setPrimaryGoal] = useState<UserGoal | null>(null)
+  const [selectedStruggles, setSelectedStruggles] = useState<string[]>([])
+  const [otherStruggle, setOtherStruggle] = useState('')
   const [savingGoal, setSavingGoal] = useState(false)
   const [hasDuo, setHasDuo] = useState(false)
 
@@ -36,7 +40,7 @@ export default function SettingsPage() {
     const checkAuth = async () => {
       const session = await getUserSession()
       if (!session) {
-        router.push('/login')
+        router.push('/auth/login')
         return
       }
       setUserTier(session.user.tier || 'beta')
@@ -52,7 +56,7 @@ export default function SettingsPage() {
     try {
       const { data, error } = await supabase
         .from('user_profiles')
-        .select('weekly_email_enabled, welcome_email_enabled, export_notification_enabled, community_insights_enabled, email_address, preferred_name, name, plan_type')
+        .select('weekly_email_enabled, welcome_email_enabled, export_notification_enabled, community_insights_enabled, email_address, preferred_name, name, plan_type, struggles, struggles_other')
         .eq('id', userId)
         .maybeSingle()
 
@@ -72,6 +76,8 @@ export default function SettingsPage() {
         setEmailAddress(data.email_address || '')
         setPreferredName(data.preferred_name || data.name || '')
         setHasDuo((data as { plan_type?: string }).plan_type === 'duo_primary' || (data as { plan_type?: string }).plan_type === 'duo_secondary')
+        setSelectedStruggles(Array.isArray((data as { struggles?: string[] }).struggles) ? (data as { struggles: string[] }).struggles : [])
+        setOtherStruggle((data as { struggles_other?: string }).struggles_other || '')
       } else {
         // Get email from auth user
         const { data: authData } = await supabase.auth.getUser()
@@ -93,7 +99,7 @@ export default function SettingsPage() {
 
     const session = await getUserSession()
     if (!session) {
-      router.push('/login')
+      router.push('/auth/login')
       return
     }
 
@@ -164,12 +170,13 @@ export default function SettingsPage() {
 
       <div className="space-y-6">
       {/* 1. Duo Plan */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+      <div className="card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
         <div className="flex items-start justify-between">
           <div>
             <h3 className="text-lg font-semibold flex items-center gap-2 text-gray-900 dark:text-white">
               <Users className="w-5 h-5 text-[#ef725c]" />
               Duo Plan
+              <InfoTooltip text="Share Pro features with a partner. Two separate accounts, one bill. From $25/month each with yearly billing." position="right" />
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
               Invite a partner and save up to 35%
@@ -190,10 +197,11 @@ export default function SettingsPage() {
       </div>
 
       {/* 2. Personalization */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
+      <div className="card bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3 mb-6">
           <Settings className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Personalization</h2>
+          <InfoTooltip text="Your preferred name and how Mrs. Deer addresses you." position="right" />
         </div>
         <div className="mb-6">
           <label htmlFor="preferred-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -214,20 +222,21 @@ export default function SettingsPage() {
       </div>
 
       {/* 3. Notification Reminders */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
+      <div className="card bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white flex items-center gap-3">
               <Bell className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
               Notification Reminders
+              <InfoTooltip text="Get push notifications for daily reminders, insights, and profile completion." position="right" />
             </h2>
             <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-              Choose when you&apos;d like gentle nudges for morning planning and evening reflection.
+              Choose when you&apos;d like gentle nudges and which notifications to receive.
             </p>
           </div>
           <Link
             href="/settings/notifications"
-            className="px-4 py-2 text-gray-900 dark:text-gray-100 border border-[#152b50] dark:border-[#334155] rounded-lg hover:bg-gray-50 dark:bg-gray-900 transition text-sm font-medium shrink-0"
+            className="px-4 py-2 text-gray-900 dark:text-gray-100 border border-[#152b50] dark:border-[#334155] rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900 transition text-sm font-medium shrink-0"
           >
             Manage Notifications
           </Link>
@@ -235,10 +244,11 @@ export default function SettingsPage() {
       </div>
 
       {/* 4. Goals & Preferences */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
+      <div className="card bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3 mb-6">
           <Target className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Goals & Preferences</h2>
+          <InfoTooltip text="Your primary goal and founder preferences. This helps Mrs. Deer personalize insights." position="right" />
         </div>
         <div className="mb-6">
           <label htmlFor="primary-goal" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -263,16 +273,80 @@ export default function SettingsPage() {
             <option value="stay_motivated">💪 Staying motivated</option>
             <option value="find_calm">🧘 Finding calm</option>
           </select>
+        </div>
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            What are you hoping to work on? (select all that apply)
+          </label>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            This helps Mrs. Deer personalize insights based on your struggles.
+          </p>
+          <div className="space-y-2">
+            {founderStruggles.map((struggle) => {
+              const Icon = struggle.icon
+              const isSelected = selectedStruggles.includes(struggle.id)
+              return (
+                <button
+                  key={struggle.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedStruggles((prev) =>
+                      prev.includes(struggle.id) ? prev.filter((s) => s !== struggle.id) : [...prev, struggle.id]
+                    )
+                  }}
+                  className={`w-full flex items-start gap-3 p-3 rounded-lg border-2 transition text-left ${
+                    isSelected
+                      ? 'border-[#ef725c] bg-[#fef6f3] dark:bg-gray-700 dark:border-[#ef725c]'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}
+                >
+                  <Icon className={`w-5 h-5 mt-0.5 flex-shrink-0 ${isSelected ? 'text-[#ef725c]' : 'text-gray-400 dark:text-gray-500'}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900 dark:text-white">{struggle.label}</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">{struggle.description}</div>
+                  </div>
+                  {isSelected && (
+                    <div className="w-5 h-5 rounded-full bg-[#ef725c] text-white flex items-center justify-center text-xs flex-shrink-0">
+                      ✓
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+          <div className="mt-4">
+            <label htmlFor="struggles-other" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Anything else you&apos;d like Mrs. Deer to know? (optional)
+            </label>
+            <SpeechToTextInput
+              id="struggles-other"
+              type="text"
+              value={otherStruggle}
+              onChange={(e) => setOtherStruggle(e.target.value)}
+              placeholder="e.g., I'm launching my first startup and feeling overwhelmed..."
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
+            />
+          </div>
           <button
             type="button"
             onClick={async () => {
-              if (!primaryGoal) return
+              const goalToSave = primaryGoal || 'general_clarity'
               setSavingGoal(true)
+              setMessage(null)
               try {
                 const session = await getUserSession()
                 if (!session) return
-                await saveUserGoals(session.user.id, primaryGoal)
-                setMessage({ type: 'success', text: 'Personalization updated! The app will refresh to reflect your changes.' })
+                await saveUserGoals(session.user.id, goalToSave)
+                const { error } = await supabase
+                  .from('user_profiles')
+                  .update({
+                    struggles: selectedStruggles,
+                    struggles_other: otherStruggle.trim() || null,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', session.user.id)
+                if (error) throw error
+                setMessage({ type: 'success', text: 'Goals & Preferences updated! The app will refresh to reflect your changes.' })
                 setTimeout(() => {
                   window.location.reload()
                 }, 1500)
@@ -286,7 +360,7 @@ export default function SettingsPage() {
               }
             }}
             disabled={savingGoal}
-            className="mt-3 px-4 py-2 bg-[#152b50] text-white rounded-lg text-sm font-medium hover:bg-[#1a3565] transition disabled:opacity-70 disabled:cursor-not-allowed"
+            className="mt-4 px-4 py-2 bg-[#152b50] text-white rounded-lg text-sm font-medium hover:bg-[#1a3565] transition disabled:opacity-70 disabled:cursor-not-allowed"
           >
             {savingGoal ? 'Saving...' : 'Save Personalization'}
           </button>
@@ -294,10 +368,11 @@ export default function SettingsPage() {
       </div>
 
       {/* 5. Email Preferences */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
+      <div className="card bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3 mb-6">
           <Mail className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Email Preferences</h2>
+          <InfoTooltip text="Control which emails you receive: weekly summaries, welcome emails, export notifications, and community updates." position="right" />
         </div>
 
         {/* Email Address */}
@@ -449,10 +524,11 @@ export default function SettingsPage() {
       </div>
 
       {/* 6. Data Export */}
-      <div id="data-export" className="bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
+      <div id="data-export" className="card bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3 mb-6">
           <Download className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Data Export</h2>
+          <InfoTooltip text="Export your data as JSON, CSV, or PDF. Full history includes all tasks, decisions, and reflections." position="right" />
         </div>
 
         <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-4">
@@ -569,7 +645,7 @@ export default function SettingsPage() {
                 if (!response.ok) {
                   if (response.status === 401) {
                     setMessage({ type: 'error', text: 'Session expired. Please log in again.' })
-                    router.push('/login?returnTo=/settings#data-export')
+                    router.push('/auth/login?returnTo=/settings#data-export')
                     return
                   }
                   throw new Error(data.error || 'Export failed')
@@ -684,8 +760,11 @@ export default function SettingsPage() {
       </div>
 
       {/* 7. App Information */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">App Information</h3>
+      <div className="card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+          App Information
+          <InfoTooltip text="Current version and build information." position="right" />
+        </h3>
         <SettingsVersion />
       </div>
       </div>

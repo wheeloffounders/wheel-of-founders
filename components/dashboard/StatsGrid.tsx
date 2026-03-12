@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { format, subDays, startOfWeek, endOfWeek } from 'date-fns'
 import { Trophy, Target, Clock, Sun } from 'lucide-react'
+import { InfoTooltip } from '@/components/InfoTooltip'
 
 interface Stats {
   milestone: string
@@ -27,6 +28,7 @@ export function StatsGrid() {
     timeSaved: '0h',
     morningEvening: '0/0',
   })
+  const [hasTodayTasks, setHasTodayTasks] = useState(false)
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -46,6 +48,8 @@ export function StatsGrid() {
 
       const taskList = (tasks ?? []) as { completed?: boolean; is_proactive?: boolean; action_plan?: string; plan_date?: string }[]
       const totalTasks = taskList.length
+      const todayTasks = taskList.filter((t) => t.plan_date === today)
+      setHasTodayTasks(todayTasks.length > 0)
       const completedTasks = taskList.filter((t) => t.completed).length
       const proactiveTasks = taskList.filter((t) => t.is_proactive === true).length
       const proactivePct = totalTasks > 0 ? Math.round((proactiveTasks / totalTasks) * 100) : 0
@@ -77,14 +81,19 @@ export function StatsGrid() {
   }, [])
 
   const statCards = [
-    { icon: Trophy, label: 'Milestone', value: stats.milestone, desc: 'tasks completed' },
-    { icon: Target, label: 'Action Mix', value: stats.actionMix, desc: 'proactive' },
-    { icon: Clock, label: 'Time Saved', value: stats.timeSaved, desc: 'this week' },
-    { icon: Sun, label: 'Morning/Evening', value: stats.morningEvening, desc: 'completion' },
+    { icon: Trophy, label: 'Milestone', value: stats.milestone, desc: 'tasks completed', tooltip: 'Tasks completed vs total tasks this week. Needle movers are your most important tasks.' },
+    { icon: Target, label: 'Action Mix', value: stats.actionMix, desc: 'proactive', tooltip: 'Percentage of tasks marked as proactive (planned) vs reactive (unplanned). Higher proactive ratio means more intentional days.' },
+    { icon: Clock, label: 'Time Saved', value: stats.timeSaved, desc: 'this week', tooltip: "Estimated time saved by using the app's systems and automations." },
+    { icon: Sun, label: 'Morning/Evening', value: stats.morningEvening, desc: 'completion', tooltip: 'Days you completed morning plan vs evening reflection this week.' },
   ]
 
+  const gridCols =
+    hasTodayTasks
+      ? 'grid-cols-2 md:grid-cols-2'
+      : 'grid-cols-2 md:grid-cols-4'
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className={`grid ${gridCols} gap-4`}>
       {statCards.map((stat, index) => (
         <div
           key={index}
@@ -93,6 +102,7 @@ export function StatsGrid() {
           <div className="flex items-center gap-2 text-[#ef725c] mb-2">
             <stat.icon className="w-4 h-4" />
             <span className="text-xs font-medium uppercase tracking-wider">{stat.label}</span>
+            <InfoTooltip text={stat.tooltip} position="top" />
           </div>
           <div className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{stat.desc}</div>

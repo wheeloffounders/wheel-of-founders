@@ -133,7 +133,7 @@ export default function PricingPage() {
     const checkAuth = async () => {
       const session = await getUserSession()
       if (!session) {
-        router.push('/login')
+        router.push('/auth/login')
         return
       }
       setCurrentTier(session.user.tier || 'beta')

@@ -37,7 +37,7 @@ export default function TimezoneSettingsPage() {
     const fetchTimezone = async () => {
       const session = await getUserSession()
       if (!session) {
-        router.push('/login')
+        router.push('/auth/login')
         return
       }
 
@@ -72,7 +72,7 @@ export default function TimezoneSettingsPage() {
     if (!session) {
       setSaving(false)
       setMessage({ type: 'error', text: 'Please log in to save your timezone.' })
-      router.push('/login')
+      router.push('/auth/login')
       return
     }
 
@@ -98,7 +98,7 @@ export default function TimezoneSettingsPage() {
       const data = await res.json().catch(() => ({}))
       if (res.status === 401) {
         setSaving(false)
-        router.push('/login')
+        router.push('/auth/login')
         return
       }
       if (!res.ok) {

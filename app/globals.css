@@ -102,3 +102,33 @@ nav:not(.bottom-nav) {
 .animate-slide-in {
   animation: slide-in 0.3s ease-out;
 }
+
+/* Card overflow prevention */
+.card {
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+/* Button text wrapping utility */
+.button-text-wrap {
+  white-space: normal !important;
+  word-break: break-word !important;
+  hyphens: auto;
+}
+
+/* Hide scrollbar for horizontal toe tabs (Chrome/Safari/Opera) */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Tutorial target elements - ensure visible and measurable */
+[data-tutorial="power-list"],
+[data-tutorial="decision-card"] {
+  position: relative;
+}

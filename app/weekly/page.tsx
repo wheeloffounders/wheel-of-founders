@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { format, startOfWeek, endOfWeek, isSunday, addDays, addWeeks, isSameWeek } from 'date-fns'
+import { format, startOfWeek, endOfWeek, isSunday, addDays, addWeeks, subWeeks, isSameWeek } from 'date-fns'
 import {
   Calendar,
   Target,
@@ -45,7 +45,7 @@ import { CelebrationHeader } from '@/components/weekly/CelebrationHeader'
 import { InsightNavigation } from '@/components/InsightNavigation'
 import { useNewInsights } from '@/lib/hooks/useNewInsights'
 import { colors } from '@/lib/design-tokens'
-import { showRefreshButton } from '@/lib/env'
+import { showRefreshButton, isProduction } from '@/lib/env'
 
 const MOOD_LABELS: Record<number, string> = {
   1: 'Tough',
@@ -78,6 +78,7 @@ interface WeeklyData {
   dayData: DayData[]
   eveningInsights: { date: string; text: string }[]
   weeklyPrompt: string | null
+  unseenWinsPattern: string | null
   primaryGoal: string | null
   canRegenerateInsights: boolean
 }
@@ -134,18 +135,22 @@ export default function WeeklyPage() {
   const [feedbackSent, setFeedbackSent] = useState(false)
   const [weeklyPromptOverride, setWeeklyPromptOverride] = useState<string | null>(null)
   const [generateError, setGenerateError] = useState<string | null>(null)
+  const [autoRepairFailed, setAutoRepairFailed] = useState(false)
+  const autoRepairAttemptedRef = useRef(false)
   const { markAsViewed } = useNewInsights()
+
+  const lastCompletedWeekStart = format(subWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), 1), 'yyyy-MM-dd')
 
   useEffect(() => {
     const checkAuth = async () => {
       const session = await getUserSession()
-      if (!session) router.push('/login')
+      if (!session) router.push('/auth/login')
     }
     checkAuth()
   }, [router])
 
   const weekStartParam = searchParams?.get('weekStart')
-  // When no weekStart in URL, redirect to most recent week WITH data
+  // When no weekStart in URL: fetch periods; if last completed week is missing, auto-generate it (root-cause repair), then redirect to latest
   useEffect(() => {
     if (weekStartParam || initialRedirectDone) return
     const redirectToLatest = async () => {
@@ -155,19 +160,38 @@ export default function WeeklyPage() {
         const { data: { session: supabaseSession } } = await supabase.auth.getSession()
         const headers: Record<string, string> = {}
         if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
-        const res = await fetch('/api/insights/periods?type=weekly', { headers })
-        const json = await res.json()
-        if (json.periods?.length > 0) {
-          router.replace(`/weekly?weekStart=${json.periods[0]}`)
+
+        let periodsList: string[] = []
+        let res = await fetch('/api/insights/periods?type=weekly', { headers })
+        let json = await res.json()
+        if (json.periods) periodsList = json.periods
+
+        const lastWeekMissing = periodsList.length === 0 || !periodsList.includes(lastCompletedWeekStart)
+        if (lastWeekMissing && !autoRepairAttemptedRef.current) {
+          autoRepairAttemptedRef.current = true
+          const genRes = await fetch('/api/weekly-insight/generate-last-week', { method: 'POST', headers })
+          const genJson = await genRes.json()
+          if (genRes.ok) {
+            res = await fetch('/api/insights/periods?type=weekly', { headers })
+            json = await res.json()
+            if (json.periods) periodsList = json.periods
+            setPeriods(periodsList)
+          } else {
+            setAutoRepairFailed(true)
+          }
+        }
+
+        if (periodsList.length > 0) {
+          router.replace(`/weekly?weekStart=${periodsList[0]}`)
         }
       } catch {
-        // ignore
+        setAutoRepairFailed(true)
       } finally {
         setInitialRedirectDone(true)
       }
     }
     redirectToLatest()
-  }, [weekStartParam, initialRedirectDone, router])
+  }, [weekStartParam, initialRedirectDone, router, lastCompletedWeekStart])
   const effectiveWeekStart = weekStartParam && /^\d{4}-\d{2}-\d{2}$/.test(weekStartParam)
     ? weekStartParam
     : format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
@@ -203,7 +227,7 @@ export default function WeeklyPage() {
         daysCompleted++
       }
 
-      const [tasksRes, emergenciesRes, reviewsRes, decisionsRes, promptsRes, profileRes] = await Promise.all([
+      const [tasksRes, emergenciesRes, reviewsRes, decisionsRes, promptsRes, weeklyInsightsRes, profileRes] = await Promise.all([
         supabase
           .from('morning_tasks')
           .select('plan_date, needle_mover, completed, is_proactive, action_plan')
@@ -239,6 +263,12 @@ export default function WeeklyPage() {
               .limit(1)
               .maybeSingle()
           : Promise.resolve({ data: null }),
+        supabase
+          .from('weekly_insights')
+          .select('unseen_wins_pattern')
+          .eq('user_id', session.user.id)
+          .eq('week_start', startStr)
+          .maybeSingle(),
         supabase.from('user_profiles').select('primary_goal_text, is_admin').eq('id', session.user.id).maybeSingle(),
       ])
 
@@ -359,6 +389,7 @@ export default function WeeklyPage() {
         dayData,
         eveningInsights,
         weeklyPrompt: (promptsRes.data as { prompt_text?: string } | null)?.prompt_text ?? null,
+        unseenWinsPattern: (weeklyInsightsRes.data as { unseen_wins_pattern?: string } | null)?.unseen_wins_pattern ?? null,
         primaryGoal,
         canRegenerateInsights: canRegenerate,
       })
@@ -525,6 +556,22 @@ export default function WeeklyPage() {
   }
 
   // No auto-generate: insights are pre-generated by cron. Users see pre-generated or placeholder.
+  // When last week is missing, auto-repair runs in redirectToLatest (no manual button).
+
+  const handleRetryGenerateLastWeek = async () => {
+    const { data: { session: supabaseSession } } = await supabase.auth.getSession()
+    const headers: Record<string, string> = {}
+    if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
+    const res = await fetch('/api/weekly-insight/generate-last-week', { method: 'POST', headers })
+    const json = await res.json()
+    if (res.ok && json.weekStart) {
+      setAutoRepairFailed(false)
+      const resPeriods = await fetch('/api/insights/periods?type=weekly', { headers })
+      const periodsJson = await resPeriods.json()
+      if (periodsJson.periods) setPeriods(periodsJson.periods)
+      router.push(`/weekly?weekStart=${json.weekStart}`)
+    }
+  }
 
   const handleInsightFeedback = async (type: 'helpful' | 'not_quite_right' | 'custom') => {
     if (!data || feedbackSent) return
@@ -673,6 +720,16 @@ export default function WeeklyPage() {
         />
       </div>
 
+      {/* Only show fallback if auto-repair already ran and failed (e.g. cron down + API error) */}
+      {autoRepairFailed && (
+        <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+          Last week&apos;s insight didn&apos;t generate automatically.{' '}
+          <button type="button" onClick={handleRetryGenerateLastWeek} className="text-[#ef725c] hover:underline font-medium">
+            Try again
+          </button>
+        </p>
+      )}
+
       {/* Before Sunday: Progress Snapshot - only when viewing current week with no insight yet */}
       {showWeekInProgress && (
         <Card highlighted className="mb-8" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
@@ -715,7 +772,7 @@ export default function WeeklyPage() {
 
           {/* 1. Mrs. Deer, your AI companion's insight FIRST (auto-generated or from cron) */}
           {(displayPrompt || (data.wins.length > 0 || data.lessons.length > 0)) && (
-            <Card highlighted className="mb-8 bg-amber-50 dark:bg-amber-900/30" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
+            <Card highlighted className="mb-8 bg-[#f8f4f0] dark:bg-amber-900/30" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4">
                   <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
@@ -842,6 +899,14 @@ export default function WeeklyPage() {
                         {data.canRegenerateInsights && ' Use the refresh button above to generate it now.'}
                       </p>
                     )}
+                  </div>
+                )}
+                {!isProduction && data.unseenWinsPattern && (
+                  <div className="mt-6 p-4 bg-white/60 dark:bg-gray-800/80 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-2">Unseen Wins Pattern</h3>
+                    <MarkdownText className="text-sm leading-relaxed text-gray-900 dark:text-white [&_strong]:font-semibold [&_em]:italic">
+                      {data.unseenWinsPattern}
+                    </MarkdownText>
                   </div>
                 )}
               </CardContent>

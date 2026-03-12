@@ -13,22 +13,24 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}))
-    const endpoint = (body.endpoint as string)?.trim()
+    const endpoint = typeof body?.endpoint === 'string' ? body.endpoint.trim() : ''
     if (!endpoint) {
       return NextResponse.json({ error: 'Missing endpoint' }, { status: 400 })
     }
 
     const db = getServerSupabase()
-    await (db.from('push_subscriptions') as any)
+    const { error } = await (db.from('push_subscriptions') as any)
       .delete()
       .eq('user_id', session.user.id)
       .eq('endpoint', endpoint)
+
+    if (error) throw error
 
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[push/unsubscribe] Error:', err)
     return NextResponse.json(
-      { error: 'Failed to remove subscription' },
+      { error: 'Failed to unsubscribe' },
       { status: 500 }
     )
   }

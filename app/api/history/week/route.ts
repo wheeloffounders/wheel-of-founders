@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
     const db = getServerSupabase()
 
-    const [tasksRes, decisionsRes, reviewsRes, promptsRes, emergenciesRes] = await Promise.all([
+    const [tasksRes, decisionsRes, reviewsRes, promptsRes, emergenciesRes, emergencyPromptsRes] = await Promise.all([
       db
         .from('morning_tasks')
         .select('id, plan_date, description, needle_mover, action_plan, completed, task_order')
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
         .from('personal_prompts')
         .select('prompt_date, prompt_type, prompt_text, generated_at')
         .eq('user_id', session.user.id)
-        .in('prompt_type', ['morning', 'post_morning', 'post_evening', 'emergency'])
+        .in('prompt_type', ['morning', 'post_morning', 'post_evening'])
         .gte('prompt_date', start)
         .lte('prompt_date', end)
         .order('generated_at', { ascending: false }),
@@ -60,6 +60,14 @@ export async function GET(request: NextRequest) {
         .lte('fire_date', end)
         .order('fire_date', { ascending: true })
         .order('created_at', { ascending: true }),
+      db
+        .from('personal_prompts')
+        .select('emergency_id, prompt_text')
+        .eq('user_id', session.user.id)
+        .eq('prompt_type', 'emergency')
+        .not('emergency_id', 'is', null)
+        .gte('prompt_date', start)
+        .lte('prompt_date', end),
     ])
 
     const tasks = (tasksRes.data ?? []) as Array<{
@@ -101,16 +109,20 @@ export async function GET(request: NextRequest) {
       created_at?: string
     }>
 
+    const emergencyPrompts = (emergencyPromptsRes.data ?? []) as Array<{ emergency_id: string; prompt_text: string }>
+    const emergencyIdToInsight: Record<string, string> = {}
+    emergencyPrompts.forEach((row) => {
+      if (row.emergency_id && row.prompt_text) emergencyIdToInsight[row.emergency_id] = row.prompt_text
+    })
+
     const morningByDate: Record<string, string> = {}
     const postMorningByDate: Record<string, string> = {}
     const postEveningByDate: Record<string, string> = {}
-    const emergencyByDate: Record<string, string> = {}
 
     prompts.forEach((p) => {
       if (p.prompt_type === 'morning' && !morningByDate[p.prompt_date]) morningByDate[p.prompt_date] = p.prompt_text
       if (p.prompt_type === 'post_morning' && !postMorningByDate[p.prompt_date]) postMorningByDate[p.prompt_date] = p.prompt_text
       if (p.prompt_type === 'post_evening' && !postEveningByDate[p.prompt_date]) postEveningByDate[p.prompt_date] = p.prompt_text
-      if (p.prompt_type === 'emergency' && !emergencyByDate[p.prompt_date]) emergencyByDate[p.prompt_date] = p.prompt_text
     })
 
     const days: Record<
@@ -152,14 +164,16 @@ export async function GET(request: NextRequest) {
       const dayTasks = tasks.filter((t) => t.plan_date === dateStr).sort((a, b) => (a.task_order ?? 0) - (b.task_order ?? 0))
       const dayDecision = decisions.find((d) => d.plan_date === dateStr) ?? null
       const dayReview = reviews.find((r) => r.review_date === dateStr) ?? null
-      const dayEmergencies = emergencies.filter((e) => e.fire_date === dateStr)
+      const dayEmergencies = emergencies
+        .filter((e) => e.fire_date === dateStr)
+        .map((e) => ({ ...e, insight: emergencyIdToInsight[e.id] ?? null }))
 
       days[dateStr] = {
         morningInsight: morningByDate[dateStr] ?? null,
         morningPlan: { tasks: dayTasks, decision: dayDecision },
         postMorningInsight: postMorningByDate[dateStr] ?? null,
         emergencies: dayEmergencies,
-        emergencyInsight: emergencyByDate[dateStr] ?? null,
+        emergencyInsight: dayEmergencies[0]?.insight ?? null,
         eveningReview: dayReview,
         eveningInsight: postEveningByDate[dateStr] ?? null,
         mood: dayReview?.mood ?? null,

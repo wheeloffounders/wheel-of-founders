@@ -57,6 +57,10 @@ export async function GET(request: NextRequest) {
   let failed = 0
   const errors: { userId: string; error: string }[] = []
 
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+
   for (const userId of userIds) {
     try {
       const result = await generateWeeklyInsightForUser(userId, weekStart, weekEnd)
@@ -69,6 +73,41 @@ export async function GET(request: NextRequest) {
           errors.push({ userId, error: result.error })
         }
       }
+
+      // Generate unseen wins pattern and upsert weekly_insights
+      let pattern: string | null = null
+      if (appUrl && cronSecret) {
+        try {
+          const patternRes = await fetch(`${appUrl}/api/patterns/generate`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${cronSecret}`,
+            },
+            body: JSON.stringify({ userId }),
+          })
+          if (patternRes.ok) {
+            const json = await patternRes.json()
+            pattern = json.pattern ?? null
+          }
+        } catch (patternErr) {
+          console.warn(`[cron/weekly-insights] Pattern for user ${userId}:`, patternErr)
+        }
+      }
+
+      const insightText = result.success ? result.insight ?? null : null
+      // Always upsert so the week appears in the list (even when no insight/pattern)
+      await (db.from('weekly_insights') as any).upsert(
+        {
+          user_id: userId,
+          week_start: weekStart,
+          week_end: weekEnd,
+          insight_text: insightText,
+          unseen_wins_pattern: pattern,
+          generated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,week_start' }
+      )
     } catch (err) {
       processed++
       failed++

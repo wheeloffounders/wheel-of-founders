@@ -82,6 +82,27 @@ export async function checkAndSendNotifications(): Promise<{
 
   if (usersWithPush.size === 0) return stats
 
+  // Users who have explicitly disabled each type (no row or null = enabled)
+  const { data: settingsRows } = await (db.from('user_notification_settings') as any)
+    .select('user_id, weekly_insights_enabled, monthly_insights_enabled, quarterly_insights_enabled, profile_reminders_enabled')
+  const disabledWeekly = new Set<string>()
+  const disabledMonthly = new Set<string>()
+  const disabledQuarterly = new Set<string>()
+  const disabledProfileReminder = new Set<string>()
+  for (const row of settingsRows || []) {
+    const r = row as {
+      user_id: string
+      weekly_insights_enabled?: boolean | null
+      monthly_insights_enabled?: boolean | null
+      quarterly_insights_enabled?: boolean | null
+      profile_reminders_enabled?: boolean | null
+    }
+    if (r.weekly_insights_enabled === false) disabledWeekly.add(r.user_id)
+    if (r.monthly_insights_enabled === false) disabledMonthly.add(r.user_id)
+    if (r.quarterly_insights_enabled === false) disabledQuarterly.add(r.user_id)
+    if (r.profile_reminders_enabled === false) disabledProfileReminder.add(r.user_id)
+  }
+
   // 1. Morning/evening reminders - fixed times: 9am UTC (morning), 6pm UTC (evening)
   const utcHour = now.getUTCHours()
   const todayStart = new Date(now)
@@ -140,6 +161,7 @@ export async function checkAndSendNotifications(): Promise<{
   for (const user of profileUsers || []) {
     const u = user as { id: string }
     if (!usersWithPush.has(u.id)) continue
+    if (disabledProfileReminder.has(u.id)) continue
 
     const ok = await sendPushForType(u.id, 'profile_reminder')
     if (ok) {
@@ -166,6 +188,7 @@ export async function checkAndSendNotifications(): Promise<{
     const uniqueWeekly = [...new Set((weeklyUsers || []).map((r: { user_id: string }) => r.user_id))]
     for (const userId of uniqueWeekly) {
       if (!usersWithPush.has(userId)) continue
+      if (disabledWeekly.has(userId)) continue
       const ok = await sendPushForType(userId, 'weekly_insight', { weekRange })
       if (ok) stats.weeklySent++
     }
@@ -186,6 +209,7 @@ export async function checkAndSendNotifications(): Promise<{
     const uniqueMonthly = [...new Set((monthlyUsers || []).map((r: { user_id: string }) => r.user_id))]
     for (const userId of uniqueMonthly) {
       if (!usersWithPush.has(userId)) continue
+      if (disabledMonthly.has(userId)) continue
       const ok = await sendPushForType(userId, 'monthly_insight', { month: monthName })
       if (ok) stats.monthlySent++
     }
@@ -208,6 +232,7 @@ export async function checkAndSendNotifications(): Promise<{
     const uniqueQuarterly = [...new Set((quarterlyUsers || []).map((r: { user_id: string }) => r.user_id))]
     for (const userId of uniqueQuarterly) {
       if (!usersWithPush.has(userId)) continue
+      if (disabledQuarterly.has(userId)) continue
       const ok = await sendPushForType(userId, 'quarterly_insight', { quarter })
       if (ok) stats.quarterlySent++
     }

@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useTutorial } from '@/lib/contexts/TutorialContext'
 import { Plus, Sun, Moon, BarChart2, User, Calendar, Settings, Home, MapPin, Bell, MessageSquare, LogOut, AlertCircle, Book } from 'lucide-react'
 import { useNewInsights } from '@/lib/hooks/useNewInsights'
+import { useHasSeenMorningTour } from '@/lib/hooks/useHasSeenMorningTour'
 import { supabase } from '@/lib/supabase'
 import { resetAnalytics } from '@/lib/analytics'
 import { colors } from '@/lib/design-tokens'
@@ -30,7 +32,7 @@ const profileItems = [
 
 const settingsItems = [
   { name: 'Help', href: '/help', icon: Book },
-  { name: 'Notifications', href: '/settings/notifications', icon: Bell },
+  // Push notifications: temporarily disabled in nav; manage via Settings page only.
   { name: 'Feedback', href: '/feedback', icon: MessageSquare },
   { name: 'Settings', href: '/settings', icon: Settings },
 ]
@@ -40,7 +42,9 @@ const navButtonClass = 'flex flex-col items-center gap-1 min-w-[56px] py-2 round
 
 export function BottomNav() {
   const pathname = usePathname()
+  const { isActive: isTutorialActive, step: tutorialStep, setStep: setTutorialStep } = useTutorial()
   const { monthly, quarterly } = useProgress()
+  const { hasSeenMorningTour } = useHasSeenMorningTour()
   const { totalNew: newInsightsCount } = useNewInsights()
   const [insightsOpen, setInsightsOpen] = useState(false)
   const [todayOpen, setTodayOpen] = useState(false)
@@ -65,16 +69,55 @@ export function BottomNav() {
   }, [])
 
   useEffect(() => {
+    const checkButton = () => {
+      const todayButton = document.querySelector('[data-tutorial="today-button"]')
+      const rect = todayButton?.getBoundingClientRect()
+
+      const logData = {
+        exists: todayButton !== null,
+        rect: rect
+          ? {
+              left: Math.round(rect.left),
+              top: Math.round(rect.top),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height),
+              bottom: Math.round(rect.bottom),
+              right: Math.round(rect.right),
+            }
+          : null,
+        pathname: typeof window !== 'undefined' ? window.location.pathname : pathname,
+        timestamp: Date.now(),
+      }
+      console.log('[BottomNav] Today button check:', JSON.stringify(logData, null, 2))
+    }
+
+    // Check immediately and at intervals
+    checkButton()
+    const timers = [1000, 2000, 3000, 5000].map((delay) => setTimeout(checkButton, delay))
+    return () => timers.forEach(clearTimeout)
+  }, [pathname])
+
+  useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node
       if (insightsRef.current && !insightsRef.current.contains(target)) setInsightsOpen(false)
-      if (todayRef.current && !todayRef.current.contains(target)) setTodayOpen(false)
+      if (todayRef.current && !todayRef.current.contains(target)) {
+        // Keep Today menu open during tutorial step 'menu' so user can click Morning
+        if (tutorialStep !== 'menu') setTodayOpen(false)
+      }
       if (profileRef.current && !profileRef.current.contains(target)) setProfileOpen(false)
       if (settingsRef.current && !settingsRef.current.contains(target)) setSettingsOpen(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [tutorialStep])
+
+  // Keep Today menu open when tutorial is on menu step
+  useEffect(() => {
+    if (tutorialStep === 'menu') {
+      setTodayOpen(true)
+    }
+  }, [tutorialStep])
 
   if (pathname === '/' || pathname === '/login' || pathname === '/countdown' || pathname?.startsWith('/auth')) {
     return null
@@ -91,7 +134,7 @@ export function BottomNav() {
   const handleSignOut = async () => {
     resetAnalytics()
     await supabase.auth.signOut()
-    window.location.href = '/login'
+    window.location.href = '/auth/login'
   }
 
   const closeAll = () => {
@@ -175,12 +218,30 @@ export function BottomNav() {
           <div ref={todayRef} className="relative flex justify-center">
             <button
               type="button"
-              onClick={() => { setTodayOpen(!todayOpen); if (!todayOpen) { setInsightsOpen(false); setProfileOpen(false); setSettingsOpen(false) } }}
-              className="flex flex-col items-center gap-1 min-w-[56px] -mt-6"
+              data-tutorial="today-button"
+              onClick={() => {
+                console.log('[BottomNav] 🔥 TODAY BUTTON CLICKED')
+                if (isTutorialActive && tutorialStep === 'dashboard') {
+                  setInsightsOpen(false)
+                  setProfileOpen(false)
+                  setSettingsOpen(false)
+                  setTodayOpen(true)
+                  console.log('[BottomNav] 🔥 FORCING STEP TO MENU')
+                  setTutorialStep('menu')
+                } else {
+                  setTodayOpen(!todayOpen)
+                  if (!todayOpen) {
+                    setInsightsOpen(false)
+                    setProfileOpen(false)
+                    setSettingsOpen(false)
+                  }
+                }
+              }}
+              className={`flex flex-col items-center gap-1 min-w-[56px] -mt-6 ${pathname === '/dashboard' && !hasSeenMorningTour ? 'animate-pulse' : ''}`}
               aria-label="Today"
             >
               <div
-                className="flex items-center justify-center w-14 h-14 rounded-full shadow-lg border-2 transition-transform hover:scale-105"
+                className={`flex items-center justify-center w-14 h-14 rounded-full shadow-lg border-2 transition-transform hover:scale-105 ${pathname === '/dashboard' && !hasSeenMorningTour ? 'ring-4 ring-[#ef725c]/40 ring-offset-2 dark:ring-offset-gray-800' : ''}`}
                 style={{
                   backgroundColor: colors.coral.DEFAULT,
                   color: '#FFFFFF',
@@ -198,11 +259,18 @@ export function BottomNav() {
               >
                 {todayItems.map((item) => {
                   const Icon = item.icon
+                  const isMorning = item.name === 'Morning'
                   return (
                     <Link
                       key={item.name}
-                      href={item.href}
-                      onClick={closeAll}
+                      href={isMorning && isTutorialActive ? '/morning?tutorial=true' : item.href}
+                      onClick={() => {
+                        if (isMorning && isTutorialActive) {
+                          console.log('[BottomNav] 🔥 MORNING LINK CLICKED')
+                        }
+                        closeAll()
+                      }}
+                      data-tutorial={isMorning ? 'morning-menu' : undefined}
                       className="flex items-center justify-center gap-3 w-full px-5 min-h-[56px] rounded-none text-base font-medium whitespace-nowrap transition-all border-2 border-gray-200 dark:border-gray-700"
                       style={{ backgroundColor: item.bg, color: item.color }}
                     >

@@ -89,7 +89,7 @@ export default function MonthlyInsightPage() {
     const checkAuth = async () => {
       const session = await getUserSession()
       if (!session) {
-        router.push('/login')
+        router.push('/auth/login')
         return
       }
     }
@@ -444,7 +444,7 @@ export default function MonthlyInsightPage() {
       if (!res.ok) {
         if (res.status === 401) {
           setGenerateError('Session expired. Please log in again.')
-          router.push('/login?returnTo=/monthly-insight')
+          router.push('/auth/login?returnTo=/monthly-insight')
           return
         }
         setGenerateError(data.error || 'Export failed')

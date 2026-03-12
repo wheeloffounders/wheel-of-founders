@@ -63,7 +63,7 @@ export function TrajectoryWisdom({ insight, quarterLabel, onRefresh, generating,
   }
 
   return (
-    <Card highlighted className="bg-amber-50 dark:bg-amber-900/30" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
+    <Card highlighted className="bg-[#f8f4f0] dark:bg-amber-900/30" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
       <CardHeader>
         <div className="flex items-center justify-between gap-4">
           <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">

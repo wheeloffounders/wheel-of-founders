@@ -6,6 +6,8 @@ import { addWatermark } from '@/lib/watermark'
 import { supabase } from '@/lib/supabase'
 import { generateEmergencyInsight } from '@/lib/personal-coaching'
 
+const toDateStr = (d: Date) => d.toISOString().split('T')[0]
+
 export async function POST(req: NextRequest) {
   try {
     return withRateLimit(req, 'emergency', async () => {
@@ -21,10 +23,12 @@ export async function POST(req: NextRequest) {
       }
 
       const db = getServerSupabase()
+      const today = toDateStr(new Date())
 
       const { data: emergency, error: insertError } = await (db.from('emergencies') as any)
         .insert({
           user_id: actualUserId,
+          fire_date: today,
           description,
           severity: severity || 'contained',
           resolved: false,
@@ -42,13 +46,21 @@ export async function POST(req: NextRequest) {
           actualUserId,
           description,
           severity || 'contained',
-          new Date().toISOString().split('T')[0]
+          today
         )
 
         if (insight && emergency?.id) {
           const watermarked = addWatermark(insight, actualUserId)
           await (db.from('emergencies') as any).update({ insight: watermarked }).eq('id', emergency.id)
           insight = watermarked
+          await (db.from('personal_prompts') as any).insert({
+            user_id: actualUserId,
+            prompt_type: 'emergency',
+            prompt_text: watermarked,
+            prompt_date: today,
+            emergency_id: emergency.id,
+            generated_at: new Date().toISOString()
+          })
         }
       } catch (insightError) {
         console.error('Failed to generate emergency insight:', insightError)

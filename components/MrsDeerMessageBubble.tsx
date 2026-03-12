@@ -26,14 +26,18 @@ export function MrsDeerMessageBubble({
 
   return (
     <div
-      className={`w-full overflow-hidden border-2 border-[#152B50] dark:border-gray-600 ${className}`}
+      className={`w-full overflow-visible border-2 border-[#152B50] dark:border-gray-600 ${className}`}
       style={{
         borderLeft: '4px solid ' + accentColor,
       }}
     >
       {/* Avatar INSIDE card at top left */}
       <div
-        className={`flex justify-start p-4 pb-0 ${variant === 'emergency' ? 'bg-[#FEF9C3] dark:bg-amber-900/40' : 'bg-[#FEF3C7] dark:bg-amber-900/40'}`}
+        className={`flex justify-start p-4 pb-0 ${
+          variant === 'emergency'
+            ? 'bg-[#f8f4f0] dark:bg-amber-900/40'
+            : 'bg-[#f8f4f0] dark:bg-amber-900/40'
+        }`}
       >
         <MrsDeerAvatar
           expression={expression}
@@ -49,7 +53,11 @@ export function MrsDeerMessageBubble({
 
       {/* Bubble - full width, yellow/beige, continues from avatar */}
       <div
-        className={`relative w-full rounded-none p-5 pt-4 dark:border-t dark:border-gray-600 ${variant === 'emergency' ? 'bg-[#FEF9C3] dark:bg-amber-900/40' : 'bg-[#FEF3C7] dark:bg-amber-900/40'}`}
+        className={`relative w-full rounded-none p-5 pt-4 dark:border-t dark:border-gray-600 ${
+          variant === 'emergency'
+            ? 'bg-[#f8f4f0] dark:bg-amber-900/40'
+            : 'bg-[#f8f4f0] dark:bg-amber-900/40'
+        }`}
       >
         {children}
       </div>

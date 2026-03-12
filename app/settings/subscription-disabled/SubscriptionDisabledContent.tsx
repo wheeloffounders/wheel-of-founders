@@ -30,7 +30,7 @@ export default function SubscriptionDisabledContent() {
     const checkAuth = async () => {
       const session = await getUserSession()
       if (!session) {
-        router.push('/login')
+        router.push('/auth/login')
         return
       }
 

@@ -110,8 +110,15 @@ export function MrsDeerInsight() {
           </Link>
         </div>
       ) : (
-        <div className="p-4 text-gray-600 dark:text-gray-300 text-sm">
-          {preview}
+        <div className="p-4 text-gray-600 dark:text-gray-300 text-sm flex items-center justify-between gap-3">
+          <p className="flex-1">{preview}</p>
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="text-sm font-medium text-[#ef725c] hover:text-[#f28771] whitespace-nowrap"
+          >
+            Read more →
+          </button>
         </div>
       )}
     </div>

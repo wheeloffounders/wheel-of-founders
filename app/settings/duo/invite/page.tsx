@@ -20,7 +20,7 @@ export default function DuoInvitePage() {
     const checkAccess = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
-        router.push('/login?returnTo=/settings/duo/invite')
+        router.push('/auth/login?returnTo=/settings/duo/invite')
         setCheckingAccess(false)
         return
       }

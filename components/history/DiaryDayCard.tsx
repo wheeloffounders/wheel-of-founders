@@ -62,6 +62,7 @@ interface Emergency {
   notes?: string
   resolved?: boolean
   created_at?: string
+  insight?: string | null
 }
 
 interface DiaryDayCardProps {
@@ -73,7 +74,6 @@ interface DiaryDayCardProps {
   morningDecisions: MorningDecision[]
   postMorningInsight: string | null
   emergencies: Emergency[]
-  emergencyInsightByDate: Record<string, string>
   eveningReview: EveningReview | null
   eveningInsight: string | null
 }
@@ -87,7 +87,6 @@ export function DiaryDayCard({
   morningDecisions,
   postMorningInsight,
   emergencies,
-  emergencyInsightByDate,
   eveningReview,
   eveningInsight,
 }: DiaryDayCardProps) {
@@ -145,7 +144,7 @@ export function DiaryDayCard({
               <span className="text-base">🦌</span>
               Morning Insight
             </h3>
-            <div className="rounded-lg p-4 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/50">
+            <div className="rounded-lg p-4 bg-[#f8f4f0] dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/50">
               <MarkdownText className="text-sm text-gray-800 dark:text-gray-200 italic">
                 {morningInsight}
               </MarkdownText>
@@ -207,7 +206,7 @@ export function DiaryDayCard({
               <span className="text-base">📝</span>
               Post-Morning Insight
             </h3>
-            <div className="rounded-lg p-4 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/50">
+            <div className="rounded-lg p-4 bg-[#f8f4f0] dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/50">
               <MarkdownText className="text-sm text-gray-800 dark:text-gray-200 italic">
                 {postMorningInsight}
               </MarkdownText>
@@ -249,11 +248,11 @@ export function DiaryDayCard({
                       <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2">✓ Resolved</p>
                     )}
                   </div>
-                  {emergencyInsightByDate[dateStr] && (
-                    <div className="rounded-lg p-4 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/50 ml-4 border-l-2 border-l-amber-500">
+                  {e.insight && (
+                    <div className="rounded-lg p-4 bg-[#f8f4f0] dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/50 ml-4 border-l-2 border-l-amber-500">
                       <h4 className="text-xs font-medium text-amber-800 dark:text-amber-200 mb-1">🦌 Emergency Insight</h4>
                       <MarkdownText className="text-sm text-gray-800 dark:text-gray-200 italic">
-                        {emergencyInsightByDate[dateStr]}
+                        {e.insight}
                       </MarkdownText>
                     </div>
                   )}
@@ -317,7 +316,7 @@ export function DiaryDayCard({
               <span className="text-base">🦌</span>
               Evening Insight
             </h3>
-            <div className="rounded-lg p-4 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/50">
+            <div className="rounded-lg p-4 bg-[#f8f4f0] dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/50">
               <MarkdownText className="text-sm text-gray-800 dark:text-gray-200 italic">
                 {eveningInsight}
               </MarkdownText>

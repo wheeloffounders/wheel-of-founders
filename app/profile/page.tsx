@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { FileText, Sparkles, Check, Edit2, Settings, Clock, MessageSquare } from 'lucide-react'
+import { founderStruggles } from '@/lib/founder-struggles'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
 import { getUserGoal, getUserLanguage, UserGoal } from '@/lib/user-language'
@@ -54,16 +55,6 @@ const HOURS_OPTIONS = [
   { value: '60+', label: '60+ hours', emoji: '💥' },
 ]
 
-const STRUGGLE_OPTIONS = [
-  { value: 'prioritization', label: 'Prioritization', emoji: '🎯' },
-  { value: 'decision_fatigue', label: 'Decision fatigue', emoji: '🧠' },
-  { value: 'momentum', label: 'Momentum', emoji: '⚡' },
-  { value: 'burnout', label: 'Burnout', emoji: '🔥' },
-  { value: 'visibility', label: 'Visibility', emoji: '📣' },
-  { value: 'revenue', label: 'Revenue', emoji: '💰' },
-  { value: 'team', label: 'Team', emoji: '👥' },
-  { value: 'balance', label: 'Balance', emoji: '🧘' },
-]
 
 const YEARS_OPTIONS = [
   { value: '<1', label: '<1 year', emoji: '🌱' },
@@ -118,7 +109,7 @@ export default function ProfilePage() {
       setLoading(true)
       const sess = await getUserSession()
       if (!sess?.user?.id) {
-        router.push('/login')
+        router.push('/auth/login')
         setLoading(false)
         return
       }
@@ -347,13 +338,9 @@ export default function ProfilePage() {
     )
   }
 
-  const toggleStruggle = (value: string) => {
-    if (struggles.length >= 3 && !struggles.includes(value)) {
-      setMessage({ type: 'error', text: 'Please select up to 3 struggles' })
-      return
-    }
+  const toggleStruggle = (id: string) => {
     setStruggles((prev) =>
-      prev.includes(value) ? prev.filter((s) => s !== value) : [...prev, value]
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
     )
   }
 
@@ -754,32 +741,35 @@ export default function ProfilePage() {
           {/* Biggest Struggles */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              Biggest Struggles (select up to 3)
+              Biggest Struggles (select all that apply)
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-              {STRUGGLE_OPTIONS.map((struggle) => (
-                <button
-                  key={struggle.value}
-                  type="button"
-                  onClick={() => toggleStruggle(struggle.value)}
-                  disabled={!struggles.includes(struggle.value) && struggles.length >= 3}
-                  className={`p-3 rounded-lg border-2 transition-all text-left ${
-                    struggles.includes(struggle.value)
-                      ? 'border-[#ef725c] bg-amber-50 dark:bg-amber-900/20'
-                      : 'border-gray-200 dark:border-gray-700 dark:border-gray-700 hover:border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">{struggle.emoji}</span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100 dark:text-white">
-                      {struggle.label}
-                    </span>
-                    {struggles.includes(struggle.value) && (
-                      <Check className="w-4 h-4 text-[#ef725c] ml-auto" />
-                    )}
-                  </div>
-                </button>
-              ))}
+              {founderStruggles.map((struggle) => {
+                const Icon = struggle.icon
+                const isSelected = struggles.includes(struggle.id)
+                return (
+                  <button
+                    key={struggle.id}
+                    type="button"
+                    onClick={() => toggleStruggle(struggle.id)}
+                    className={`p-3 rounded-lg border-2 transition-all text-left ${
+                      isSelected
+                        ? 'border-[#ef725c] bg-amber-50 dark:bg-amber-900/20'
+                        : 'border-gray-200 dark:border-gray-700 dark:border-gray-700 hover:border-gray-300 dark:border-gray-600'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Icon className={`w-5 h-5 flex-shrink-0 ${isSelected ? 'text-[#ef725c]' : 'text-gray-400'}`} />
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 dark:text-white">
+                        {struggle.label}
+                      </span>
+                      {isSelected && (
+                        <Check className="w-4 h-4 text-[#ef725c] ml-auto" />
+                      )}
+                    </div>
+                  </button>
+                )
+              })}
             </div>
             <div className="mt-4">
               <label htmlFor="struggles-other" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">

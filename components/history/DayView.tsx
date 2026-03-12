@@ -7,7 +7,7 @@ export interface DayData {
   morningInsight: string | null
   morningPlan: { tasks: Array<{ id: string; plan_date: string; description: string; needle_mover?: boolean; completed?: boolean; task_order?: number }>; decision: { id: string; decision: string; decision_type: string; why_this_decision?: string } | null }
   postMorningInsight: string | null
-  emergencies: Array<{ id: string; fire_date: string; description: string; severity?: string; notes?: string; resolved?: boolean; created_at?: string }>
+  emergencies: Array<{ id: string; fire_date: string; description: string; severity?: string; notes?: string; resolved?: boolean; created_at?: string; insight?: string | null }>
   emergencyInsight: string | null
   eveningReview: { review_date: string; journal?: string; mood?: number; energy?: number; wins?: string; lessons?: string } | null
   eveningInsight: string | null
@@ -43,11 +43,6 @@ export function DayView({ dateStr, dateLabel, isToday, dayData, loading }: DayVi
     )
   }
 
-  const emergencyInsightByDate: Record<string, string> = {}
-  if (dayData.emergencyInsight) {
-    emergencyInsightByDate[dateStr] = dayData.emergencyInsight
-  }
-
   return (
     <DiaryDayCard
       dateStr={dateStr}
@@ -63,7 +58,6 @@ export function DayView({ dateStr, dateLabel, isToday, dayData, loading }: DayVi
       morningDecisions={dayData.morningPlan.decision ? [dayData.morningPlan.decision] : []}
       postMorningInsight={dayData.postMorningInsight}
       emergencies={dayData.emergencies}
-      emergencyInsightByDate={emergencyInsightByDate}
       eveningReview={dayData.eveningReview}
       eveningInsight={dayData.eveningInsight}
     />

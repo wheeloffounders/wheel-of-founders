@@ -56,7 +56,7 @@ export function LockedFeature({ type, progress }: LockedFeatureProps) {
       )}
 
       <div className="flex flex-col items-center gap-4 mb-8">
-        <div className="flex items-start gap-3 max-w-sm text-left bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+        <div className="flex items-start gap-3 max-w-sm text-left bg-[#f8f4f0] dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
           <MrsDeerAvatar expression="encouraging" size="medium" className="flex-shrink-0" />
           <p className="text-sm text-gray-700 dark:text-gray-300">
             &quot;Consistency beats intensity. A few minutes each morning and evening add up—you&apos;re building something real.&quot;

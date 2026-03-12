@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { trackJourneyStep } from '@/lib/analytics/journey-tracking'
 import { supabase } from '@/lib/supabase'
-import { getUserSession } from '@/lib/auth'
 import { TutorialProgress } from '@/components/TutorialProgress'
 import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
 import { colors } from '@/lib/design-tokens'
@@ -14,28 +14,81 @@ export default function GoalPage() {
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
+  useEffect(() => {
+    trackJourneyStep('viewed_goal')
+  }, [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
     setError(null)
 
     try {
-      const session = await getUserSession()
-      if (!session?.user?.id) {
-        router.push('/login')
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        router.push('/auth/login')
         return
       }
 
-      await (supabase.from('user_profiles') as any)
-        .update({
-          primary_goal_text: goal.trim(),
-          onboarding_step: 1,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', session.user.id)
+      console.log('[Goal] User:', user.id)
+      console.log('[Goal] Goal text:', goal.trim().slice(0, 50) + (goal.length > 50 ? '...' : ''))
 
-      router.push('/morning?tutorial=true')
+      // Check if profile exists
+      const { data: existingProfile, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('id, primary_goal_text, onboarding_step')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      if (profileError) {
+        console.error('[Goal] Profile fetch error:', profileError)
+        throw new Error(profileError.message)
+      }
+      console.log('[Goal] Existing profile:', existingProfile ? 'exists' : 'null')
+
+      const payload = {
+        primary_goal_text: goal.trim(),
+        onboarding_step: 1,
+        updated_at: new Date().toISOString(),
+      }
+
+      if (!existingProfile) {
+        // Profile doesn't exist - upsert to create (auth callback may not have run)
+        console.log('[Goal] Upserting new profile')
+        const { error: upsertError } = await supabase
+          .from('user_profiles')
+          .upsert(
+            { id: user.id, email_address: user.email ?? undefined, ...payload },
+            { onConflict: 'id' }
+          )
+
+        if (upsertError) {
+          console.error('[Goal] Upsert error:', upsertError)
+          throw new Error(upsertError.message)
+        }
+        console.log('[Goal] Upsert successful')
+      } else {
+        // Update existing profile
+        console.log('[Goal] Updating existing profile')
+        const { error: updateError } = await supabase
+          .from('user_profiles')
+          .update(payload)
+          .eq('id', user.id)
+
+        if (updateError) {
+          console.error('[Goal] Update error:', updateError)
+          throw new Error(updateError.message)
+        }
+        console.log('[Goal] Update successful')
+      }
+
+      trackJourneyStep('completed_goal', { goal_length: goal.trim().length })
+      // Brief pause so user sees goal was saved before redirecting
+      setTimeout(() => {
+        router.replace('/onboarding/personalization')
+      }, 500)
     } catch (err) {
+      console.error('[Goal] Caught error:', err)
       setError(err instanceof Error ? err.message : 'Failed to save goal')
     } finally {
       setSaving(false)
@@ -80,7 +133,7 @@ export default function GoalPage() {
           disabled={saving || !goal.trim()}
           className="w-full py-3 bg-[#ef725c] text-white rounded-lg disabled:opacity-50 font-medium"
         >
-          {saving ? 'Saving...' : 'Continue to Morning Plan →'}
+          {saving ? 'Saving...' : 'Continue →'}
         </button>
       </form>
     </div>

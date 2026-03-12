@@ -50,7 +50,7 @@ export function ProfileReminderBanner() {
   if (loading || !show) return null
 
   return (
-    <div className="mb-4 p-4 rounded-lg border-l-4 relative bg-amber-50 dark:bg-amber-900/20" style={{ borderColor: colors.coral.DEFAULT }}>
+    <div className="mb-4 p-4 rounded-lg border-l-4 relative bg-[#f8f4f0] dark:bg-amber-900/20" style={{ borderColor: colors.coral.DEFAULT }}>
       <button
         type="button"
         onClick={handleDismiss}

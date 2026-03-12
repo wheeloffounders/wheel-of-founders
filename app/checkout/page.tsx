@@ -64,7 +64,7 @@ export default function CheckoutPage() {
     const checkAuth = async () => {
       const session = await getUserSession()
       if (!session) {
-        router.push('/login?returnTo=/checkout')
+        router.push('/auth/login?returnTo=/checkout')
         return
       }
       setLoading(false)

@@ -1,29 +1,17 @@
-import { Suspense } from 'react'
-import LoginContent from './LoginContent'
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
+import { redirect } from 'next/navigation'
 
-function LoginFallback() {
-  return (
-    <div className="min-h-screen bg-white dark:bg-gray-800 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 w-full max-w-md border-l-4 border-[#152b50] animate-pulse">
-        <div className="h-9 bg-gray-50 dark:bg-gray-900 rounded w-3/4 mx-auto mb-6" />
-        <div className="h-5 bg-gray-50 dark:bg-gray-900 rounded w-full mb-8" />
-        <div className="space-y-4">
-          <div className="h-12 bg-gray-50 dark:bg-gray-900 rounded" />
-          <div className="h-12 bg-gray-50 dark:bg-gray-900 rounded" />
-          <div className="h-12 bg-gray-50 dark:bg-gray-900 rounded" />
-          <div className="h-12 bg-gray-50 dark:bg-gray-900 rounded" />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-export default function LoginPage() {
-  return (
-    <Suspense fallback={<LoginFallback />}>
-      <LoginContent />
-    </Suspense>
-  )
+/**
+ * Legacy /login route - redirect to new auth flow.
+ * Preserves returnTo and error for backward compatibility.
+ */
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string; error?: string }>
+}) {
+  const params = await searchParams
+  const url = new URL('/auth/login', 'http://dummy')
+  if (params.returnTo) url.searchParams.set('returnTo', params.returnTo)
+  if (params.error) url.searchParams.set('error', params.error)
+  redirect(url.pathname + url.search)
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { Sparkles } from 'lucide-react'
+import { InfoTooltip } from '@/components/InfoTooltip'
 import Link from 'next/link'
 import { ProgressCircle } from './ProgressCircle'
 import { MrsDeerAvatar } from './MrsDeerAvatar'
@@ -17,15 +18,13 @@ export function DashboardProgress() {
   const quarterlyUnlocked = quarterly?.isUnlocked ?? false
 
   return (
-    <div
-      className="rounded-lg border-2 p-6 mb-8"
-      style={{ borderColor: colors.navy.DEFAULT, backgroundColor: 'rgba(21, 43, 80, 0.04)' }}
-    >
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
       <div className="flex items-center gap-2 mb-4">
         <Sparkles className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
           Your Progress
         </h2>
+        <InfoTooltip text="Complete morning plans and evening reviews to unlock Monthly Insight and Quarterly Trajectory. Deeper insights unlock as you build consistency." />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
@@ -91,7 +90,7 @@ export function DashboardProgress() {
       </div>
 
       {nextUnlock && nextUnlock.daysRemaining > 0 && (
-        <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+        <div className="flex items-start gap-3 p-3 rounded-lg bg-[#f8f4f0] dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
           <MrsDeerAvatar expression="encouraging" size="medium" className="flex-shrink-0" />
           <div>
             <p className="text-sm font-medium text-gray-900 dark:text-gray-100">

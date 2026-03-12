@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { format, isToday } from 'date-fns'
+import { format, isToday, subDays, startOfMonth } from 'date-fns'
 import { Moon, Heart, Award, Lightbulb, AlertCircle, Check, Mountain, Plus, X, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth' // Add getUserSession
@@ -14,10 +14,13 @@ import { AICoachPrompt } from '@/components/AICoachPrompt'
 import SpeechToTextInput from '@/components/SpeechToTextInput'
 import { MrsDeerAdaptivePrompt } from '@/components/MrsDeerAdaptivePrompt'
 import { getFeatureAccess } from '@/lib/features'
-import { DateSelector } from '@/components/DateSelector'
+import { DateNavigator } from '@/components/DateNavigator'
+import { CalendarModal } from '@/components/CalendarModal'
+import type { DayStatus } from '@/lib/date-utils'
 import { useUserLanguage } from '@/lib/use-user-language'
 import { trackEvent } from '@/lib/analytics'
 import { trackFunnelStep } from '@/lib/analytics/track-funnel'
+import { trackJourneyStep } from '@/lib/analytics/journey-tracking'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
@@ -27,6 +30,11 @@ import { ConfirmModal } from '@/components/ConfirmModal'
 import { useStreamingInsight } from '@/lib/hooks/useStreamingInsight'
 import { StreamingIndicator } from '@/components/StreamingIndicator'
 import { TutorialProgress } from '@/components/TutorialProgress'
+import { MicroLesson } from '@/components/MicroLesson'
+import { EveningFirstTimeCTA } from '@/components/EveningFirstTimeCTA'
+import { InfoTooltip } from '@/components/InfoTooltip'
+import { ReflectionPopup } from '@/components/ReflectionPopup'
+import { getTimeAwareness } from '@/lib/time-utils'
 
 const MOOD_OPTIONS = [
   { value: 5, label: 'Great', emoji: '😊' },
@@ -49,6 +57,7 @@ interface Task {
   description: string
   completed: boolean
   needle_mover?: boolean
+  movedToTomorrow?: boolean
 }
 
 export default function EveningPage() {
@@ -91,6 +100,13 @@ export default function EveningPage() {
   } | null>(null)
   const [confirmDeleteWin, setConfirmDeleteWin] = useState<number | null>(null)
   const [confirmDeleteLesson, setConfirmDeleteLesson] = useState<number | null>(null)
+  const [showReflectionPopup, setShowReflectionPopup] = useState(false)
+  const [reflectionPopupVariant, setReflectionPopupVariant] =
+    useState<Parameters<typeof ReflectionPopup>[0]['variant'] | null>(null)
+  const [currentReviewId, setCurrentReviewId] = useState<string | null>(null)
+  const [calendarOpen, setCalendarOpen] = useState(false)
+  const [displayedMonth, setDisplayedMonth] = useState<Date>(() => startOfMonth(new Date()))
+  const [monthStatus, setMonthStatus] = useState<Record<string, DayStatus>>({})
 
   const { insight: streamingInsight, isStreaming, error: streamingError, startStream } = useStreamingInsight()
 
@@ -119,19 +135,24 @@ export default function EveningPage() {
     }
   }, [streamingError, aiCoachTrigger])
 
-  // Initialize reviewDate on client side to avoid hydration mismatch
+  // Initialize reviewDate from URL or today
   useEffect(() => {
     if (reviewDate === '') {
-      setReviewDate(format(new Date(), 'yyyy-MM-dd'))
+      const dateParam = searchParams?.get('date')
+      const initial =
+        dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
+          ? dateParam
+          : format(new Date(), 'yyyy-MM-dd')
+      setReviewDate(initial)
     }
-  }, [])
+  }, [searchParams])
 
   // Auth check useEffect
   useEffect(() => {
     const checkAuth = async () => {
       const session = await getUserSession()
       if (!session) {
-        router.push('/login')
+        router.push('/auth/login')
         return
       }
       setUserTier(session.user.tier || 'beta')
@@ -164,7 +185,7 @@ export default function EveningPage() {
       // Fetch Evening Review
       const { data: reviewData, error: reviewError } = await supabase
         .from('evening_reviews')
-        .select('journal, mood, energy, wins, lessons')
+        .select('id, journal, mood, energy, wins, lessons')
         .eq('review_date', reviewDate)
         .eq('user_id', session.user.id) // Filter by user_id
         .maybeSingle()
@@ -242,11 +263,13 @@ export default function EveningPage() {
       checkPatternDetection()
 
       trackEvent('evening_page_view', { has_existing_review: !!reviewData, review_date: reviewDate })
+      trackJourneyStep('viewed_evening', { has_existing_review: !!reviewData })
       fireFunnelStep(1, 'evening_page_view')
 
       if (reviewError) {
         setError(reviewError.message) // Display error
       } else if (reviewData) {
+        setCurrentReviewId((reviewData as { id?: string }).id ?? null)
         setJournal(reviewData.journal ?? '')
         setMood(reviewData.mood ?? null)
         setEnergy(reviewData.energy ?? null)
@@ -314,6 +337,23 @@ export default function EveningPage() {
     fetchTodayReviewAndTasks()
   }, [reviewDate, checkPatternDetection, fireFunnelStep, retryTrigger])
 
+  const fetchMonthStatus = useCallback(async (month: Date) => {
+    const session = await getUserSession()
+    if (!session) return
+    const monthStr = format(month, 'yyyy-MM')
+    const res = await fetch(`/api/user/month-status?month=${monthStr}`, { credentials: 'include' })
+    if (res.ok) {
+      const data = (await res.json()) as Record<string, DayStatus>
+      setMonthStatus(data)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!reviewDate) return
+    const month = startOfMonth(new Date(reviewDate + 'T12:00:00'))
+    fetchMonthStatus(month)
+  }, [reviewDate, fetchMonthStatus])
+
   const toggleTaskCompleted = async (taskId: string, currentCompleted: boolean) => {
     const session = await getUserSession()
     if (!session) {
@@ -355,6 +395,74 @@ export default function EveningPage() {
           metadata: task ? { is_needle_mover: !!(task as { needle_mover?: boolean }).needle_mover } : undefined,
         }),
       }).catch(() => {})
+    }
+  }
+
+  const handleMoveTaskToTomorrow = async (task: Task) => {
+    const originalTasks = morningTasks
+    const updated = morningTasks.map((t) =>
+      t.id === task.id ? { ...t, movedToTomorrow: true } : t
+    )
+    setMorningTasks(updated)
+
+    try {
+      const res = await fetch('/api/tasks/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ taskId: task.id, targetDate: 'tomorrow' }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || 'Failed to move task')
+      }
+    } catch (err) {
+      console.error('[Evening] move-to-tomorrow error', err)
+      setMorningTasks(originalTasks)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('toast', {
+            detail: {
+              message: 'Could not move task. Please try again.',
+              type: 'error',
+            },
+          })
+        )
+      }
+    }
+  }
+
+  const handleUndoMoveTask = async (task: Task) => {
+    const originalTasks = morningTasks
+    const restored = morningTasks.map((t) =>
+      t.id === task.id ? { ...t, movedToTomorrow: false } : t
+    )
+    setMorningTasks(restored)
+
+    try {
+      const res = await fetch('/api/tasks/undo-move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ taskId: task.id }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || 'Failed to undo move')
+      }
+    } catch (err) {
+      console.error('[Evening] undo-move error', err)
+      setMorningTasks(originalTasks)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('toast', {
+            detail: {
+              message: 'Could not undo move. Please try again.',
+              type: 'error',
+            },
+          })
+        )
+      }
     }
   }
 
@@ -422,11 +530,38 @@ export default function EveningPage() {
     if (!session) {
       setError('User not authenticated. Please log in.')
       setSaving(false)
-      router.push('/login') // Redirect if session is lost during save
+      router.push('/auth/login') // Redirect if session is lost during save
       return
     }
 
     try {
+      const awareness = getTimeAwareness()
+      const now = new Date()
+      const todayStr = format(now, 'yyyy-MM-dd')
+      const yesterdayStr = format(new Date(now.getTime() - 24 * 60 * 60 * 1000), 'yyyy-MM-dd')
+
+      // Late night or morning catchup: offer day choice when reviewDate is "today"
+      if (
+        reviewDate === todayStr &&
+        (awareness.phase === 'late_night' || awareness.phase === 'morning_catchup')
+      ) {
+        let variantType: 'late_night_choice' | 'late_night_yesterday_exists' | 'morning_catchup' =
+          awareness.phase === 'late_night' ? 'late_night_choice' : 'morning_catchup'
+        if (awareness.phase === 'late_night') {
+          const { data: yesterdayReview } = await supabase
+            .from('evening_reviews')
+            .select('id')
+            .eq('user_id', session.user.id)
+            .eq('review_date', yesterdayStr)
+            .maybeSingle()
+          if (yesterdayReview) variantType = 'late_night_yesterday_exists'
+        }
+        setReflectionPopupVariant({ context: 'evening', type: variantType })
+        setShowReflectionPopup(true)
+        setSaving(false)
+        return
+      }
+
       const { error: deleteError } = await supabase
         .from('evening_reviews')
         .delete()
@@ -455,21 +590,13 @@ export default function EveningPage() {
 
       if (insertError) throw insertError
 
-      // Tutorial mode: complete onboarding and redirect to dashboard
-      if (isTutorial) {
-        await (supabase.from('user_profiles') as any)
-          .update({
-            onboarding_step: 3,
-            onboarding_completed_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', session.user.id)
-        router.push('/dashboard?welcome=true')
-        setSaving(false)
-        return
-      }
-
       fireFunnelStep(3, 'review_complete')
+      if (typeof window !== 'undefined') {
+        const recorder = (window as unknown as { __microLessonRecordCompletedEvening?: () => void }).__microLessonRecordCompletedEvening
+        if (typeof recorder === 'function') {
+          recorder()
+        }
+      }
 
       trackEvent('evening_review_saved', {
         review_date: reviewDate,
@@ -503,6 +630,7 @@ export default function EveningPage() {
           metadata: { mood: mood ?? undefined, energy: energy ?? undefined },
         }),
       }).catch(() => {})
+      trackJourneyStep('saved_evening', { mood: mood ?? undefined, energy: energy ?? undefined })
 
       // Trigger post-evening reflection insight AND next day's morning prompt (Pro only)
       const features = getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
@@ -565,8 +693,21 @@ export default function EveningPage() {
                 .select()
 
               if (upsertErr) {
-                console.error('❌ CRITICAL - Post-evening insight save failed:', upsertErr)
-                window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to save evening insight. Please try again.', type: 'error' } }))
+                // Log only meaningful errors to avoid noisy empty objects in console
+                const hasMessage =
+                  typeof (upsertErr as { message?: string }).message === 'string' &&
+                  !!(upsertErr as { message?: string }).message
+                if (hasMessage) {
+                  console.error('❌ Post-evening insight save failed:', upsertErr)
+                }
+                window.dispatchEvent(
+                  new CustomEvent('toast', {
+                    detail: {
+                      message: 'Failed to save evening insight. Please try again.',
+                      type: 'error',
+                    },
+                  })
+                )
               } else {
                 const savedId = (saved as { id?: string }[])?.[0]?.id
                 if (savedId) setEveningInsightId(savedId)
@@ -640,8 +781,20 @@ export default function EveningPage() {
               .select()
 
             if (morningUpsertErr) {
-              console.error('❌ CRITICAL - Morning insight save failed:', morningUpsertErr)
-              window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to save morning insight. Please try again.', type: 'error' } }))
+              const hasMessage =
+                typeof (morningUpsertErr as { message?: string }).message === 'string' &&
+                !!(morningUpsertErr as { message?: string }).message
+              if (hasMessage) {
+                console.error('❌ CRITICAL - Morning insight save failed:', morningUpsertErr)
+              }
+              window.dispatchEvent(
+                new CustomEvent('toast', {
+                  detail: {
+                    message: 'Failed to save morning insight. Please try again.',
+                    type: 'error',
+                  },
+                })
+              )
             } else {
               console.log('✅ Morning insight SAVED for', nextDay, 'id:', (morningSaved as { id?: string }[])?.[0]?.id)
               window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Morning insight saved for tomorrow', type: 'success' } }))
@@ -657,6 +810,13 @@ export default function EveningPage() {
       } else {
         console.log('🔵 SKIP: dailyPostEveningPrompt not enabled for user tier:', session.user.tier)
       }
+
+      // Fire-and-forget: generate tomorrow's decision suggestions from patterns + profile
+      fetch('/api/suggestions/generate-for-tomorrow', {
+        method: 'POST',
+        credentials: 'include',
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      }).catch(() => {})
 
       // Check for Mrs. Deer pattern feedback after saving (new reflection may trigger pattern)
       checkPatternDetection()
@@ -730,6 +890,13 @@ export default function EveningPage() {
     >
       {isTutorial && <TutorialProgress currentStep={3} />}
 
+      <MicroLesson page="evening" onRecordCompletedEvening={() => {}} />
+
+      {/* Benefit-driven CTA when user hasn't reflected today */}
+      {!currentReviewId && reviewDate === format(new Date(), 'yyyy-MM-dd') && (
+        <EveningFirstTimeCTA />
+      )}
+
       {/* Header with Mrs. Deer - responsive: avatar above on mobile, left on desktop */}
       <div className="mb-8" style={{ marginBottom: spacing['2xl'] }}>
         <div className="flex flex-col md:flex-row md:items-start gap-4 mb-4">
@@ -753,11 +920,45 @@ export default function EveningPage() {
             </p>
           </div>
         </div>
-        <DateSelector selectedDate={reviewDate} onDateChange={setReviewDate} maxDaysBack={30} className="mb-6" />
+        <DateNavigator
+          currentDate={reviewDate}
+          onPrev={() => {
+            const prev = format(subDays(new Date(reviewDate + 'T12:00:00'), 1), 'yyyy-MM-dd')
+            if (prev >= format(subDays(new Date(), 30), 'yyyy-MM-dd')) setReviewDate(prev)
+          }}
+          onNext={() => {
+            const next = format(subDays(new Date(reviewDate + 'T12:00:00'), -1), 'yyyy-MM-dd')
+            const todayStr = format(new Date(), 'yyyy-MM-dd')
+            if (next <= todayStr) setReviewDate(next)
+          }}
+          onDateClick={() => {
+            setDisplayedMonth(startOfMonth(new Date(reviewDate + 'T12:00:00')))
+            setCalendarOpen(true)
+          }}
+          status={monthStatus[reviewDate] ?? 'empty'}
+          canGoBack={reviewDate > format(subDays(new Date(), 30), 'yyyy-MM-dd')}
+          canGoForward={reviewDate < format(new Date(), 'yyyy-MM-dd')}
+          className="mb-6"
+        />
+        <CalendarModal
+          isOpen={calendarOpen}
+          onClose={() => setCalendarOpen(false)}
+          currentMonth={displayedMonth}
+          onMonthChange={(month) => {
+            setDisplayedMonth(month)
+            fetchMonthStatus(month)
+          }}
+          onSelectDate={(date) => {
+            setReviewDate(date)
+            setCalendarOpen(false)
+            router.push(`/evening?date=${date}`)
+          }}
+          monthStatus={monthStatus}
+        />
       </div>
 
       {/* Today's History: What You Accomplished */}
-      <Card highlighted className="mb-8" style={{ marginBottom: spacing['2xl'], borderLeft: `3px solid ${colors.emerald.DEFAULT}` }}>
+      <Card id="evening-form" highlighted className="mb-8" style={{ marginBottom: spacing['2xl'], borderLeft: `3px solid ${colors.emerald.DEFAULT}` }}>
         <CardHeader style={{ padding: spacing['xl'] }}>
           <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
             <Mountain className="w-5 h-5" style={{ color: colors.emerald.DEFAULT }} />
@@ -783,7 +984,13 @@ export default function EveningPage() {
                   transition={{ duration: 0.3, delay: index * 0.1 }}
                   className={`flex items-start gap-4 rounded-xl p-4 transition-all duration-300 ${
                     justCompletedId === task.id ? 'animate-pulse' : ''
-                  } ${task.completed ? 'bg-emerald-50 dark:bg-emerald-900/30' : 'bg-gray-50 dark:bg-gray-700'}`}
+                  } ${
+                    (task as any).movedToTomorrow
+                      ? 'bg-blue-50 dark:bg-blue-900/20'
+                      : task.completed
+                        ? 'bg-emerald-50 dark:bg-emerald-900/30'
+                        : 'bg-gray-50 dark:bg-gray-700'
+                  }`}
                 >
                   <motion.button
                     type="button"
@@ -821,6 +1028,29 @@ export default function EveningPage() {
                     </p>
                   )}
                 </div>
+                <div className="flex flex-col items-end gap-1">
+                  {!task.completed && !(task as any).movedToTomorrow && (
+                    <button
+                      type="button"
+                      onClick={() => handleMoveTaskToTomorrow(task)}
+                      className="text-xs text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 underline-offset-2 hover:underline"
+                    >
+                      Move to tomorrow
+                    </button>
+                  )}
+                  {!task.completed && (task as any).movedToTomorrow && (
+                    <div className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300">
+                      <span>Task moved to tomorrow</span>
+                      <button
+                        type="button"
+                        onClick={() => handleUndoMoveTask(task)}
+                        className="text-blue-600 dark:text-blue-400 hover:underline underline-offset-2"
+                      >
+                        Undo
+                      </button>
+                    </div>
+                  )}
+                </div>
               </motion.li>
             ))}
           </ul>
@@ -829,6 +1059,7 @@ export default function EveningPage() {
       </Card>
 
       {/* Emotional Check-in */}
+      <div data-tutorial="evening-form">
       <Card highlighted className="mb-8" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
@@ -913,6 +1144,7 @@ export default function EveningPage() {
           <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
             <Lightbulb className="w-5 h-5" style={{ color: colors.navy.DEFAULT }} />
             Today&apos;s Reflection
+            <InfoTooltip text="Free-form thoughts about your day. Capture anything that feels important." position="right" />
           </CardTitle>
           <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
             What matters most from today? What would you carry forward?
@@ -928,12 +1160,7 @@ export default function EveningPage() {
           }}
           placeholder="How did today go? What stood out? What would you do differently?"
           rows={5}
-          className="w-full px-6 py-4 rounded-lg focus:ring-2 focus:ring-offset-2 resize-none transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700"
-          style={{
-            borderColor: colors.neutral.border,
-            fontSize: '16px',
-            lineHeight: '1.6',
-          }}
+          className="w-full px-6 py-4 rounded-lg border text-sm md:text-base leading-relaxed focus:ring-2 focus:ring-offset-2 resize-none transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 placeholder:text-gray-400"
         />
         </CardContent>
       </Card>
@@ -946,6 +1173,7 @@ export default function EveningPage() {
             <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
               <Award className="w-5 h-5" style={{ color: colors.emerald.DEFAULT }} />
               Wins
+              <InfoTooltip text="What went well today? Big or small, celebrate your wins." position="right" />
             </CardTitle>
             <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
               Celebrate what worked today
@@ -971,10 +1199,7 @@ export default function EveningPage() {
                     }}
                     placeholder="Celebrate your wins—big or small..."
                     rows={2}
-                    className="flex-1 px-4 py-2 rounded-lg focus:ring-2 focus:ring-offset-2 resize-none transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700"
-                    style={{
-                      borderColor: colors.neutral.border,
-                    }}
+                    className="flex-1 px-4 py-2 rounded-lg border text-sm focus:ring-2 focus:ring-offset-2 resize-none transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 placeholder:text-gray-400"
                   />
                   <button
                     type="button"
@@ -1008,6 +1233,7 @@ export default function EveningPage() {
             <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
               <Lightbulb className="w-5 h-5" style={{ color: colors.amber.DEFAULT }} />
               Lessons
+              <InfoTooltip text="What would you do differently? Every lesson is growth." position="right" />
             </CardTitle>
             <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
               What you&apos;d carry forward
@@ -1033,10 +1259,7 @@ export default function EveningPage() {
                     }}
                     placeholder="Gentle lessons to carry forward..."
                     rows={2}
-                    className="flex-1 px-4 py-2 rounded-lg focus:ring-2 focus:ring-offset-2 resize-none transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700"
-                    style={{
-                      borderColor: colors.neutral.border,
-                    }}
+                    className="flex-1 px-4 py-2 rounded-lg border text-sm focus:ring-2 focus:ring-offset-2 resize-none transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 placeholder:text-gray-400"
                   />
                   <button
                     type="button"
@@ -1063,12 +1286,29 @@ export default function EveningPage() {
           </div>
         </CardContent>
       </Card>
+        </div>
       </div>
 
       {error && (
         <div className="mb-4 p-4 rounded-lg flex items-center gap-2 transition-all duration-200" style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', borderWidth: '1px', color: '#B91C1C' }}>
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
           {error}
+        </div>
+      )}
+
+      {currentReviewId && (
+        <div className="flex items-center justify-between mb-3">
+          <button
+            type="button"
+            className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 flex items-center gap-1 underline-offset-2 hover:underline"
+            onClick={() => {
+              setReflectionPopupVariant({ context: 'fix_date' })
+              setShowReflectionPopup(true)
+            }}
+          >
+            <span aria-hidden="true">📅</span>
+            <span>Saved to wrong day? Fix it</span>
+          </button>
         </div>
       )}
 
@@ -1082,6 +1322,81 @@ export default function EveningPage() {
       >
         {saving ? 'Mrs. Deer is writing...' : 'Save & Complete My Day'}
       </Button>
+
+      <ReflectionPopup
+        isOpen={showReflectionPopup && !!reflectionPopupVariant}
+        onClose={() => {
+          setShowReflectionPopup(false)
+          setReflectionPopupVariant(null)
+        }}
+        variant={
+          reflectionPopupVariant ?? { context: 'evening', type: 'late_night_choice' }
+        }
+        currentDate={new Date()}
+        onConfirmFixDate={async (targetDate) => {
+          try {
+            if (!currentReviewId) {
+              setShowReflectionPopup(false)
+              setReflectionPopupVariant(null)
+              return
+            }
+            const res = await fetch('/api/reflection/fix-date', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reviewId: currentReviewId, targetDate }),
+            })
+            const data = await res.json()
+            if (!res.ok || !data.success) {
+              console.error('fix-date error', data.error)
+            } else {
+              setReviewDate(targetDate)
+              const formatted = format(new Date(targetDate + 'T12:00:00'), 'EEEE, MMMM d')
+              window.dispatchEvent(
+                new CustomEvent('toast', {
+                  detail: { message: `✅ Reflection moved to ${formatted}`, type: 'success' },
+                })
+              )
+            }
+          } catch (err) {
+            console.error('fix-date error', err)
+          } finally {
+            setShowReflectionPopup(false)
+            setReflectionPopupVariant(null)
+          }
+        }}
+        onOverwriteYesterday={async () => {
+          const now = new Date()
+          const yesterdayStr = format(
+            new Date(now.getTime() - 24 * 60 * 60 * 1000),
+            'yyyy-MM-dd'
+          )
+          setReviewDate(yesterdayStr)
+          setShowReflectionPopup(false)
+          setReflectionPopupVariant(null)
+          await handleSave()
+        }}
+        onSaveToToday={async () => {
+          setShowReflectionPopup(false)
+          setReflectionPopupVariant(null)
+          await handleSave()
+        }}
+        onSelectYesterday={async () => {
+          const now = new Date()
+          const yesterdayStr = format(
+            new Date(now.getTime() - 24 * 60 * 60 * 1000),
+            'yyyy-MM-dd'
+          )
+          setReviewDate(yesterdayStr)
+          setShowReflectionPopup(false)
+          setReflectionPopupVariant(null)
+          await handleSave()
+        }}
+        onSelectToday={async () => {
+          setShowReflectionPopup(false)
+          setReflectionPopupVariant(null)
+          await handleSave()
+        }}
+      />
 
       {/* Mrs. Deer AI Coach - Evening Reflection Insight (permanent, always shown if exists) */}
       {aiCoachTrigger === 'evening_after' && (aiCoachMessage || isStreaming || streamingError) && (

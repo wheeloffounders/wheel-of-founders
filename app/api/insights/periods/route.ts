@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 
     const db = getServerSupabase()
 
-    const [promptsRes, historyRes] = await Promise.all([
+    const queries = [
       db
         .from('personal_prompts')
         .select('prompt_date')
@@ -46,7 +46,19 @@ export async function GET(req: NextRequest) {
         .eq('user_id', session.user.id)
         .eq('insight_type', type)
         .order('period_start', { ascending: false }),
-    ])
+    ]
+
+    if (type === 'weekly') {
+      queries.push(
+        (db.from('weekly_insights') as any)
+          .select('week_start')
+          .eq('user_id', session.user.id)
+          .order('week_start', { ascending: false })
+      )
+    }
+
+    const results = (await Promise.all(queries)) as { data: unknown[] | null; error: unknown }[]
+    const [promptsRes, historyRes, weeklyRes] = results
 
     if (promptsRes.error) {
       console.error('[insights-periods] personal_prompts error:', promptsRes.error)
@@ -56,14 +68,22 @@ export async function GET(req: NextRequest) {
       console.error('[insights-periods] insight_history error:', historyRes.error)
       throw historyRes.error
     }
+    if (type === 'weekly' && weeklyRes?.error) {
+      console.warn('[insights-periods] weekly_insights error (non-fatal):', weeklyRes.error)
+    }
 
     const rawFromPrompts = (promptsRes.data ?? []).map((p) => (p as { prompt_date?: unknown }).prompt_date)
     const rawFromHistory = (historyRes.data ?? []).map((h) => (h as { period_start?: unknown }).period_start)
+    const rawFromWeekly =
+      type === 'weekly' && weeklyRes?.data
+        ? (weeklyRes.data as { week_start?: unknown }[]).map((w) => w.week_start)
+        : []
 
     const fromPrompts = rawFromPrompts.map(normalizePeriodDate).filter((d): d is string => d != null)
     const fromHistory = rawFromHistory.map(normalizePeriodDate).filter((d): d is string => d != null)
+    const fromWeekly = rawFromWeekly.map(normalizePeriodDate).filter((d): d is string => d != null)
 
-    const allDates = [...fromPrompts, ...fromHistory]
+    const allDates = [...fromPrompts, ...fromHistory, ...fromWeekly]
     const uniqueDates = [...new Set(allDates)].sort((a, b) => (b < a ? -1 : b > a ? 1 : 0))
 
     if (isDevelopment) {
@@ -72,6 +92,7 @@ export async function GET(req: NextRequest) {
         userId: session.user.id,
         fromPromptsCount: fromPrompts.length,
         fromHistoryCount: fromHistory.length,
+        fromWeeklyCount: fromWeekly.length,
         uniqueCount: uniqueDates.length,
         sample: uniqueDates.slice(0, 5),
       })

@@ -51,7 +51,7 @@ export default function AcceptInvitePage() {
         const data = await response.json()
         if (data.error?.includes('logged in')) {
           sessionStorage.setItem('pendingInvite', inviteId!)
-          router.push(`/login?returnTo=/duo/accept?invite=${inviteId}`)
+          router.push(`/auth/login?returnTo=/duo/accept?invite=${inviteId}`)
           return
         }
         throw new Error(data.error)

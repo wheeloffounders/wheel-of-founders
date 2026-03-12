@@ -1,45 +1,78 @@
-// Version: 2026.02.26 - Network-first for HTML, only cache GET requests
+// Version: 2026.03.10 - Push logging and error handling
+// Bump this when you change the SW so browsers pick up the new file
 
-const CACHE_NAME = 'wof-v4'
+const CACHE_NAME = 'wof-v5'
 
-self.addEventListener('install', event => {
+self.addEventListener('install', function (event) {
+  console.log('[sw] install', CACHE_NAME)
   self.skipWaiting()
 })
 
-self.addEventListener('activate', event => {
+self.addEventListener('activate', function (event) {
+  console.log('[sw] activate, claiming clients')
   event.waitUntil(
     Promise.all([
       clients.claim(),
-      caches.keys().then(keys => 
-        Promise.all(keys.map(key => {
-          if (key !== CACHE_NAME) return caches.delete(key)
-        }))
-      )
-    ])
+      caches.keys().then(function (keys) {
+        return Promise.all(
+          keys.map(function (key) {
+            if (key !== CACHE_NAME) {
+              console.log('[sw] delete old cache', key)
+              return caches.delete(key)
+            }
+          })
+        )
+      })
+    ]).then(function () {
+      console.log('[sw] activate complete')
+    })
   )
 })
 
 // Push notification handler
 self.addEventListener('push', function (event) {
-  if (!event.data) return
+  console.log('[sw] push event received')
+
+  if (!event.data) {
+    console.warn('[sw] Push event had no data - cannot show notification')
+    return
+  }
+
   let data
   try {
     data = event.data.json()
-  } catch {
+    console.log('[sw] Push data parsed:', typeof data.title, typeof data.body, data.url ? 'url present' : 'no url')
+  } catch (e) {
+    console.error('[sw] Push data.json() failed', e)
     return
   }
+
+  const title = data.title && String(data.title).trim() ? data.title : 'Wheel of Founders'
+  const body = data.body != null ? String(data.body) : ''
+  console.log('[sw] Showing notification:', title, body ? body.slice(0, 40) + (body.length > 40 ? '...' : '') : '(no body)')
+
   const options = {
-    body: data.body,
+    body: body,
     icon: data.icon || '/icon-192x192.png',
     badge: data.badge || '/icon-192x192.png',
-    vibrate: data.vibrate || [200, 100, 200],
+    vibrate: Array.isArray(data.vibrate) ? data.vibrate : [200, 100, 200],
     data: {
       url: data.url || '/',
       dateOfArrival: Date.now()
     },
     actions: [{ action: 'open', title: 'Open App' }]
   }
-  event.waitUntil(self.registration.showNotification(data.title || 'Wheel of Founders', options))
+
+  event.waitUntil(
+    self.registration
+      .showNotification(title, options)
+      .then(function () {
+        console.log('[sw] showNotification succeeded')
+      })
+      .catch(function (err) {
+        console.error('[sw] showNotification failed', err?.name, err?.message, err)
+      })
+  )
 })
 
 self.addEventListener('notificationclick', function (event) {

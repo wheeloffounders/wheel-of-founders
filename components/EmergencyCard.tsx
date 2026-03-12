@@ -66,7 +66,7 @@ export function EmergencyCard({
         className={`p-4 rounded-lg border ${
           emergency.resolved
             ? 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 border-gray-200 dark:border-gray-700 dark:border-gray-700 opacity-75'
-            : 'bg-amber-50/50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700'
+            : 'bg-[#f8f4f0] dark:bg-amber-900/20 border-amber-200 dark:border-amber-700'
         }`}
       >
         <div className="flex items-start justify-between gap-3">

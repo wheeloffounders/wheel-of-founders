@@ -133,7 +133,7 @@ export default function DuoSettingsPage() {
           </div>
         </div>
       ) : duo.status === 'pending' && userRole === 'primary' ? (
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6">
+        <div className="bg-[#f8f4f0] dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6">
           <Clock className="w-8 h-8 text-yellow-600 dark:text-yellow-400 mb-2" />
           <h2 className="text-lg font-semibold mb-1">Invitation Pending</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">

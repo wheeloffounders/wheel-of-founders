@@ -14,7 +14,7 @@ const prompts: Record<NextStepPromptProps['type'], string> = {
 
 export function NextStepPrompt({ type }: NextStepPromptProps) {
   return (
-    <div className="mt-4 p-3 bg-[#f8f4f0] dark:bg-gray-800 rounded-lg border-l-4 border-[#ef725c]">
+    <div className="mt-4 p-3 bg-[#f0f5ee] dark:bg-gray-800 rounded-lg border-l-4 border-[#ef725c]">
       <p className="text-sm text-gray-700 dark:text-gray-300">
         🦌 {prompts[type]}
       </p>

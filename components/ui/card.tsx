@@ -14,7 +14,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
     const baseStyle: React.CSSProperties = {
       borderRadius: 0,
       ...(highlighted && { borderLeft: `3px solid ${colors.coral.DEFAULT}` }),
-      transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
+      // Keep hover subtle: avoid transform changes that can cause "vibration"
       boxShadow: isHovered ? '0 4px 12px rgba(0,0,0,0.08)' : 'none',
       ...style,
     }
@@ -23,8 +23,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
       <div
         ref={ref}
         className={cn(
-          'bg-white dark:bg-gray-800 dark:bg-gray-800 transition-all duration-200 border-2 border-gray-200 dark:border-gray-700 dark:border-gray-700',
-          'active:scale-[0.98]',
+          'card bg-white dark:bg-gray-800 dark:bg-gray-800 transition-all duration-200 border-2 border-gray-200 dark:border-gray-700 dark:border-gray-700',
           className
         )}
         style={baseStyle}
@@ -72,7 +71,7 @@ CardDescription.displayName = 'CardDescription'
 
 const CardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('px-4 md:px-5 pb-4 md:pb-5 pt-0', className)} {...props} />
+    <div ref={ref} className={cn('card-content px-4 md:px-5 pb-4 md:pb-5 pt-0', className)} {...props} />
   )
 )
 CardContent.displayName = 'CardContent'

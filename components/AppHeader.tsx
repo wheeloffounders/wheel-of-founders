@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Menu, Home, Sun, Moon, Flame, BarChart2, Calendar, MapPin, User, Settings, MessageSquare, HelpCircle, Mail, Bug, TrendingUp, LogOut, CreditCard } from 'lucide-react'
-import { InsightNotificationBadge } from './InsightNotificationBadge'
+import { NotificationCenter } from './notifications/NotificationCenter'
 import { useTheme } from '@/components/ThemeProvider'
 import { supabase } from '@/lib/supabase'
 import { resetAnalytics } from '@/lib/analytics'
@@ -70,7 +70,7 @@ export function AppHeader() {
   const handleSignOut = async () => {
     resetAnalytics()
     await supabase.auth.signOut()
-    router.push('/login')
+    router.push('/auth/login')
   }
 
   useEffect(() => {
@@ -94,7 +94,7 @@ export function AppHeader() {
       </Link>
 
       <div ref={menuRef} className="relative flex items-center gap-2">
-        <InsightNotificationBadge />
+        <NotificationCenter />
         <Link
           href="/feedback"
           className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:text-[#ef725c] transition-colors"

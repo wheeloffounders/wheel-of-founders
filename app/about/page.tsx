@@ -131,7 +131,7 @@ export default function AboutPage() {
         transition={{ delay: 0.6 }}
       >
         <Link
-          href="/login"
+          href="/auth/login"
           className="inline-block px-8 py-3 bg-[#EF725C] text-white font-semibold rounded-lg hover:bg-[#F28771] transition"
         >
           Start Your Journey →

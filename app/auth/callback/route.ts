@@ -42,11 +42,12 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Error exchanging code for session:', error)
-      return NextResponse.redirect(`${requestUrl.origin}/login?error=${encodeURIComponent(error.message)}`)
+      return NextResponse.redirect(`${requestUrl.origin}/auth/login?error=${encodeURIComponent(error.message)}`)
     }
 
     if (data?.user) {
       const db = getServerSupabase()
+      console.log('[Auth Callback] Starting for user:', data.user.id, data.user.email)
 
       // Auto-grant super_admin for founder email
       if (data.user.email === FOUNDER_EMAIL) {
@@ -71,6 +72,12 @@ export async function GET(request: NextRequest) {
         .select('id')
         .eq('id', data.user.id)
         .maybeSingle()
+
+      const isNewUser = !profile
+      console.log('[Auth Callback] Profile check:', {
+        hasProfile: !!profile,
+        isNewUser,
+      })
 
       if (!profile) {
         // Detect timezone
@@ -136,12 +143,67 @@ export async function GET(request: NextRequest) {
         // Clear onboarding flag for new users
         // This will be handled client-side via localStorage
       }
-    }
 
-    // Redirect to dashboard
-    return NextResponse.redirect(`${requestUrl.origin}${next}`)
+      // New users must go through goal → personalization → morning. Redirect to goal.
+      if (isNewUser) {
+        return NextResponse.redirect(`${requestUrl.origin}/onboarding/goal`)
+      }
+
+      // Existing users: resume logic — detect where they left off and redirect accordingly
+      const today = new Date().toISOString().slice(0, 10)
+      const { data: profileFull } = await db
+        .from('user_profiles')
+        .select('primary_goal_text, onboarding_completed_at')
+        .eq('id', data.user.id)
+        .maybeSingle()
+
+      const { count: morningCount } = await db
+        .from('morning_tasks')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', data.user.id)
+
+      const { count: eveningCount } = await db
+        .from('evening_reviews')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', data.user.id)
+
+      const hasGoal = !!(profileFull as { primary_goal_text?: string } | null)?.primary_goal_text?.trim()
+      const hasOnboarding = !!(profileFull as { onboarding_completed_at?: string } | null)?.onboarding_completed_at
+      const hasMorning = (morningCount ?? 0) > 0
+      const hasEvening = (eveningCount ?? 0) > 0
+
+      // Stage 1: Goal done, needs personalization
+      if (hasGoal && !hasOnboarding) {
+        return NextResponse.redirect(`${requestUrl.origin}/onboarding/personalization`)
+      }
+      // Stage 2: Onboarding done, never saved morning
+      if (hasOnboarding && !hasMorning) {
+        const { isNewOnboardingEnabled } = await import('@/lib/feature-flags')
+        const qs = isNewOnboardingEnabled() ? '?first=true&resume=true' : ''
+        return NextResponse.redirect(`${requestUrl.origin}/morning${qs}`)
+      }
+      // Stage 3: Morning done, no evening today — check if they have morning for today
+      const { count: morningTodayCount } = await db
+        .from('morning_tasks')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', data.user.id)
+        .eq('plan_date', today)
+      const { count: eveningTodayCount } = await db
+        .from('evening_reviews')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', data.user.id)
+        .eq('review_date', today)
+      if ((morningTodayCount ?? 0) > 0 && (eveningTodayCount ?? 0) === 0) {
+        console.log('[Auth Callback] Stage 3: Redirecting to /dashboard?showEveningReminder=true')
+        return NextResponse.redirect(`${requestUrl.origin}/dashboard?showEveningReminder=true`)
+      }
+
+      // Stage 4 or explicit next: respect next param
+      console.log('[Auth Callback] Stage 4: Redirecting to', next)
+      return NextResponse.redirect(`${requestUrl.origin}${next}`)
+    }
   }
 
   // No code, redirect to login
-  return NextResponse.redirect(`${requestUrl.origin}/login`)
+  return NextResponse.redirect(`${requestUrl.origin}/auth`)
 }

@@ -79,8 +79,8 @@ export default function CountdownPage() {
       <header className="sticky top-0 z-50 border-b-2 border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-900/95 backdrop-blur px-4 py-3 flex items-center justify-between">
         <Link href="/countdown" className="text-lg font-semibold" style={{ color: NAVY }}>Wheel of Founders</Link>
         <div className="flex items-center gap-3">
-          <Link href="/login?returnTo=/dashboard" className="text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-[#ef725c] transition">Log in</Link>
-          <Link href="/login?returnTo=/dashboard" className="px-4 py-2 rounded-lg font-medium text-white transition hover:opacity-90" style={{ backgroundColor: CORAL }}>Enter App</Link>
+          <Link href="/auth/login?returnTo=/dashboard" className="text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-[#ef725c] transition">Log in</Link>
+          <Link href="/auth/login?returnTo=/dashboard" className="px-4 py-2 rounded-lg font-medium text-white transition hover:opacity-90" style={{ backgroundColor: CORAL }}>Enter App</Link>
         </div>
       </header>
 

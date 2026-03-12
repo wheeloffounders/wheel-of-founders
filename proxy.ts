@@ -4,7 +4,13 @@ import { createServerClient } from '@supabase/ssr'
 const ONBOARDING_PUBLIC_PATHS = [
   '/api',
   '/_next',
+  '/auth',
   '/auth/callback',
+  '/auth/login',
+  '/auth/signup',
+  '/auth/confirm',
+  '/auth/forgot-password',
+  '/auth/reset-password',
   '/login',
   '/pricing',
   '/help',
@@ -51,23 +57,79 @@ export async function proxy(request: NextRequest) {
   if (session && !ONBOARDING_PUBLIC_PATHS.some((path) => request.nextUrl.pathname.startsWith(path))) {
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('onboarding_completed_at, onboarding_step')
+      .select('onboarding_completed_at, onboarding_step, questionnaire_completed_at, primary_goal_text, struggles')
       .eq('id', session.user.id)
-      .single()
+      .maybeSingle()
 
-    if (!profile?.onboarding_completed_at) {
-      const step = profile?.onboarding_step ?? 0
-      const onboardingUrls = [
-        '/onboarding/goal',
-        '/morning?tutorial=true',
-        '/evening?tutorial=true',
-      ]
-      const targetUrl = onboardingUrls[Math.min(step, 2)] ?? '/onboarding/goal'
-      const targetPath = targetUrl.split('?')[0]
+    const p = profile as {
+      onboarding_completed_at?: string
+      questionnaire_completed_at?: string
+      primary_goal_text?: string
+      struggles?: string[]
+      onboarding_step?: number
+    } | null
 
-      if (!request.nextUrl.pathname.startsWith(targetPath)) {
-        return NextResponse.redirect(new URL(targetUrl, request.url))
+    // Skip forced flow if: completed full flow, OR completed questionnaire, OR has goal + personalization (struggles)
+    const hasStruggles = Array.isArray(p?.struggles) && p.struggles.length > 0
+    const hasCompletedOnboarding =
+      !!p?.onboarding_completed_at ||
+      !!p?.questionnaire_completed_at ||
+      (!!p?.primary_goal_text?.trim() && (hasStruggles || (p?.onboarding_step ?? 0) >= 2))
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[Proxy] Onboarding check:', {
+        userId: session.user.id,
+        hasProfile: !!profile,
+        primary_goal_text: !!p?.primary_goal_text?.trim(),
+        hasStruggles,
+        hasCompletedOnboarding,
+      })
+    }
+
+    if (!hasCompletedOnboarding) {
+      const path = request.nextUrl.pathname
+
+      // Step 1: No goal → redirect to goal
+      if (!p?.primary_goal_text?.trim()) {
+        if (!path.startsWith('/onboarding/goal')) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[Proxy] No goal found, redirecting to /onboarding/goal')
+          }
+          return NextResponse.redirect(new URL('/onboarding/goal', request.url))
+        }
+        return response
       }
+
+      // Step 2: Has goal but no personalization (struggles) → redirect to personalization
+      if (!hasStruggles || (p?.struggles?.length ?? 0) === 0) {
+        if (!path.startsWith('/onboarding/personalization')) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[Proxy] Has goal but no struggles, redirecting to /onboarding/personalization')
+          }
+          return NextResponse.redirect(new URL('/onboarding/personalization', request.url))
+        }
+        return response
+      }
+
+      // Step 3: Has both goal and struggles (onboarding_step 2) → redirect to dashboard to start tutorial
+      const step = p?.onboarding_step ?? 0
+      if (step >= 2 && !path.startsWith('/dashboard')) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Proxy] Has goal and struggles, redirecting to /dashboard?tutorial=start')
+        }
+        return NextResponse.redirect(new URL('/dashboard?tutorial=start', request.url))
+      }
+    }
+
+    // Only start tutorial after personalization: if onboarding_step is 2 but URL lacks tutorial=start, redirect
+    const searchParamsForTutorial = request.nextUrl.searchParams
+    if (
+      p?.onboarding_step === 2 &&
+      !p?.onboarding_completed_at &&
+      request.nextUrl.pathname === '/dashboard' &&
+      searchParamsForTutorial.get('tutorial') !== 'start'
+    ) {
+      return NextResponse.redirect(new URL('/dashboard?tutorial=start', request.url))
     }
   }
 
@@ -76,6 +138,7 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // Exclude static assets and PWA manifest so they never hit auth/onboarding logic (avoids 401 on manifest.json)
+    '/((?!_next/static|_next/image|favicon.ico|manifest\\.json|icon-.*\\.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

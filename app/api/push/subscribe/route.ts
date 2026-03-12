@@ -4,7 +4,7 @@ import { getServerSupabase } from '@/lib/server-supabase'
 
 export const dynamic = 'force-dynamic'
 
-/** POST: Save push subscription for the logged-in user */
+/** POST: Save push subscription for the logged-in user (endpoint + p256dh + auth columns) */
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSessionFromRequest(req)
@@ -12,10 +12,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const subscription = await req.json()
-    const endpoint = subscription?.endpoint
-    if (!endpoint || typeof endpoint !== 'string') {
-      return NextResponse.json({ error: 'Invalid subscription' }, { status: 400 })
+    const body = await req.json().catch(() => ({}))
+    const endpoint = typeof body?.endpoint === 'string' ? body.endpoint.trim() : ''
+    const keys = body?.keys
+    const p256dh = typeof keys?.p256dh === 'string' ? keys.p256dh.trim() : ''
+    const auth = typeof keys?.auth === 'string' ? keys.auth.trim() : ''
+
+    if (!endpoint || !p256dh || !auth) {
+      return NextResponse.json(
+        { error: 'Invalid subscription: endpoint, keys.p256dh, and keys.auth required' },
+        { status: 400 }
+      )
     }
 
     const db = getServerSupabase()
@@ -23,7 +30,8 @@ export async function POST(req: NextRequest) {
       {
         user_id: session.user.id,
         endpoint,
-        subscription,
+        p256dh,
+        auth,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id,endpoint' }
@@ -31,6 +39,16 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error('[push/subscribe] Error:', error)
+      const err = error as { code?: string; message?: string }
+      if (err.code === '23505' && String(err.message ?? '').includes('push_subscriptions_user_id_key')) {
+        return NextResponse.json(
+          {
+            error:
+              'Database schema needs update: run migration 073 (drop push_subscriptions_user_id_key, use unique user_id+endpoint).',
+          },
+          { status: 409 }
+        )
+      }
       throw error
     }
 

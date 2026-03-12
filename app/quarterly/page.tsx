@@ -117,7 +117,7 @@ export default function QuarterlyPage() {
     const checkAuth = async () => {
       const session = await getUserSession()
       if (!session) {
-        router.push('/login')
+        router.push('/auth/login')
         return
       }
     }
@@ -366,7 +366,7 @@ export default function QuarterlyPage() {
       </div>
 
       {/* Quarter in Progress - only when viewing current quarter with no insight yet */}
-      {!showFullQuarterly && isSameQuarter(selectedQuarter, new Date()) && !periods.includes(currentQuarterStr) && (
+      {!showFullQuarterly && isSameQuarter(selectedQuarter, new Date()) && (
         <QuarterlyPreview
           quarterLabel={quarterLabel}
           stats={{

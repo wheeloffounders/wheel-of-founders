@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Flame } from 'lucide-react'
+import { InfoTooltip } from '@/components/InfoTooltip'
 import { format, startOfWeek, endOfWeek, subDays } from 'date-fns'
 
 export function JourneyProgress() {
@@ -44,7 +45,10 @@ export function JourneyProgress() {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="font-medium text-gray-900 dark:text-white">Journey Progress</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="font-medium text-gray-900 dark:text-white">Journey Progress</h3>
+          <InfoTooltip text="Your current streak and weekly completion rate. Streak increases each day you complete both morning and evening entries." />
+        </div>
         <div className="flex items-center gap-1 text-[#ef725c]">
           <Flame className="w-4 h-4" />
           <span className="text-sm font-medium">{streak} day streak</span>

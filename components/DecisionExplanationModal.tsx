@@ -74,7 +74,7 @@ export function DecisionExplanationModal({ isOpen, onClose }: DecisionExplanatio
                   <td className="border border-gray-300 dark:border-gray-600 p-3 font-semibold text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-900">
                     <strong>Not Needle Mover</strong>
                   </td>
-                  <td className="border border-gray-300 dark:border-gray-600 p-4 bg-yellow-50 border-yellow-300">
+                  <td className="border border-gray-300 dark:border-gray-600 p-4 bg-[#f8f4f0] border-yellow-300">
                     <strong className="text-yellow-800">Busy Work</strong>
                     <br />
                     <span className="text-sm text-gray-700 dark:text-gray-300">

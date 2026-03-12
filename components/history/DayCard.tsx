@@ -181,7 +181,7 @@ export function DayCard({
               </div>
             )}
             {postMorningInsight?.trim() && (
-              <div className="rounded-lg p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+              <div className="rounded-lg p-4 bg-[#f8f4f0] dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
                 <p className="text-xs font-semibold text-amber-800 dark:text-amber-200 mb-2">✨ Mrs. Deer, your AI companion&apos;s reflection</p>
                 <p className="text-sm text-gray-900 dark:text-white italic">&quot;{postMorningInsight}&quot;</p>
               </div>
@@ -229,7 +229,7 @@ export function DayCard({
               </div>
             )}
             {postEveningInsight?.trim() && (
-              <div className="rounded-lg p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+              <div className="rounded-lg p-4 bg-[#f8f4f0] dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
                 <p className="text-xs font-semibold text-amber-800 dark:text-amber-200 mb-2">✨ Mrs. Deer, your AI companion&apos;s reflection</p>
                 <p className="text-sm text-gray-900 dark:text-white italic">&quot;{postEveningInsight}&quot;</p>
               </div>

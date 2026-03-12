@@ -1,8 +1,43 @@
 /**
- * Date utilities for scheduled insight generation.
+ * Date utilities for scheduled insight generation and date navigation.
  * Week starts Monday (ISO 8601).
  */
-import { format, startOfWeek, endOfWeek, subWeeks, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, subQuarters } from 'date-fns'
+import { format, startOfWeek, endOfWeek, subWeeks, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, subQuarters, isSameDay, addDays, eachDayOfInterval, isAfter } from 'date-fns'
+
+/** Day completion status for navigator and calendar */
+export type DayStatus = 'complete' | 'half' | 'empty' | 'future'
+
+/** All dates in the given month (1–28/29/30/31) */
+export function getMonthDays(month: Date): Date[] {
+  const start = startOfMonth(month)
+  const end = endOfMonth(month)
+  return eachDayOfInterval({ start, end })
+}
+
+/** True if both dates are the same calendar day */
+export function isSameCalendarDay(date1: Date, date2: Date): boolean {
+  return isSameDay(date1, date2)
+}
+
+/** Format for header: "March 2026" */
+export function formatMonthYear(date: Date): string {
+  return format(date, 'MMMM yyyy')
+}
+
+/** Derive status from morning/evening flags (for a single day). */
+export function getDayStatusFromData(
+  date: Date,
+  hasMorning: boolean,
+  hasEvening: boolean
+): DayStatus {
+  const today = new Date()
+  const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  if (isAfter(dateOnly, todayOnly)) return 'future'
+  if (hasMorning && hasEvening) return 'complete'
+  if (hasMorning) return 'half'
+  return 'empty'
+}
 
 /** Get the Monday of the previous week (last completed week) */
 export function getLastMonday(): Date {

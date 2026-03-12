@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Home, Sun, Flame, Moon, BarChart2, Calendar, MapPin, User, MessageSquare, Settings, DollarSign, BarChart3, FlaskConical, LogOut, Menu, ChevronDown } from 'lucide-react'
+import { Home, Sun, Flame, Moon, BarChart2, Calendar, MapPin, User, MessageSquare, Settings, DollarSign, BarChart3, FlaskConical, List, LogOut, Menu, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -96,7 +96,7 @@ export default function Navigation() {
   const handleSignOut = async () => {
     resetAnalytics()
     await supabase.auth.signOut()
-    router.push('/login')
+    router.push('/auth/login')
     router.refresh()
   }
 
@@ -122,6 +122,9 @@ export default function Navigation() {
   ]
 
   const adminItems: NavItem[] = [
+    ...(typeof window !== 'undefined' && (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_APP_ENV === 'development')
+      ? [{ name: 'Search User', href: '/admin/list', icon: List } as NavItem]
+      : []),
     { name: 'Cross-User Analytics', href: '/admin/cross-user-analytics', icon: BarChart3 },
     { name: 'Experiments', href: '/admin/experiments', icon: FlaskConical },
   ]
@@ -269,7 +272,7 @@ const isProfileActive = pathname
                       </button>
                     )}
                     {!isLoggedIn && (
-                      <Link href="/login" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-white/90 hover:bg-white dark:bg-gray-800/10">
+                      <Link href="/auth/login" onClick={() => setProfileOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-white/90 hover:bg-white dark:bg-gray-800/10">
                         <LogOut className="w-4 h-4 flex-shrink-0" />
                         Log in
                       </Link>

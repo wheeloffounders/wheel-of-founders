@@ -58,7 +58,7 @@ export function AICoachPrompt({ message, onClose, trigger, insightId }: AICoachP
   return (
     <div className="w-full mb-8">
       {!isOnline && (
-        <div className="mb-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 text-sm">
+        <div className="mb-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-[#f8f4f0] dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 text-sm">
           <WifiOff className="w-4 h-4 flex-shrink-0" />
           AI insights require internet connection
         </div>

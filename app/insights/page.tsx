@@ -23,7 +23,7 @@ export default function InsightsPage() {
     const checkAuth = async () => {
       const session = await getUserSession()
       if (!session) {
-        router.push('/login?returnTo=/insights')
+        router.push('/auth/login?returnTo=/insights')
       }
     }
     checkAuth()

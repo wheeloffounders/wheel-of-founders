@@ -32,5 +32,6 @@ export function trackFunnelStep(
       session_id: sessionId || undefined,
       metadata: metadata ?? undefined,
     }),
+    credentials: 'include',
   }).catch(() => {})
 }

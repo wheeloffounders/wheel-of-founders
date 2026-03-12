@@ -55,7 +55,7 @@ export default function EmergencyPage() {
     const checkAuth = async () => {
       const session = await getUserSession()
       if (!session) {
-        router.push('/login')
+        router.push('/auth/login')
         return
       }
       setUserTier(session.user.tier || 'beta')
@@ -75,89 +75,51 @@ export default function EmergencyPage() {
 
       const features = getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
 
-      const [firesRes, emergencyInsightRes] = await Promise.all([
-        supabase
-          .from('emergencies')
-          .select('id, description, severity, notes, resolved, created_at')
-          .eq('fire_date', fireDate)
-          .eq('user_id', session.user.id) // Filter by user_id
-          .order('created_at', { ascending: false }),
-        // Fetch emergency insight for this date (if exists)
-        // Use generated_at to filter by date since prompt_date column may not exist yet
-        features.dailyMorningPrompt
-          ? (async () => {
-              const fireDateStart = new Date(fireDate + 'T00:00:00')
-              const fireDateEnd = new Date(fireDate + 'T23:59:59')
-              
-              const { data, error } = await supabase
-                .from('personal_prompts')
-                .select('id, prompt_text, prompt_type, generated_at')
-                .eq('user_id', session.user.id)
-                .gte('generated_at', fireDateStart.toISOString())
-                .lte('generated_at', fireDateEnd.toISOString())
-                .eq('prompt_type', 'emergency')
-                .order('generated_at', { ascending: false })
-                .limit(1)
-                .maybeSingle()
-              
-              return { data, error }
-            })()
-          : Promise.resolve({ data: null, error: null }),
-      ])
+      const firesRes = await supabase
+        .from('emergencies')
+        .select('id, description, severity, notes, resolved, created_at')
+        .eq('fire_date', fireDate)
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
 
       if (firesRes.error) {
-        setError(firesRes.error.message) // Display error
+        setError(firesRes.error.message)
         setTodayFires([])
-      } else {
-        setTodayFires(firesRes.data ?? [])
+        setAiCoachMessage(null)
+        setEmergencyInsightId(null)
+        setLoadingFires(false)
+        return
       }
-      
-        // ALWAYS load emergency insight from database (permanent persistence)
-        // Priority: 1) Today's insight for this date, 2) Most recent insight of any date
-        let insightToShow = null
-        
-        if (emergencyInsightRes.error) {
-          console.error('❌ Error loading emergency insight:', emergencyInsightRes.error)
-        }
-        
-        if (emergencyInsightRes.data?.prompt_text) {
-          // Found insight for this specific date
-          insightToShow = emergencyInsightRes.data.prompt_text
-          const row = emergencyInsightRes.data as { id?: string }
-          if (row?.id) setEmergencyInsightId(row.id)
-          console.log('✅ Loading emergency insight (date-specific):', insightToShow.substring(0, 50))
-        } else {
-          // No insight for this date - check for ANY emergency insight (most recent)
-          console.log('⚠️ No emergency insight found for date:', fireDate, '- checking for ayn recent insight')
-          const { data: anyInsight, error: anyError } = await supabase
-            .from('personal_prompts')
-            .select('id, prompt_text, prompt_type, generated_at')
-            .eq('user_id', session.user.id)
-            .eq('prompt_type', 'emergency')
-            .order('generated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-          
-          if (anyError) {
-            console.error('❌ Error loading any emergency insight:', anyError)
-          } else if (anyInsight?.prompt_text) {
-            insightToShow = anyInsight.prompt_text
-            const row = anyInsight as { id?: string }
-            if (row?.id) setEmergencyInsightId(row.id)
-            console.log('✅ Found emergency insight (most recent):', insightToShow.substring(0, 50))
-          } else {
-            console.log('⚠️ No emergency insights found in database')
-          }
-        }
-        
-        // Always set the insight if we found one (ensures persistence across navigation)
-        if (insightToShow) {
-          setAiCoachMessage(insightToShow)
-        } else {
-          setAiCoachMessage(null)
-          setEmergencyInsightId(null)
-        }
-      
+
+      const fires = firesRes.data ?? []
+      setTodayFires(fires)
+
+      // Only show insights for emergencies on this date (linked by emergency_id)
+      if (!features.dailyMorningPrompt || fires.length === 0) {
+        setAiCoachMessage(null)
+        setEmergencyInsightId(null)
+        setLoadingFires(false)
+        return
+      }
+
+      const emergencyIds = fires.map((f: { id: string }) => f.id)
+      const { data: prompts } = await supabase
+        .from('personal_prompts')
+        .select('id, prompt_text, emergency_id')
+        .eq('user_id', session.user.id)
+        .eq('prompt_type', 'emergency')
+        .in('emergency_id', emergencyIds)
+        .order('generated_at', { ascending: false })
+
+      const firstPrompt = Array.isArray(prompts) && prompts.length > 0 ? prompts[0] : null
+      if (firstPrompt?.prompt_text) {
+        setAiCoachMessage(firstPrompt.prompt_text)
+        setEmergencyInsightId((firstPrompt as { id?: string }).id ?? null)
+      } else {
+        setAiCoachMessage(null)
+        setEmergencyInsightId(null)
+      }
+
       setLoadingFires(false)
     }
 
@@ -216,19 +178,18 @@ export default function EmergencyPage() {
               severity,
             },
             async (fullPrompt) => {
-              console.log('✅ Emergency insight received:', fullPrompt.substring(0, 50))
               setAiCoachMessage(fullPrompt)
               if (inserted?.id) {
                 setEmergencyInsightId(inserted.id)
-                const { error: updateError } = await supabase
-                  .from('emergencies')
-                  .update({ insight: fullPrompt })
-                  .eq('id', inserted.id)
-                if (updateError) {
-                  console.error('❌ Failed to save insight to emergency:', updateError)
-                } else {
-                  console.log('✅ Insight saved to emergency:', inserted.id)
-                }
+                await supabase.from('emergencies').update({ insight: fullPrompt }).eq('id', inserted.id)
+                await supabase.from('personal_prompts').insert({
+                  user_id: session.user.id,
+                  prompt_type: 'emergency',
+                  prompt_text: fullPrompt,
+                  prompt_date: fireDate,
+                  emergency_id: inserted.id,
+                  generated_at: new Date().toISOString(),
+                })
               }
             }
           )

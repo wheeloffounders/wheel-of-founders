@@ -15,6 +15,12 @@ import { AppFooter } from '@/components/AppFooter'
 import { ThemeProvider } from '@/components/ThemeProvider'
 import { ForceUpdateChecker } from '@/components/ForceUpdateChecker'
 import { DevModeBadge } from '@/components/DevModeBadge'
+import { TutorialProvider } from '@/lib/contexts/TutorialContext'
+import { ComprehensiveTourProvider } from '@/lib/contexts/ComprehensiveTourContext'
+import { InAppNotificationProvider } from '@/lib/contexts/InAppNotificationContext'
+import { JoyrideTutorial } from '@/components/tutorial/JoyrideTutorial'
+import { ComprehensiveTour } from '@/components/ComprehensiveTour'
+import { GlobalErrorHandlers } from '@/components/GlobalErrorHandlers'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -82,6 +88,10 @@ export default async function RootLayout({
       >
         <ForceUpdateChecker>
         <ThemeProvider>
+        <TutorialProvider>
+        <ComprehensiveTourProvider>
+        <InAppNotificationProvider>
+        <GlobalErrorHandlers />
         <DevModeBadge />
         <PostHogProvider />
         <PageViewTracker />
@@ -92,9 +102,14 @@ export default async function RootLayout({
         <DuoUpgradeBanner />
         <main className="min-h-screen pt-4 pb-24">{children}</main>
         <BottomNav />
+        <JoyrideTutorial />
+        <ComprehensiveTour />
         <Toast />
         <FeedbackPopUp />
         <AppFooter />
+        </InAppNotificationProvider>
+        </ComprehensiveTourProvider>
+        </TutorialProvider>
         </ThemeProvider>
         </ForceUpdateChecker>
 
