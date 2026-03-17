@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "NEXT_PUBLIC_APP_ENV=development next dev -p 3000",
+    "dev": "NODE_OPTIONS=--max-old-space-size=4096 NEXT_PUBLIC_APP_ENV=development next dev -p 3000",
     "build": "next build",
     "vercel-build": "node scripts/validate-env.js && next build",
     "validate-env": "node scripts/validate-env.js",

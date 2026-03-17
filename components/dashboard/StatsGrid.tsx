@@ -21,6 +21,19 @@ const timeSavedFactors: Record<string, number> = {
   my_zone: 0,
 }
 
+function renderLabel(label: string) {
+  if (label.toUpperCase() === 'MORNING/EVENING') {
+    return (
+      <>
+        Morning/
+        <br />
+        Evening
+      </>
+    )
+  }
+  return label
+}
+
 export function StatsGrid() {
   const [stats, setStats] = useState<Stats>({
     milestone: '0',
@@ -93,19 +106,34 @@ export function StatsGrid() {
       : 'grid-cols-2 md:grid-cols-4'
 
   return (
-    <div className={`grid ${gridCols} gap-4`}>
+    <div className={`grid ${gridCols} gap-2`}>
       {statCards.map((stat, index) => (
         <div
           key={index}
-          className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4"
+          className="bg-transparent border-none shadow-none rounded-lg p-3 h-full"
         >
-          <div className="flex items-center gap-2 text-[#ef725c] mb-2">
-            <stat.icon className="w-4 h-4" />
-            <span className="text-xs font-medium uppercase tracking-wider">{stat.label}</span>
-            <InfoTooltip text={stat.tooltip} position="top" />
+          <div className="h-full flex flex-col">
+            {/* Label (top) */}
+            <div className="flex items-start gap-1 text-[#ef725c] mb-1.5">
+              <stat.icon className="w-4 h-4 mt-0.5" />
+              <div className="text-xs font-medium uppercase tracking-wider">
+                {renderLabel(stat.label)}
+              </div>
+              <InfoTooltip text={stat.tooltip} position="top" />
+            </div>
+
+            {/* Value (center) */}
+            <div className="flex-1 flex items-center justify-center">
+              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                {stat.value}
+              </span>
+            </div>
+
+            {/* Description (bottom) */}
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {stat.desc}
+            </div>
           </div>
-          <div className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{stat.desc}</div>
         </div>
       ))}
     </div>

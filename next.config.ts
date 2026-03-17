@@ -42,6 +42,11 @@ const nextConfig: NextConfig = {
         destination: "/admin/cross-user-analytics",
         permanent: false,
       },
+      {
+        source: "/beta",
+        destination: "/auth/login",
+        permanent: false,
+      },
     ];
   },
 };

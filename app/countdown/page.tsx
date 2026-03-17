@@ -237,7 +237,7 @@ export default function CountdownPage() {
           <div className="flex gap-6">
             <Link href="/beta" className="hover:text-[#ef725c] transition">Beta</Link>
             <Link href="/feedback" className="hover:text-[#ef725c] transition">Contact</Link>
-            <Link href="/about" className="hover:text-[#ef725c] transition">Privacy</Link>
+            <Link href="/privacy" className="hover:text-[#ef725c] transition">Privacy</Link>
           </div>
           <p>© {new Date().getFullYear()} Wheel of Founders</p>
         </div>

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import type { ReactNode } from 'react'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
@@ -19,7 +20,8 @@ import { TutorialProvider } from '@/lib/contexts/TutorialContext'
 import { ComprehensiveTourProvider } from '@/lib/contexts/ComprehensiveTourContext'
 import { InAppNotificationProvider } from '@/lib/contexts/InAppNotificationContext'
 import { JoyrideTutorial } from '@/components/tutorial/JoyrideTutorial'
-import { ComprehensiveTour } from '@/components/ComprehensiveTour'
+import { ComprehensiveTourGate } from '@/components/ComprehensiveTourGate'
+import { isTourEnabled } from '@/lib/feature-flags'
 import { GlobalErrorHandlers } from '@/components/GlobalErrorHandlers'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -54,7 +56,7 @@ function NotificationPermission() {
 export default async function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: ReactNode
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
@@ -102,8 +104,12 @@ export default async function RootLayout({
         <DuoUpgradeBanner />
         <main className="min-h-screen pt-4 pb-24">{children}</main>
         <BottomNav />
-        <JoyrideTutorial />
-        <ComprehensiveTour />
+        {isTourEnabled() && (
+          <>
+            <JoyrideTutorial />
+            <ComprehensiveTourGate />
+          </>
+        )}
         <Toast />
         <FeedbackPopUp />
         <AppFooter />

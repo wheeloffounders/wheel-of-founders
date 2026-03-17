@@ -172,6 +172,7 @@ export function BottomNav() {
           {/* Dashboard */}
           <Link
             href="/dashboard"
+            data-tour="dashboard"
             className={`${navButtonClass} ${isDashboardActive ? 'text-[#ef725c] dark:text-[#f0886c]' : 'text-gray-700 dark:text-gray-300 dark:text-gray-300'}`}
           >
             <Home className="w-6 h-6" strokeWidth={isDashboardActive ? 2.5 : 2} />
@@ -287,6 +288,7 @@ export function BottomNav() {
           <div ref={profileRef} className="relative flex justify-center">
             <button
               type="button"
+              data-tour="profile"
               onClick={() => { setProfileOpen(!profileOpen); if (!profileOpen) { setInsightsOpen(false); setTodayOpen(false); setSettingsOpen(false) } }}
               className={`${navButtonClass} ${isProfileActive ? 'text-[#ef725c] dark:text-[#f0886c]' : 'text-gray-700 dark:text-gray-300 dark:text-gray-300'}`}
             >

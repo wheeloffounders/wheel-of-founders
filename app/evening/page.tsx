@@ -35,6 +35,7 @@ import { EveningFirstTimeCTA } from '@/components/EveningFirstTimeCTA'
 import { InfoTooltip } from '@/components/InfoTooltip'
 import { ReflectionPopup } from '@/components/ReflectionPopup'
 import { getTimeAwareness } from '@/lib/time-utils'
+import { trackErrorSync } from '@/lib/error-tracker'
 
 const MOOD_OPTIONS = [
   { value: 5, label: 'Great', emoji: '😊' },
@@ -109,6 +110,7 @@ export default function EveningPage() {
   const [monthStatus, setMonthStatus] = useState<Record<string, DayStatus>>({})
 
   const { insight: streamingInsight, isStreaming, error: streamingError, startStream } = useStreamingInsight()
+  const [isRetrying, setIsRetrying] = useState(false)
 
   const fireFunnelStep = useCallback((step: number, name: string) => {
     if (funnelStepRef.current.has(step)) return
@@ -128,12 +130,124 @@ export default function EveningPage() {
     }
   }, [])
 
-  // Show streaming errors in the coach message
+  // Show streaming errors in the coach message (only when not showing retry UI)
   useEffect(() => {
     if (streamingError && aiCoachTrigger === 'evening_after') {
       setAiCoachMessage(`[AI ERROR] ${streamingError}`)
     }
   }, [streamingError, aiCoachTrigger])
+
+  // Clear isRetrying when stream completes (success or failure)
+  useEffect(() => {
+    if (isRetrying && !isStreaming) {
+      setIsRetrying(false)
+    }
+  }, [isRetrying, isStreaming])
+
+  const handleRetryInsight = useCallback(async () => {
+    const session = await getUserSession()
+    if (!session?.user?.id) return
+    const features = getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
+    if (!features.dailyPostEveningPrompt) return
+
+    setIsRetrying(true)
+    const winsForApi = wins.filter((w) => w.trim()).length > 0 ? JSON.stringify(wins.filter((w) => w.trim())) : null
+    const lessonsForApi = lessons.filter((l) => l.trim()).length > 0 ? JSON.stringify(lessons.filter((l) => l.trim())) : null
+    try {
+      await startStream(
+        {
+          promptType: 'post_evening',
+          userId: session.user.id,
+          promptDate: reviewDate,
+          accessToken: session?.access_token,
+          postEveningOverride: {
+            todayReview: {
+              wins: winsForApi,
+              lessons: lessonsForApi,
+              journal: journal.trim() || null,
+              mood: mood ?? null,
+              energy: energy ?? null,
+            },
+            todayPlan: morningTasks.map((t) => ({
+              description: t.description,
+              completed: t.completed,
+              needle_mover: t.needle_mover ?? false,
+            })),
+          },
+        },
+        async (fullPrompt) => {
+          setAiCoachMessage(fullPrompt)
+          const { data: existing } = await supabase
+            .from('personal_prompts')
+            .select('id, generation_count')
+            .eq('user_id', session.user.id)
+            .eq('prompt_type', 'post_evening')
+            .eq('prompt_date', reviewDate)
+            .maybeSingle()
+          const genCount = existing ? ((existing as { generation_count?: number }).generation_count ?? 1) + 1 : 1
+          const { data: saved, error: upsertErr } = await supabase
+            .from('personal_prompts')
+            .upsert(
+              {
+                user_id: session.user.id,
+                prompt_type: 'post_evening',
+                prompt_date: reviewDate,
+                prompt_text: fullPrompt,
+                stage_context: null,
+                generation_count: genCount,
+                generated_at: new Date().toISOString(),
+              },
+              { onConflict: 'user_id,prompt_type,prompt_date' }
+            )
+            .select()
+          let primaryFailed = !!upsertErr
+          let fallbackFailed = false
+          if (upsertErr) {
+            const isRlsError =
+              upsertErr?.message?.includes('row-level security') ||
+              upsertErr?.message?.includes('policy') ||
+              (upsertErr as { code?: string }).code === '42501'
+            if (isRlsError && session.user.id) {
+              const { data: { session: apiSession } } = await supabase.auth.getSession()
+              const apiRes = await fetch('/api/insights/save', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(apiSession?.access_token && { Authorization: `Bearer ${apiSession.access_token}` }),
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                  prompt_type: 'post_evening',
+                  prompt_date: reviewDate,
+                  prompt_text: fullPrompt,
+                  generation_count: genCount,
+                }),
+              })
+              const apiData = (await apiRes.json()) as { success?: boolean; id?: string; error?: string }
+              if (apiRes.ok && apiData.success) {
+                if (apiData.id) setEveningInsightId(apiData.id)
+              } else fallbackFailed = true
+            } else fallbackFailed = true
+          }
+          if (!primaryFailed) {
+            const savedId = (saved as { id?: string }[])?.[0]?.id
+            if (savedId) setEveningInsightId(savedId)
+            window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Evening insight saved', type: 'success' } }))
+          } else if (!fallbackFailed) {
+            window.dispatchEvent(new CustomEvent('toast', {
+              detail: { message: 'Insight taking longer than usual — it will appear shortly.', type: 'info' },
+            }))
+          } else {
+            window.dispatchEvent(new CustomEvent('toast', {
+              detail: { message: 'Failed to save evening insight. Please try again.', type: 'error' },
+            }))
+          }
+        }
+      )
+    } catch (err) {
+      console.error('[Evening] Retry insight failed:', err)
+    }
+  }, [wins, lessons, journal, mood, energy, morningTasks, reviewDate, startStream])
 
   // Initialize reviewDate from URL or today
   useEffect(() => {
@@ -692,26 +806,67 @@ export default function EveningPage() {
                 )
                 .select()
 
+              let primaryFailed = !!upsertErr
+              let fallbackFailed = false
+
               if (upsertErr) {
-                // Log only meaningful errors to avoid noisy empty objects in console
                 const hasMessage =
                   typeof (upsertErr as { message?: string }).message === 'string' &&
                   !!(upsertErr as { message?: string }).message
                 if (hasMessage) {
-                  console.error('❌ Post-evening insight save failed:', upsertErr)
-                }
-                window.dispatchEvent(
-                  new CustomEvent('toast', {
-                    detail: {
-                      message: 'Failed to save evening insight. Please try again.',
-                      type: 'error',
-                    },
+                  console.error('❌ Post-evening insight save failed (will try API fallback):', upsertErr)
+                  trackErrorSync(new Error(`Post-evening insight save failed: ${(upsertErr as { message?: string }).message}`), {
+                    component: 'evening',
+                    action: 'save_insight',
+                    severity: 'medium',
+                    metadata: { code: (upsertErr as { code?: string }).code, reviewDate, promptType: 'post_evening' },
+                    userId: session.user.id,
                   })
-                )
-              } else {
+                }
+                const isRlsError =
+                  upsertErr?.message?.includes('row-level security') ||
+                  upsertErr?.message?.includes('policy') ||
+                  (upsertErr as { code?: string }).code === '42501'
+                if (isRlsError && session.user.id) {
+                  const { data: { session: apiSession } } = await supabase.auth.getSession()
+                  const apiRes = await fetch('/api/insights/save', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      ...(apiSession?.access_token && { Authorization: `Bearer ${apiSession.access_token}` }),
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                      prompt_type: 'post_evening',
+                      prompt_date: reviewDate,
+                      prompt_text: fullPrompt,
+                      generation_count: genCount,
+                    }),
+                  })
+                  const apiData = (await apiRes.json()) as { success?: boolean; id?: string; error?: string }
+                  if (apiRes.ok && apiData.success) {
+                    if (apiData.id) setEveningInsightId(apiData.id)
+                  } else {
+                    fallbackFailed = true
+                    console.error('❌ [INSIGHT SAVE] Evening API fallback failed:', apiData.error)
+                  }
+                } else {
+                  fallbackFailed = true
+                }
+              }
+
+              if (!primaryFailed) {
                 const savedId = (saved as { id?: string }[])?.[0]?.id
                 if (savedId) setEveningInsightId(savedId)
                 window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Evening insight saved', type: 'success' } }))
+              } else if (!fallbackFailed) {
+                window.dispatchEvent(new CustomEvent('toast', {
+                  detail: { message: 'Insight taking longer than usual — it will appear shortly.', type: 'info' },
+                }))
+              } else {
+                window.dispatchEvent(new CustomEvent('toast', {
+                  detail: { message: 'Failed to save evening insight. Please try again.', type: 'error' },
+                }))
               }
             }
           )
@@ -780,24 +935,65 @@ export default function EveningPage() {
               )
               .select()
 
+            let morningPrimaryFailed = !!morningUpsertErr
+            let morningFallbackFailed = false
+
             if (morningUpsertErr) {
               const hasMessage =
                 typeof (morningUpsertErr as { message?: string }).message === 'string' &&
                 !!(morningUpsertErr as { message?: string }).message
               if (hasMessage) {
-                console.error('❌ CRITICAL - Morning insight save failed:', morningUpsertErr)
+                console.error('❌ Morning insight save failed (will try API fallback):', morningUpsertErr)
               }
-              window.dispatchEvent(
-                new CustomEvent('toast', {
-                  detail: {
-                    message: 'Failed to save morning insight. Please try again.',
-                    type: 'error',
+              trackErrorSync(new Error(`Morning insight save failed: ${morningUpsertErr.message}`), {
+                component: 'evening',
+                action: 'save_morning_insight',
+                severity: 'medium',
+                metadata: { planDate: nextDay, code: (morningUpsertErr as { code?: string }).code },
+              })
+              const isRlsError =
+                morningUpsertErr?.message?.includes('row-level security') ||
+                morningUpsertErr?.message?.includes('policy') ||
+                (morningUpsertErr as { code?: string }).code === '42501'
+              if (isRlsError) {
+                const { data: { session: apiSession } } = await supabase.auth.getSession()
+                const apiRes = await fetch('/api/insights/save', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(apiSession?.access_token && { Authorization: `Bearer ${apiSession.access_token}` }),
                   },
+                  credentials: 'include',
+                  body: JSON.stringify({
+                    prompt_type: 'morning',
+                    prompt_date: nextDay,
+                    prompt_text: morningData.prompt,
+                    generation_count: morningGenCount,
+                  }),
                 })
-              )
-            } else {
+                const apiData = (await apiRes.json()) as { success?: boolean; id?: string; error?: string }
+                if (apiRes.ok && apiData.success) {
+                  // Fallback succeeded — no error toast
+                } else {
+                  morningFallbackFailed = true
+                  console.error('❌ [INSIGHT SAVE] Morning API fallback failed:', apiData.error)
+                }
+              } else {
+                morningFallbackFailed = true
+              }
+            }
+
+            if (!morningPrimaryFailed) {
               console.log('✅ Morning insight SAVED for', nextDay, 'id:', (morningSaved as { id?: string }[])?.[0]?.id)
               window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Morning insight saved for tomorrow', type: 'success' } }))
+            } else if (!morningFallbackFailed) {
+              window.dispatchEvent(new CustomEvent('toast', {
+                detail: { message: 'Insight taking longer than usual — it will appear shortly.', type: 'info' },
+              }))
+            } else {
+              window.dispatchEvent(new CustomEvent('toast', {
+                detail: { message: 'Failed to save morning insight. Please try again.', type: 'error' },
+              }))
             }
           } else if (morningData?.aiError) {
             console.error('🔵 STEP 9 FAIL: Morning AI error:', morningData.error, 'model:', morningData.model, 'status:', morningData.status)
@@ -1399,15 +1595,42 @@ export default function EveningPage() {
       />
 
       {/* Mrs. Deer AI Coach - Evening Reflection Insight (permanent, always shown if exists) */}
-      {aiCoachTrigger === 'evening_after' && (aiCoachMessage || isStreaming || streamingError) && (
+      {aiCoachTrigger === 'evening_after' && (aiCoachMessage || isStreaming || streamingError || isRetrying) && (
         <>
-          {isStreaming && <StreamingIndicator className="mb-4" />}
-          <AICoachPrompt
-            message={isStreaming ? (streamingInsight || '...') : (streamingError ? `[AI ERROR] ${streamingError}` : aiCoachMessage!)}
-            trigger={aiCoachTrigger}
-            onClose={() => {}}
-            insightId={eveningInsightId ?? undefined}
-          />
+          {streamingError && !isRetrying ? (
+            <div className="mt-4 p-6 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-center">
+              <p className="text-amber-800 dark:text-amber-200 mb-3">
+                🦌 Mrs. Deer lost her train of thought
+              </p>
+              <p className="text-sm text-amber-600 dark:text-amber-300 mb-4">
+                She was thinking about your evening but got interrupted.
+              </p>
+              <button
+                type="button"
+                onClick={handleRetryInsight}
+                className="px-4 py-2 bg-[#ef725c] text-white rounded-lg hover:bg-[#e8654d] transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
+          ) : isRetrying ? (
+            <div className="mt-4 p-6 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-center">
+              <p className="text-blue-800 dark:text-blue-200">
+                🦌 Mrs. Deer is thinking again...
+              </p>
+              <StreamingIndicator className="mt-3" />
+            </div>
+          ) : (
+            <>
+              {isStreaming && <StreamingIndicator className="mb-4" />}
+              <AICoachPrompt
+                message={isStreaming ? (streamingInsight || '...') : aiCoachMessage!}
+                trigger={aiCoachTrigger}
+                onClose={() => {}}
+                insightId={eveningInsightId ?? undefined}
+              />
+            </>
+          )}
         </>
       )}
 

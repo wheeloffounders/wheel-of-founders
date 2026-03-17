@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useComprehensiveTour } from '@/lib/contexts/ComprehensiveTourContext'
 import { supabase } from '@/lib/supabase'
 import { HelpCircle } from 'lucide-react'
-import { isNewOnboardingEnabled } from '@/lib/feature-flags'
+import { isTourEnabled } from '@/lib/feature-flags'
 
 const DISMISS_KEY = 'wof_tutorial_card_dismissed'
 
@@ -48,7 +48,7 @@ export function TutorialCard() {
     setShow(false)
   }
 
-  if (!isNewOnboardingEnabled() || loading || !show) return null
+  if (!isTourEnabled() || loading || !show) return null
 
   return (
     <div

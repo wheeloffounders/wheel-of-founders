@@ -1,13 +1,20 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, CheckCircle, AlertCircle } from 'lucide-react'
+import { X, CheckCircle, AlertCircle, Info } from 'lucide-react'
 import { colors } from '@/lib/design-tokens'
+
+export interface ToastDetail {
+  message: string
+  type?: 'success' | 'error' | 'info'
+  onRetry?: () => void
+}
 
 interface ToastMessage {
   message: string
   type: 'success' | 'error' | 'info'
   id: string
+  onRetry?: () => void
 }
 
 // Prevent duplicate toasts within a time window
@@ -28,10 +35,10 @@ export function Toast() {
     }
     const cleanupInterval = setInterval(cleanupHistory, 10000)
 
-    const handleToast = (event: CustomEvent<{ message: string; type: 'success' | 'error' | 'info' }>) => {
-      const { message, type = 'success' } = event.detail
+    const handleToast = (event: CustomEvent<ToastDetail>) => {
+      const { message, type = 'success', onRetry } = event.detail
       const now = Date.now()
-      const messageKey = `${type}:${message}`
+      const messageKey = onRetry ? `${type}:${message}:${now}` : `${type}:${message}`
 
       // Suppress duplicate messages within DEDUP_MS
       const lastShown = toastHistory.get(messageKey)
@@ -50,9 +57,10 @@ export function Toast() {
       }
       setToasts((prev) => [...prev, newToast])
 
+      const dismissMs = type === 'error' && onRetry ? 8000 : 3000
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== newToast.id))
-      }, 3000)
+      }, dismissMs)
     }
 
     window.addEventListener('toast', handleToast as EventListener)
@@ -75,15 +83,27 @@ export function Toast() {
           key={toast.id}
           className="flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg min-w-[300px] max-w-md transition-all duration-200 animate-slide-in"
           style={{
-            backgroundColor: toast.type === 'error' ? '#FEF2F2' : toast.type === 'success' ? '#ECFDF3' : colors.neutral.card,
-            borderColor: toast.type === 'error' ? '#FECACA' : toast.type === 'success' ? colors.emerald.DEFAULT : colors.neutral.border,
+            backgroundColor: toast.type === 'error' ? '#FEF2F2' : toast.type === 'success' ? '#ECFDF3' : toast.type === 'info' ? '#EFF6FF' : colors.neutral.card,
+            borderColor: toast.type === 'error' ? '#FECACA' : toast.type === 'success' ? colors.emerald.DEFAULT : toast.type === 'info' ? '#BFDBFE' : colors.neutral.border,
             borderWidth: '1px',
-            color: toast.type === 'error' ? '#B91C1C' : toast.type === 'success' ? colors.emerald.DEFAULT : colors.neutral.text.primary,
+            color: toast.type === 'error' ? '#B91C1C' : toast.type === 'success' ? colors.emerald.DEFAULT : toast.type === 'info' ? '#1E40AF' : colors.neutral.text.primary,
           }}
         >
           {toast.type === 'success' && <CheckCircle className="w-5 h-5 flex-shrink-0" />}
           {toast.type === 'error' && <AlertCircle className="w-5 h-5 flex-shrink-0" />}
+          {toast.type === 'info' && <Info className="w-5 h-5 flex-shrink-0" />}
           <span className="flex-1 text-sm font-medium">{toast.message}</span>
+          {toast.type === 'error' && toast.onRetry && (
+            <button
+              onClick={() => {
+                toast.onRetry?.()
+                removeToast(toast.id)
+              }}
+              className="px-2 py-1 text-xs font-medium rounded bg-red-100 text-red-700 hover:bg-red-200 transition"
+            >
+              Retry
+            </button>
+          )}
           <button
             onClick={() => removeToast(toast.id)}
             className="p-1 hover:opacity-70 transition-opacity"

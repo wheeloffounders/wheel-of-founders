@@ -196,7 +196,7 @@ export function TaskWidget() {
   const todayLabel = date ? format(new Date(date + 'T12:00:00'), 'EEEE, MMMM d') : 'Today'
 
   return (
-    <Card className="mb-6 h-full flex flex-col" style={{ borderRadius: 12 }}>
+    <Card className="mb-4 h-full flex flex-col border-none shadow-none bg-transparent" style={{ borderRadius: 12 }}>
       <CardHeader>
         <CardTitle className="flex items-center justify-between text-base md:text-lg">
           <span>Today&apos;s Tasks Progress</span>
@@ -205,7 +205,7 @@ export function TaskWidget() {
           </span>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4 flex-1 flex flex-col">
+      <CardContent className="space-y-3 flex-1 flex flex-col">
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -237,19 +237,18 @@ export function TaskWidget() {
               </div>
             </div>
 
-            <div className="space-y-3 mt-4">
+            <div className="space-y-2 mt-3">
               {tasks.map((task) => {
                 const moved = (task as any).movedToTomorrow
+                const rowClasses = task.completed
+                  ? 'bg-emerald-100 dark:bg-emerald-900/30'
+                  : moved
+                    ? 'bg-gray-100 dark:bg-gray-800/50'
+                    : 'bg-blue-50 dark:bg-blue-900/20'
                 return (
                 <div
                   key={task.id}
-                  className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-3 p-2 rounded-lg border ${
-                    moved
-                      ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800'
-                      : task.completed
-                        ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800'
-                        : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-                  }`}
+                  className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-3 p-3 rounded-lg transition-colors ${rowClasses}`}
                 >
                   <button
                     type="button"

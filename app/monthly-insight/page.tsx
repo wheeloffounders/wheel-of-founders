@@ -12,7 +12,7 @@ import {
 } from 'date-fns'
 import { Calendar, Download, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getUserSession } from '@/lib/auth'
+import { getUserSession, type SessionWithProfile } from '@/lib/auth'
 import { calculateStreak } from '@/lib/streak'
 import { getFeatureAccess } from '@/lib/features'
 import { generateTransformationPairs, detectWinThemes } from '@/lib/weekly-analysis'
@@ -63,6 +63,7 @@ export default function MonthlyInsightPage() {
   const [generateError, setGenerateError] = useState<string | null>(null)
   const hasTriggeredGenerate = useRef(false)
   const [unlockProgress, setUnlockProgress] = useState<{ current: number; required: number; isUnlocked: boolean } | null>(null)
+  const [session, setSession] = useState<SessionWithProfile | null>(null)
 
   const isEndOfMonth = differenceInDays(endOfMonth(selectedMonth), new Date()) <= 3 || !isSameMonth(selectedMonth, new Date())
   const showFullMonthly = isEndOfMonth
@@ -85,44 +86,28 @@ export default function MonthlyInsightPage() {
     }
   }, [monthParam])
 
+  // Single session fetch - avoids N+1 user_profiles calls
   useEffect(() => {
-    const checkAuth = async () => {
-      const session = await getUserSession()
-      if (!session) {
-        router.push('/auth/login')
-        return
-      }
-    }
-    checkAuth()
+    getUserSession().then((s) => {
+      setSession(s)
+      if (!s) router.push('/auth/login')
+    })
   }, [router])
 
   useEffect(() => {
-    const checkUnlock = async () => {
-      const session = await getUserSession()
-      if (!session) return
-      const progress = await getMonthlyProgress(session.user.id)
-      setUnlockProgress(progress)
-    }
-    checkUnlock()
-  }, [])
-
-  useEffect(() => {
-    if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
-      setSelectedMonth(new Date(monthParam + '-01'))
-    }
-  }, [monthParam])
+    if (!session) return
+    getMonthlyProgress(session.user.id).then(setUnlockProgress)
+  }, [session])
 
   // When no month in URL, redirect to most recent month WITH data
   useEffect(() => {
-    if (monthParam || initialRedirectDone) return
+    if (!session || monthParam || initialRedirectDone) return
     const redirectToLatest = async () => {
-      const session = await getUserSession()
-      if (!session) return
       try {
         const { data: { session: supabaseSession } } = await supabase.auth.getSession()
         const headers: Record<string, string> = {}
         if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
-        const res = await fetch('/api/insights/periods?type=monthly', { headers })
+        const res = await fetch('/api/insights/periods?type=monthly', { headers, credentials: 'include' })
         const json = await res.json()
         if (json.periods?.length > 0) {
           const latestMonth = json.periods[0].slice(0, 7) // "2026-02-01" -> "2026-02"
@@ -135,18 +120,17 @@ export default function MonthlyInsightPage() {
       }
     }
     redirectToLatest()
-  }, [monthParam, initialRedirectDone, router])
+  }, [session, monthParam, initialRedirectDone, router])
 
   useEffect(() => {
+    if (!session) return
     const fetchPeriods = async () => {
-      const session = await getUserSession()
-      if (!session) return
       try {
         const { data: { session: supabaseSession } } = await supabase.auth.getSession()
         const headers: Record<string, string> = {}
         if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
         const monthStr = format(selectedMonth, 'yyyy-MM')
-        const res = await fetch(`/api/insights/periods?type=monthly&current=${monthStr}`, { headers })
+        const res = await fetch(`/api/insights/periods?type=monthly&current=${monthStr}`, { headers, credentials: 'include' })
         const json = await res.json()
         if (json.periods) setPeriods(json.periods)
       } catch {
@@ -154,17 +138,12 @@ export default function MonthlyInsightPage() {
       }
     }
     fetchPeriods()
-  }, [selectedMonth])
+  }, [session, selectedMonth])
 
   useEffect(() => {
+    if (!session) return
     const fetchMonthData = async () => {
       setLoading(true)
-      const session = await getUserSession()
-      if (!session) {
-        setLoading(false)
-        return
-      }
-
       const features = getFeatureAccess({
         tier: session.user.tier,
         pro_features_enabled: session.user.pro_features_enabled,
@@ -295,29 +274,9 @@ export default function MonthlyInsightPage() {
     }
 
     fetchMonthData()
-  }, [selectedMonth])
-
-  useEffect(() => {
-    const fetchPeriods = async () => {
-      const session = await getUserSession()
-      if (!session) return
-      try {
-        const { data: { session: supabaseSession } } = await supabase.auth.getSession()
-        const headers: Record<string, string> = {}
-        if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
-        const monthStr = format(startOfMonth(selectedMonth), 'yyyy-MM')
-        const res = await fetch(`/api/insights/periods?type=monthly&current=${monthStr}`, { headers })
-        const json = await res.json()
-        if (json.periods) setPeriods(json.periods)
-      } catch {
-        // ignore
-      }
-    }
-    fetchPeriods()
-  }, [selectedMonth])
+  }, [session, selectedMonth])
 
   const handleGenerateInsight = async () => {
-    const session = await getUserSession()
     const features = session ? getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled }) : null
     if (!features?.personalMonthlyInsight) return
     setGenerating(true)
@@ -353,12 +312,11 @@ export default function MonthlyInsightPage() {
 
   // Auto-generate insight on load when no insight exists
   useEffect(() => {
-    if (!showFullMonthly || generating || hasTriggeredGenerate.current) return
+    if (!session || !showFullMonthly || generating || hasTriggeredGenerate.current) return
     const hasInsight = monthlyInsightOverride ?? monthlyInsight
     if (hasInsight) return
     const doGenerate = async () => {
-      const session = await getUserSession()
-      const features = session ? getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled }) : null
+      const features = getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
       if (!features?.personalMonthlyInsight) return
       const hasContent = monthlyWins.length > 0 || monthlyLessons.length > 0
       if (!hasContent) return
@@ -391,7 +349,7 @@ export default function MonthlyInsightPage() {
       }
     }
     doGenerate()
-  }, [showFullMonthly, monthlyInsight, monthlyInsightOverride, monthlyWins.length, monthlyLessons.length, selectedMonth, generating])
+  }, [session, showFullMonthly, monthlyInsight, monthlyInsightOverride, monthlyWins.length, monthlyLessons.length, selectedMonth, generating])
 
   // Fetch AI-parsed transformation pairs when we have wins/lessons
   useEffect(() => {

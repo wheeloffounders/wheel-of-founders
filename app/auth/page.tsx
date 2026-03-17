@@ -123,7 +123,15 @@ export default function AuthChoicePage() {
         </div>
 
         <p className="text-xs text-center text-gray-500 mt-6">
-          By continuing, you agree to our Terms of Service and Privacy Policy.
+          By continuing, you agree to our{' '}
+          <a href="/terms" className="text-[#ef725c] hover:underline">
+            Terms of Service
+          </a>
+          {' '}and{' '}
+          <a href="/privacy" className="text-[#ef725c] hover:underline">
+            Privacy Policy
+          </a>
+          .
         </p>
       </div>
     </div>

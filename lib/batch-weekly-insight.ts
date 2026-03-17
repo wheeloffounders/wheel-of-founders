@@ -6,6 +6,8 @@ import { getServerSupabase } from '@/lib/server-supabase'
 import { generateAIPrompt } from '@/lib/ai-client'
 import { checkUserHistory } from '@/lib/user-history'
 import { PARSE_INSTRUCTION } from '@/lib/insight-parse-instructions'
+import { adminSupabase } from '@/lib/supabase/admin'
+import * as Sentry from '@sentry/nextjs'
 
 interface WeekPayload {
   weekStart: string
@@ -21,6 +23,44 @@ interface WeekPayload {
   needleMoversCompleted: number
   needleMoversTotal: number
   primaryGoal: string | null
+}
+
+type WeeklyInsightStage = 'init' | 'data_fetch' | 'ai_call' | 'save' | 'complete' | 'failed'
+
+interface WeeklyInsightDebugPayload {
+  userId: string
+  weekStart: string
+  weekEnd: string
+  attemptNumber?: number
+  stage: WeeklyInsightStage
+  error?: unknown
+  metrics?: {
+    morningTasksCount: number
+    eveningReviewsCount: number
+    decisionsCount: number
+  }
+}
+
+async function logWeeklyInsightDebug(data: WeeklyInsightDebugPayload) {
+  if (!adminSupabase) {
+    console.warn('[WeeklyInsightDebug] adminSupabase not configured')
+    return
+  }
+
+  const { error } = await adminSupabase.from('weekly_insight_debug').insert({
+    user_id: data.userId,
+    week_start: data.weekStart,
+    week_end: data.weekEnd,
+    attempt_number: data.attemptNumber ?? 1,
+    stage: data.stage,
+    error: data.error ? data.error : null,
+    metadata: data.metrics ? { metrics: data.metrics } : null,
+    completed_at: data.stage === 'complete' ? new Date().toISOString() : null,
+  } as any)
+
+  if (error) {
+    console.error('[WeeklyInsightDebug] Failed to log:', error)
+  }
 }
 
 function parseWins(val: unknown, date: string): { text: string; date: string }[] {
@@ -179,6 +219,15 @@ export async function generateWeeklyInsightForUser(
   weekEnd: string
 ): Promise<{ success: boolean; insight?: string; error?: string }> {
   const db = getServerSupabase()
+  const attemptNumber = 1
+
+  await logWeeklyInsightDebug({
+    userId,
+    weekStart,
+    weekEnd,
+    attemptNumber,
+    stage: 'init',
+  })
 
   const [tasksRes, reviewsRes, selectionsRes, profileRes, feedbackRes] = await Promise.all([
     db
@@ -236,6 +285,19 @@ export async function generateWeeklyInsightForUser(
   const avgEnergy = energies.length > 0 ? Math.round(energies.reduce((a, b) => a + b, 0) / energies.length * 10) / 10 : null
 
   if (wins.length === 0 && lessons.length === 0) {
+    await logWeeklyInsightDebug({
+      userId,
+      weekStart,
+      weekEnd,
+      attemptNumber,
+      stage: 'failed',
+      error: { code: 'NO_CONTENT', message: 'No wins or lessons for week' },
+      metrics: {
+        morningTasksCount: tasks.length,
+        eveningReviewsCount: reviews.length,
+        decisionsCount: 0,
+      },
+    })
     return { success: false, error: 'No wins or lessons for week' }
   }
 
@@ -309,6 +371,19 @@ export async function generateWeeklyInsightForUser(
   const MRS_DEER_RULES = `You are Mrs. Deer, a warm, wise coach for founders. You've sat with many founders. You validate before reframing. You think with them, not at them.`
   const historyNote = hasHistory ? '' : ' CRITICAL: User has NO prior history. ONLY use what they wrote this week. DO NOT say "I recall" or invent context. Be a mirror, not a coach.'
 
+  await logWeeklyInsightDebug({
+    userId,
+    weekStart,
+    weekEnd,
+    attemptNumber,
+    stage: 'ai_call',
+    metrics: {
+      morningTasksCount: tasks.length,
+      eveningReviewsCount: reviews.length,
+      decisionsCount: 0,
+    },
+  })
+
   try {
     const insight = await generateAIPrompt({
       systemPrompt: `${MRS_DEER_RULES}\n\nWeekly insight: max 350 words. Output exactly 4 sections with ## markdown headers and blank lines between sections. Let AI choose warm, natural titles. BANNED: needle mover, action plan, smart constraint, power list. Use natural language only.${historyNote}`,
@@ -337,9 +412,81 @@ export async function generateWeeklyInsightForUser(
       { onConflict: 'user_id,insight_type,period_start,period_end' }
     )
 
+    // Also ensure weekly_insights row reflects completed status (cron and on-demand keep it in sync)
+    await (db.from('weekly_insights') as any).upsert(
+      {
+        user_id: userId,
+        week_start: weekStart,
+        week_end: weekEnd,
+        insight_text: insight,
+        generated_at: new Date().toISOString(),
+        status: 'completed',
+        retry_count: 0,
+        next_retry_at: null,
+      },
+      { onConflict: 'user_id,week_start' }
+    )
+
+    await logWeeklyInsightDebug({
+      userId,
+      weekStart,
+      weekEnd,
+      attemptNumber,
+      stage: 'complete',
+      metrics: {
+        morningTasksCount: tasks.length,
+        eveningReviewsCount: reviews.length,
+        decisionsCount: 0,
+      },
+    })
+
     return { success: true, insight }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
+
+    await logWeeklyInsightDebug({
+      userId,
+      weekStart,
+      weekEnd,
+      attemptNumber,
+      stage: 'failed',
+      error: err,
+      metrics: {
+        morningTasksCount: tasks.length,
+        eveningReviewsCount: reviews.length,
+        decisionsCount: 0,
+      },
+    })
+
+    Sentry.captureException(err, {
+      tags: {
+        feature: 'weekly_insight',
+        week_start: weekStart,
+        attempt: String(attemptNumber),
+      },
+      extra: {
+        userId,
+        metrics: {
+          tasks: tasks.length,
+          reviews: reviews.length,
+          decisions: 0,
+        },
+      },
+    })
+
+    // Mark or update weekly_insights row as failed and schedule retry
+    await (db.from('weekly_insights') as any).upsert(
+      {
+        user_id: userId,
+        week_start: weekStart,
+        week_end: weekEnd,
+        status: 'failed',
+        // Let cron increment retry_count; initial failure keeps retry_count at 0
+        next_retry_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      },
+      { onConflict: 'user_id,week_start' }
+    )
+
     return { success: false, error: msg }
   }
 }

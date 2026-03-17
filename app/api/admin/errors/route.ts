@@ -81,7 +81,7 @@ export async function PATCH(req: NextRequest) {
       updates.resolution_notes = body.resolution_notes
     }
 
-    const { error } = await db.from('error_logs').update(updates).eq('id', body.id)
+    const { error } = await (db.from('error_logs') as any).update(updates).eq('id', body.id)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })

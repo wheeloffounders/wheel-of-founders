@@ -15,23 +15,25 @@ import {
   Greeting,
   TodaysIntention,
   MrsDeerInsight,
-  StatsGrid,
-  JourneyProgress,
+  ProgressZone,
   QuickLinks,
 } from '@/components/dashboard'
 import { MicroLesson } from '@/components/MicroLesson'
-import { TutorialCard } from '@/components/TutorialCard'
+import { TourPopUp } from '@/components/TourPopUp'
+import { IndependentTour } from '@/components/IndependentTour'
 import { PatternBuilding } from '@/components/dashboard/PatternBuilding'
 import { UnseenWins } from '@/components/dashboard/UnseenWins'
-import TaskWidget from '@/components/dashboard/TaskWidget'
 import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
 import { Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
+import { useComprehensiveTour } from '@/lib/contexts/ComprehensiveTourContext'
+import { isTourEnabled } from '@/lib/feature-flags'
 
 function DashboardContent() {
   const { syncData, isSyncing, lastSynced } = useDataSync()
+  const tourCtx = useComprehensiveTour()
   const [loading, setLoading] = useState(true)
   const [userTier, setUserTier] = useState<string>('beta')
   const [showWelcome, setShowWelcome] = useState(false)
@@ -114,6 +116,22 @@ function DashboardContent() {
     return () => window.removeEventListener('data-sync-request', handleSyncRequest)
   }, [syncData])
 
+  // Temporary: log elements with white background inside the dashboard (helps find Progress Zone culprits)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const whiteElements = document.querySelectorAll('[class*="bg-white"]')
+      console.log('🔍 [Dashboard] Elements with bg-white:', whiteElements.length)
+      whiteElements.forEach((el, i) => {
+        console.log(`🔍 [Dashboard] White element ${i}:`, {
+          tag: el.tagName,
+          classes: el.className,
+          parent: el.parentElement?.className,
+        })
+      })
+    }, 1000)
+    return () => clearTimeout(t)
+  }, [loading])
+
   useEffect(() => {
     let touchStartY = 0
     const handleTouchStart = (e: TouchEvent) => { touchStartY = e.touches[0].clientY }
@@ -191,39 +209,49 @@ function DashboardContent() {
         <>
           <ProfileReminderBanner />
 
-          <TutorialCard />
-          <div className="space-y-8">
-            {/* Greeting / Good evening */}
-            <div className="flex items-center gap-2" data-tour="dashboard-greeting">
-              <Greeting />
-              {userTier === 'beta' && <Badge variant="amber">Beta</Badge>}
+          <TourPopUp />
+
+          {/* TEMPORARY DEBUG BUTTON - REMOVE AFTER FIXING */}
+          {process.env.NODE_ENV === 'development' && (
+            <button
+              type="button"
+              onClick={() => {
+                console.log('🔴 [DEBUG] Manual force tour')
+                if (tourCtx?.startTour) {
+                  tourCtx.startTour()
+                } else {
+                  console.warn('🔴 [DEBUG] No tour context — using IndependentTour fallback')
+                  localStorage.setItem('force-tour', 'true')
+                  window.location.reload()
+                }
+              }}
+              className="fixed bottom-24 right-4 z-[100] bg-red-500 text-white px-3 py-2 rounded-lg text-sm font-medium shadow-lg"
+            >
+              🚨 FORCE TOUR
+            </button>
+          )}
+
+          {isTourEnabled() && <IndependentTour />}
+          <div className="space-y-4">
+            {/* Step 1a: Greeting, Intention, Mrs. Deer, then unified Progress Zone */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Greeting />
+                {userTier === 'beta' && <Badge variant="amber">Beta</Badge>}
+              </div>
+              <TodaysIntention />
+              <MrsDeerInsight />
+              <ProgressZone />
             </div>
 
-            {/* Today's intention */}
-            <TodaysIntention />
-
-            {/* Mrs. Deer insight */}
-            <MrsDeerInsight />
-
-            {/* Tasks + weekly stats grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-stretch">
-              <div className="lg:col-span-2 h-full">
-                <TaskWidget />
-              </div>
-              <div className="lg:col-span-2 h-full flex">
-                <StatsGrid />
-              </div>
+            {/* Step 3a: Your Story So Far & Unseen Wins */}
+            <div data-tour="story-unlocks" className="space-y-4">
+              <UnseenWins />
+              <PatternBuilding />
             </div>
 
-            {/* Your Story So Far (Unseen Wins) */}
-            <UnseenWins />
-
-            {/* Patterns and lifetime unlock progress */}
-            <PatternBuilding />
-
+            {/* Step 3b: Monthly & Quarterly Insights (DashboardProgress has data-tour when rendered) */}
             <DashboardProgress />
-
-            <JourneyProgress />
 
             {/* Quick links */}
             <div data-tour="dashboard-quick-links">

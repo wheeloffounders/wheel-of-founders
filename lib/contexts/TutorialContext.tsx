@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { usePathname, useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { trackJourneyStep } from '@/lib/analytics/journey-tracking'
+import { isTourEnabled } from '@/lib/feature-flags'
 
 export type TutorialStep =
   | 'dashboard'      // Point to Today button
@@ -70,6 +71,13 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const init = async () => {
+      // Tutorial disabled in production — Joyride and old 5-step tutorial dev-only
+      if (!isTourEnabled()) {
+        setIsActive(false)
+        setInitialized(true)
+        return
+      }
+
       // Don't activate tutorial on auth pages
       if (pathname?.startsWith('/auth')) {
         setIsActive(false)

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { colors } from '@/lib/design-tokens'
+import { HelpTourCard } from '@/components/HelpTourCard'
 
 export default function HelpPage() {
   return (
@@ -24,6 +25,8 @@ export default function HelpPage() {
       <p className="text-gray-600 dark:text-gray-400 mb-8">
         Everything you need to know about using Wheel of Founders.
       </p>
+
+      <HelpTourCard />
 
       <div className="grid md:grid-cols-2 gap-6 mb-8">
         <Link

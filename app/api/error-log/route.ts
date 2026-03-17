@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       : 'medium'
 
     const db = serverSupabase()
-    const { error } = await db.from('error_logs').insert({
+    const { error } = await (db.from('error_logs') as any).insert({
       error_type: errorType,
       error_message: errorMessage.slice(0, 2000),
       stack_trace: body.stack_trace?.slice(0, 10000) ?? null,

@@ -42,6 +42,7 @@ import { SaveAsTemplateModal } from '@/components/SaveAsTemplateModal'
 import { generateExamplesForUser } from '@/lib/profile-examples'
 import { FirstTimeSuccessModal } from '@/components/FirstTimeSuccessModal'
 import { isNewOnboardingEnabled } from '@/lib/feature-flags'
+import { trackErrorSync } from '@/lib/error-tracker'
 
 export type ActionPlanOption2 = 'my_zone' | 'systemize' | 'delegate_founder' | 'eliminate_founder' | 'quick_win_founder'
 
@@ -563,68 +564,101 @@ export default function MorningPage() {
 
           const generationCount = existing ? ((existing as { generation_count?: number }).generation_count ?? 1) + 1 : 1
 
-          const { data: savedRow, error: upsertError } = await supabase
-            .from('personal_prompts')
-            .upsert(
-              {
-                user_id: insightUserId,
-                prompt_type: 'post_morning',
-                prompt_date: planDate,
-                prompt_text: fullPrompt,
-                stage_context: null,
-                generation_count: generationCount,
-                generated_at: new Date().toISOString(),
-              },
-              { onConflict: 'user_id,prompt_type,prompt_date' }
-            )
-            .select()
+          const performSave = async (): Promise<{ primaryFailed: boolean; fallbackFailed: boolean }> => {
+            let primaryFailed = false
+            let fallbackFailed = false
 
-          if (upsertError) {
-            const isRlsError =
-              upsertError?.message?.includes('row-level security') ||
-              upsertError?.message?.includes('policy') ||
-              upsertError?.code === '42501'
-            if (isRlsError && insightUserId) {
-              console.log('🔍 [INSIGHT SAVE] RLS failed, retrying via API (admin client)...')
-              const { data: { session: apiSession } } = await supabase.auth.getSession()
-              const apiRes = await fetch('/api/insights/save', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...(apiSession?.access_token && { Authorization: `Bearer ${apiSession.access_token}` }),
-                },
-                credentials: 'include',
-                body: JSON.stringify({
+            const { data: savedRow, error: upsertError } = await supabase
+              .from('personal_prompts')
+              .upsert(
+                {
+                  user_id: insightUserId,
                   prompt_type: 'post_morning',
                   prompt_date: planDate,
                   prompt_text: fullPrompt,
+                  stage_context: null,
                   generation_count: generationCount,
-                }),
+                  generated_at: new Date().toISOString(),
+                },
+                { onConflict: 'user_id,prompt_type,prompt_date' }
+              )
+              .select()
+
+            if (upsertError) {
+              primaryFailed = true
+              trackErrorSync(new Error(`Post-morning insight save failed: ${upsertError.message}`), {
+                component: 'morning',
+                action: 'save_insight',
+                severity: 'medium',
+                metadata: { code: upsertError.code, planDate, insightUserId },
+                userId: insightUserId,
               })
-              const apiData = (await apiRes.json()) as { success?: boolean; id?: string; error?: string }
-              if (apiRes.ok && apiData.success) {
-                if (apiData.id) setPostMorningInsightId(apiData.id)
-                window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
+              const isRlsError =
+                upsertError?.message?.includes('row-level security') ||
+                upsertError?.message?.includes('policy') ||
+                upsertError?.code === '42501'
+              if (isRlsError && insightUserId) {
+                console.log('🔍 [INSIGHT SAVE] RLS failed, retrying via API (admin client)...')
+                const { data: { session: apiSession } } = await supabase.auth.getSession()
+                const apiRes = await fetch('/api/insights/save', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(apiSession?.access_token && { Authorization: `Bearer ${apiSession.access_token}` }),
+                  },
+                  credentials: 'include',
+                  body: JSON.stringify({
+                    prompt_type: 'post_morning',
+                    prompt_date: planDate,
+                    prompt_text: fullPrompt,
+                    generation_count: generationCount,
+                  }),
+                })
+                const apiData = (await apiRes.json()) as { success?: boolean; id?: string; error?: string }
+                if (apiRes.ok && apiData.success) {
+                  if (apiData.id) setPostMorningInsightId(apiData.id)
+                } else {
+                  fallbackFailed = true
+                  console.error('❌ [INSIGHT SAVE] API fallback failed:', apiData.error)
+                }
               } else {
-                console.error('❌ [INSIGHT SAVE] API fallback failed:', apiData.error)
-                window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to save insight. Please try again.', type: 'error' } }))
+                fallbackFailed = true
               }
             } else {
-              console.error('❌ CRITICAL - Post-morning insight save failed:', {
-                error: upsertError.message,
-                details: upsertError.details,
-                code: upsertError.code,
-                insightUserId,
-                planDate,
-              })
-              window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to save insight. Please try again.', type: 'error' } }))
+              const savedId = (savedRow as { id?: string }[])?.[0]?.id
+              if (savedId) setPostMorningInsightId(savedId)
             }
-          } else {
-            const savedId = (savedRow as { id?: string }[])?.[0]?.id
-            if (savedId) setPostMorningInsightId(savedId)
-            window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
+            return { primaryFailed, fallbackFailed }
           }
+
+          const handleRetry = async () => {
+            const { primaryFailed: pf, fallbackFailed: ff } = await performSave()
+            loadTodayPlan({ silent: true })
+            if (!pf) {
+              window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
+            } else if (pf && !ff) {
+              window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight taking longer than usual — it will appear shortly', type: 'info' } }))
+            } else {
+              window.dispatchEvent(new CustomEvent('toast', {
+                detail: { message: 'Failed to save insight. Please try again.', type: 'error', onRetry: handleRetry },
+              }))
+            }
+          }
+
+          const { primaryFailed, fallbackFailed } = await performSave()
           loadTodayPlan({ silent: true })
+
+          if (!primaryFailed) {
+            window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
+          } else if (primaryFailed && !fallbackFailed) {
+            window.dispatchEvent(new CustomEvent('toast', {
+              detail: { message: 'Insight taking longer than usual — it will appear shortly', type: 'info' },
+            }))
+          } else {
+            window.dispatchEvent(new CustomEvent('toast', {
+              detail: { message: 'Failed to save insight. Please try again.', type: 'error', onRetry: handleRetry },
+            }))
+          }
         }
       )
     } catch (err) {
@@ -1281,68 +1315,102 @@ export default function MorningPage() {
 
               const genCount = existingPost ? ((existingPost as { generation_count?: number }).generation_count ?? 1) + 1 : 1
 
-              const { data: saved, error: upsertErr } = await supabase
-                .from('personal_prompts')
-                .upsert(
-                  {
-                    user_id: insightUserId,
-                    prompt_type: 'post_morning',
-                    prompt_date: planDate,
-                    prompt_text: fullPrompt,
-                    stage_context: null,
-                    generation_count: genCount,
-                    generated_at: new Date().toISOString(),
-                  },
-                  { onConflict: 'user_id,prompt_type,prompt_date' }
-                )
-                .select()
-
-              if (upsertErr) {
-                const isRlsError =
-                  upsertErr?.message?.includes('row-level security') ||
-                  upsertErr?.message?.includes('policy') ||
-                  upsertErr?.code === '42501'
-                if (isRlsError && insightUserId) {
-                  console.log('🔍 [INSIGHT SAVE] RLS failed, retrying via API (admin client)...')
-                  const { data: { session: apiSession } } = await supabase.auth.getSession()
-                  const apiRes = await fetch('/api/insights/save', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      ...(apiSession?.access_token && { Authorization: `Bearer ${apiSession.access_token}` }),
-                    },
-                    credentials: 'include',
-                    body: JSON.stringify({
+              const performSave = async (): Promise<{ primaryFailed: boolean; fallbackFailed: boolean }> => {
+                let primaryFailed = false
+                let fallbackFailed = false
+                const { data: saved, error: upsertErr } = await supabase
+                  .from('personal_prompts')
+                  .upsert(
+                    {
+                      user_id: insightUserId,
                       prompt_type: 'post_morning',
                       prompt_date: planDate,
                       prompt_text: fullPrompt,
+                      stage_context: null,
                       generation_count: genCount,
-                    }),
+                      generated_at: new Date().toISOString(),
+                    },
+                    { onConflict: 'user_id,prompt_type,prompt_date' }
+                  )
+                  .select()
+
+                if (upsertErr) {
+                  primaryFailed = true
+                  trackErrorSync(new Error(`Post-morning insight save failed: ${upsertErr.message}`), {
+                    component: 'morning',
+                    action: 'save_insight',
+                    severity: 'medium',
+                    metadata: { code: upsertErr.code, planDate, insightUserId },
+                    userId: insightUserId,
                   })
-                  const apiData = (await apiRes.json()) as { success?: boolean; id?: string; error?: string }
-                  if (apiRes.ok && apiData.success) {
-                    if (apiData.id) setPostMorningInsightId(apiData.id)
-                    window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
+                  const isRlsError =
+                    upsertErr?.message?.includes('row-level security') ||
+                    upsertErr?.message?.includes('policy') ||
+                    upsertErr?.code === '42501'
+                  if (isRlsError && insightUserId) {
+                    console.log('🔍 [INSIGHT SAVE] RLS failed, retrying via API (admin client)...')
+                    const { data: { session: apiSession } } = await supabase.auth.getSession()
+                    const apiRes = await fetch('/api/insights/save', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        ...(apiSession?.access_token && { Authorization: `Bearer ${apiSession.access_token}` }),
+                      },
+                      credentials: 'include',
+                      body: JSON.stringify({
+                        prompt_type: 'post_morning',
+                        prompt_date: planDate,
+                        prompt_text: fullPrompt,
+                        generation_count: genCount,
+                      }),
+                    })
+                    const apiData = (await apiRes.json()) as { success?: boolean; id?: string; error?: string }
+                    if (apiRes.ok && apiData.success) {
+                      if (apiData.id) setPostMorningInsightId(apiData.id)
+                    } else {
+                      fallbackFailed = true
+                      console.error('❌ [INSIGHT SAVE] API fallback failed:', apiData.error)
+                    }
                   } else {
-                    console.error('❌ [INSIGHT SAVE] API fallback failed:', apiData.error)
-                    window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to save insight. Please try again.', type: 'error' } }))
+                    fallbackFailed = true
                   }
                 } else {
-                  console.error('❌ CRITICAL - Post-morning insight save failed:', {
-                    error: upsertErr.message,
-                    insightUserId,
-                    planDate,
-                  })
-                  window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Failed to save insight. Please try again.', type: 'error' } }))
+                  const savedId = (saved as { id?: string }[])?.[0]?.id
+                  if (savedId) setPostMorningInsightId(savedId)
                 }
-              } else {
-                const savedId = (saved as { id?: string }[])?.[0]?.id
-                if (savedId) setPostMorningInsightId(savedId)
-                window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
+                return { primaryFailed, fallbackFailed }
               }
-              // Refresh plan data to ensure UI is in sync
+
+              const handleRetry = async () => {
+                const { primaryFailed: pf, fallbackFailed: ff } = await performSave()
+                loadTodayPlan({ silent: true })
+                if (isFirstTime) setShowFirstTimeModal(true)
+                if (!pf) {
+                  window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
+                } else if (pf && !ff) {
+                  window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight taking longer than usual — it will appear shortly', type: 'info' } }))
+                } else {
+                  window.dispatchEvent(new CustomEvent('toast', {
+                    detail: { message: 'Failed to save insight. Please try again.', type: 'error', onRetry: handleRetry },
+                  }))
+                }
+              }
+
+              const { primaryFailed, fallbackFailed } = await performSave()
               loadTodayPlan({ silent: true })
               if (isFirstTime) setShowFirstTimeModal(true)
+
+              if (!primaryFailed) {
+                window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
+              } else if (primaryFailed && !fallbackFailed) {
+                window.dispatchEvent(new CustomEvent('toast', {
+                  detail: { message: 'Insight taking longer than usual — it will appear shortly', type: 'info' },
+                }))
+              } else {
+                window.dispatchEvent(new CustomEvent('toast', {
+                  detail: { message: 'Failed to save insight. Please try again.', type: 'error', onRetry: handleRetry },
+                }))
+              }
             }
           )
         } catch (error) {

@@ -14,6 +14,8 @@ const ONBOARDING_PUBLIC_PATHS = [
   '/login',
   '/pricing',
   '/help',
+  '/privacy',
+  '/terms',
   '/onboarding',
   '/emergency',
 ]
@@ -111,19 +113,24 @@ export async function proxy(request: NextRequest) {
         return response
       }
 
-      // Step 3: Has both goal and struggles (onboarding_step 2) → redirect to dashboard to start tutorial
+      // Step 3: Has both goal and struggles (onboarding_step 2) → redirect to dashboard
+      // Tutorial (?tutorial=start) only in development; production goes to plain /dashboard
       const step = p?.onboarding_step ?? 0
       if (step >= 2 && !path.startsWith('/dashboard')) {
+        const dashboardUrl = process.env.NODE_ENV === 'development'
+          ? new URL('/dashboard?tutorial=start', request.url)
+          : new URL('/dashboard', request.url)
         if (process.env.NODE_ENV === 'development') {
           console.log('[Proxy] Has goal and struggles, redirecting to /dashboard?tutorial=start')
         }
-        return NextResponse.redirect(new URL('/dashboard?tutorial=start', request.url))
+        return NextResponse.redirect(dashboardUrl)
       }
     }
 
-    // Only start tutorial after personalization: if onboarding_step is 2 but URL lacks tutorial=start, redirect
+    // Only force tutorial redirect in development; production: no tutorial
     const searchParamsForTutorial = request.nextUrl.searchParams
     if (
+      process.env.NODE_ENV === 'development' &&
       p?.onboarding_step === 2 &&
       !p?.onboarding_completed_at &&
       request.nextUrl.pathname === '/dashboard' &&
