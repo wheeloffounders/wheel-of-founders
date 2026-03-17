@@ -8,6 +8,7 @@
     {"path":"/api/cron/check-honeypot","schedule":"0 12 * * *"},
     {"path":"/api/cron/check-profile-completion","schedule":"0 10 * * *"},
     {"path":"/api/cron/generate-weekly-insights","schedule":"0 0 * * 1"},
+    {"path":"/api/cron/retry-weekly-insights","schedule":"0 * * * *"},
     {"path":"/api/cron/rotate-prompts","schedule":"0 0 * * 0"},
     {"path":"/api/cron/generate-monthly-insights","schedule":"0 0 1 * *"},
     {"path":"/api/cron/generate-quarterly-insights","schedule":"0 0 1 1,4,7,10 *"}
