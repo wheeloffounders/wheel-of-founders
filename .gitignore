@@ -44,3 +44,26 @@ next-env.d.ts
 
 # Sentry Config File
 .env.sentry-build-plugin
+
+# Security and archives
+*.zip
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+.env
+.env.local
+.env.*.local
+dist/
+build/
+.out/
+.next/
+coverage/
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.vercel/
+node_modules/
