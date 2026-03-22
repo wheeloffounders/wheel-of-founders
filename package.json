@@ -17,6 +17,7 @@
     "deploy:prod": "./scripts/deploy-prod.sh",
     "version:bump": "node scripts/version-bump.js",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },

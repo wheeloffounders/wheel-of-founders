@@ -3,21 +3,40 @@ import { getServerSupabase } from '@/lib/server-supabase'
 import { getFeatureAccess } from '@/lib/features'
 import { generateWeeklyInsightForUser } from '@/lib/batch-weekly-insight'
 import { getLastMonday, getLastSunday, toDateStr } from '@/lib/date-utils'
+import { authorizeCronRequest, logCronRequestMeta } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 /**
  * Cron: Generate weekly insights for all active users.
- * Runs every Monday at 00:00 UTC. Generates for the previous week (Mon–Sun).
- * Secured by CRON_SECRET.
+ * Schedule: Monday 00:00 UTC (see vercel.json). Generates for the previous week (Mon–Sun).
+ * Secured by CRON_SECRET (Bearer); must match Vercel project env exactly (trimmed).
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('Authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  logCronRequestMeta('cron/generate-weekly-insights', request)
+
+  const auth = authorizeCronRequest(request)
+  if (!auth.ok) {
+    console.warn('[cron/generate-weekly-insights] UNAUTHORIZED', {
+      reason: auth.reason,
+      hint:
+        auth.reason === 'missing_secret'
+          ? 'Set CRON_SECRET in Vercel → Settings → Environment Variables'
+          : 'Bearer token must match CRON_SECRET (check for whitespace in Vercel env)',
+    })
+    return NextResponse.json(
+      {
+        error: 'Unauthorized',
+        reason: auth.reason,
+      },
+      { status: 401 }
+    )
   }
+
+  console.log('[cron/generate-weekly-insights] authorized OK')
+
+  const cronSecret = process.env.CRON_SECRET?.trim()
 
   const startTime = Date.now()
   const weekStart = toDateStr(getLastMonday())

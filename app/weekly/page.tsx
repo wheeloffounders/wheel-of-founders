@@ -167,16 +167,27 @@ export default function WeeklyPage() {
         if (json.periods) periodsList = json.periods
 
         const lastWeekMissing = periodsList.length === 0 || !periodsList.includes(lastCompletedWeekStart)
-        if (lastWeekMissing && !autoRepairAttemptedRef.current) {
+        // One client-side repair per completed week per tab session (avoids hammering API on every refresh).
+        const autoRepairStorageKey =
+          typeof sessionStorage !== 'undefined'
+            ? `wof_weekly_autorepair_${lastCompletedWeekStart}`
+            : null
+        const alreadyAttemptedThisWeek =
+          autoRepairStorageKey && sessionStorage.getItem(autoRepairStorageKey) === '1'
+
+        if (lastWeekMissing && !autoRepairAttemptedRef.current && !alreadyAttemptedThisWeek) {
           autoRepairAttemptedRef.current = true
+          if (autoRepairStorageKey) sessionStorage.setItem(autoRepairStorageKey, '1')
+
           const genRes = await fetch('/api/weekly-insight/generate-last-week', { method: 'POST', headers })
-          const genJson = await genRes.json()
+          await genRes.json()
           if (genRes.ok) {
             res = await fetch('/api/insights/periods?type=weekly', { headers })
             json = await res.json()
             if (json.periods) periodsList = json.periods
             setPeriods(periodsList)
           } else {
+            if (autoRepairStorageKey) sessionStorage.removeItem(autoRepairStorageKey)
             setAutoRepairFailed(true)
           }
         }

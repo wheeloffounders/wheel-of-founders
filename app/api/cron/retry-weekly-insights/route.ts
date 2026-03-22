@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { generateWeeklyInsightForUser } from '@/lib/batch-weekly-insight'
+import { authorizeCronRequest, logCronRequestMeta } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 /**
  * Cron: Retry failed weekly insights with backoff.
- * Intended to run hourly via Vercel cron.
+ * Runs on Vercel schedule (see vercel.json).
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('Authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  logCronRequestMeta('cron/retry-weekly-insights', request)
+  const auth = authorizeCronRequest(request)
+  if (!auth.ok) {
+    console.warn('[cron/retry-weekly-insights] UNAUTHORIZED', { reason: auth.reason })
+    return NextResponse.json({ error: 'Unauthorized', reason: auth.reason }, { status: 401 })
   }
 
   const db = getServerSupabase()
