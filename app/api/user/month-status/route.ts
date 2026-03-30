@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     const db = getServerSupabase()
 
-    const [tasksRes, decisionsRes, reviewsRes] = await Promise.all([
+    const [tasksRes, decisionsRes, reviewsRes, emergenciesRes] = await Promise.all([
       db
         .from('morning_tasks')
         .select('plan_date')
@@ -47,6 +47,12 @@ export async function GET(request: NextRequest) {
         .eq('user_id', session.user.id)
         .gte('review_date', startStr)
         .lte('review_date', endStr),
+      db
+        .from('emergencies')
+        .select('fire_date')
+        .eq('user_id', session.user.id)
+        .gte('fire_date', startStr)
+        .lte('fire_date', endStr),
     ])
 
     const morningDates = new Set<string>()
@@ -58,6 +64,9 @@ export async function GET(request: NextRequest) {
     }
     const eveningDates = new Set(
       (reviewsRes.data ?? []).map((r: { review_date: string }) => r.review_date)
+    )
+    const emergencyDates = new Set(
+      (emergenciesRes.data ?? []).map((r: { fire_date: string }) => r.fire_date)
     )
 
     const today = new Date()
@@ -71,7 +80,7 @@ export async function GET(request: NextRequest) {
         status[dateStr] = 'future'
       } else if (morningDates.has(dateStr) && eveningDates.has(dateStr)) {
         status[dateStr] = 'complete'
-      } else if (morningDates.has(dateStr)) {
+      } else if (morningDates.has(dateStr) || eveningDates.has(dateStr) || emergencyDates.has(dateStr)) {
         status[dateStr] = 'half'
       } else {
         status[dateStr] = 'empty'

@@ -28,6 +28,13 @@ const ONBOARDING_PUBLIC_PATHS = [
  * Note: Renamed from middleware.ts per Next.js 16 proxy convention.
  */
 export async function proxy(request: NextRequest) {
+  // Never run auth/onboarding on the service worker script (redirects break registration).
+  if (request.nextUrl.pathname === '/sw.js') {
+    return NextResponse.next({
+      request: { headers: request.headers },
+    })
+  }
+
   let response = NextResponse.next({
     request: { headers: request.headers },
   })
@@ -145,7 +152,9 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    // Run proxy for /sw.js so we return immediately (no redirect / session work). Excluding sw.js here
+    // meant another layer could still rewrite the request; matching ensures a straight NextResponse.next().
     // Exclude static assets and PWA manifest so they never hit auth/onboarding logic (avoids 401 on manifest.json)
-    '/((?!_next/static|_next/image|favicon.ico|manifest\\.json|icon-.*\\.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest\\.json|offline\\.html|icon-.*\\.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

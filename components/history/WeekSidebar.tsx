@@ -1,27 +1,35 @@
 'use client'
 
-import { format, addWeeks, subWeeks, startOfWeek, isSameDay } from 'date-fns'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+import { format, isSameDay } from 'date-fns'
+import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react'
+import { PAGE_SIDEBAR_THEME } from '@/components/layout/PageSidebar'
 
 interface WeekSidebarProps {
   weekStart: Date
   selectedDate: Date | null
   onSelectDay: (date: Date) => void
+  onPickDate: () => void
   onPrevWeek: () => void
   onNextWeek: () => void
   canGoNext: boolean
   todayStr: string
 }
 
+/** Daily History left rail — same theme as `PageSidebar` history variant (navy + coral selected). */
 export function WeekSidebar({
   weekStart,
   selectedDate,
   onSelectDay,
+  onPickDate,
   onPrevWeek,
   onNextWeek,
   canGoNext,
   todayStr,
 }: WeekSidebarProps) {
+  const theme = PAGE_SIDEBAR_THEME.history
+  const navRef = useRef<HTMLElement | null>(null)
+
   const days: Date[] = []
   for (let i = 0; i < 7; i++) {
     const d = new Date(weekStart)
@@ -29,35 +37,58 @@ export function WeekSidebar({
     days.push(d)
   }
 
-  const weekEnd = days[6]
-  const weekRangeLabel = `${format(weekStart, 'MMM d')} – ${format(weekEnd, 'MMM d, yyyy')}`
+  useEffect(() => {
+    const root = navRef.current
+    if (!root) return
+    const todayEl = root.querySelector<HTMLElement>(`[data-date="${todayStr}"]`)
+    if (todayEl) {
+      todayEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+    }
+  }, [todayStr, weekStart])
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Week of</p>
-        <p className="text-sm font-semibold text-gray-900 dark:text-white">{weekRangeLabel}</p>
+    <div className={`flex flex-col flex-1 min-h-0 ${theme.shell}`}>
+      <div className={`p-4 border-b shrink-0 ${theme.headerBorder}`}>
+        <h1 className="text-xl font-semibold text-white">Daily History</h1>
+        <p className={`text-sm mt-1 ${theme.subtitle}`}>Your founder&apos;s diary</p>
       </div>
-      <div className="flex items-center justify-between px-2 py-2 border-b border-gray-200 dark:border-gray-700">
+
+      <div className="px-3 pt-3 pb-2 shrink-0 space-y-2">
         <button
           type="button"
-          onClick={onPrevWeek}
-          className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
-          aria-label="Previous week"
+          onClick={onPickDate}
+          className={`flex w-full items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-white transition-colors ${theme.pickBtn} ${theme.pickBtnHover}`}
+          aria-label="Pick a date"
         >
-          <ChevronLeft className="w-5 h-5" />
+          <Calendar className="h-4 w-4 shrink-0" aria-hidden />
+          Pick a date
         </button>
-        <button
-          type="button"
-          onClick={onNextWeek}
-          disabled={!canGoNext}
-          className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="Next week"
-        >
-          <ChevronRight className="w-5 h-5" />
-        </button>
+        <div className="flex items-center justify-between px-0.5">
+          <button
+            type="button"
+            onClick={onPrevWeek}
+            className={`rounded-lg p-2 transition-colors ${theme.chevronBtn} ${theme.chevronBtnHover}`}
+            aria-label="Previous week"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={onNextWeek}
+            disabled={!canGoNext}
+            className={`rounded-lg p-2 transition-colors ${theme.chevronBtn} ${theme.chevronBtnHover} disabled:cursor-not-allowed ${theme.chevronDisabled}`}
+            aria-label="Next week"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
       </div>
-      <nav className="p-2">
+
+      <nav
+        ref={navRef}
+        className="page-sidebar-nav flex-1 overflow-y-auto p-3 pb-8"
+        aria-label="Days this week"
+      >
         <ul className="space-y-1">
           {days.map((d) => {
             const dateStr = format(d, 'yyyy-MM-dd')
@@ -68,18 +99,20 @@ export function WeekSidebar({
             return (
               <li key={dateStr}>
                 <button
+                  data-date={dateStr}
                   type="button"
                   onClick={() => onSelectDay(d)}
                   className={`
-                    w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition
-                    ${isSelected
-                      ? 'bg-[#ef725c] text-white'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                    }
+                    w-full rounded-md px-3 py-2.5 text-left text-sm font-medium transition-colors
+                    ${isSelected ? theme.rowSelected : theme.rowUnselected}
                   `}
                 >
                   <span className="block truncate">{dayName}</span>
-                  <span className={`block truncate text-xs ${isSelected ? 'text-white/90' : 'text-gray-500 dark:text-gray-400'}`}>
+                  <span
+                    className={`block truncate text-xs ${
+                      isSelected ? theme.rowSublineSelected : theme.rowSublineMuted
+                    }`}
+                  >
                     {dayShort}
                     {isToday && ' • Today'}
                   </span>

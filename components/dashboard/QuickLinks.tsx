@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { Sun, Moon, AlertTriangle, BarChart3, Calendar, History, BarChart2 } from 'lucide-react'
+import { getEffectivePlanDate } from '@/lib/effective-plan-date'
 
 const links = [
   { href: '/morning', icon: Sun, label: 'Morning', color: 'text-yellow-500', dataTour: 'tour-morning' },
@@ -19,7 +20,11 @@ export function QuickLinks() {
       {links.map((link, index) => (
         <Link
           key={index}
-          href={link.href}
+          href={
+            link.href === '/evening'
+              ? `/evening?date=${getEffectivePlanDate()}#evening-form`
+              : link.href
+          }
           data-tour={link.dataTour}
           className="flex flex-col items-center p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-[#ef725c] dark:hover:border-[#ef725c] transition-colors group"
         >

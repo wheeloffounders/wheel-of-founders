@@ -17,6 +17,10 @@
     "deploy:prod": "./scripts/deploy-prod.sh",
     "version:bump": "node scripts/version-bump.js",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "snyk:test": "snyk test",
+    "snyk:monitor": "snyk monitor",
+    "security:check": "npm run snyk:test",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },
@@ -28,6 +32,7 @@
     "@supabase/supabase-js": "^2.93.3",
     "canvas-confetti": "^1.9.4",
     "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "framer-motion": "^12.34.2",
     "jspdf": "^4.1.0",
     "lucide-react": "^0.563.0",
@@ -40,6 +45,7 @@
     "recharts": "^3.7.0",
     "remark-breaks": "^4.0.0",
     "stripe": "^17.3.1",
+    "swr": "^2.4.1",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
@@ -52,6 +58,7 @@
     "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "snyk": "^1.1303.2",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vercel": "^50.28.0"

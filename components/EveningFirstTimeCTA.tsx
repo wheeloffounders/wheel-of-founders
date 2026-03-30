@@ -2,8 +2,11 @@
 
 import Link from 'next/link'
 import { colors } from '@/lib/design-tokens'
+import { getEffectivePlanDate } from '@/lib/effective-plan-date'
 
+/** Link always uses founder-day date (before 4am = previous calendar day) so after-midnight works. */
 export function EveningFirstTimeCTA() {
+  const eveningDate = getEffectivePlanDate()
   return (
     <div
       className="mb-8 p-6 rounded-xl border-l-4 border-[#ef725c] bg-[#152b50]/5 dark:bg-[#152b50]/20"
@@ -27,7 +30,7 @@ export function EveningFirstTimeCTA() {
         Three evenings from now, patterns start to emerge. Seven evenings, and you&apos;ll see what&apos;s really been driving you.
       </p>
       <Link
-        href="#evening-form"
+        href={`/evening?date=${eveningDate}#evening-form`}
         className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-white hover:opacity-90 transition"
         style={{ backgroundColor: colors.coral.DEFAULT }}
       >

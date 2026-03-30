@@ -3,7 +3,29 @@
 import { useState, useRef, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Menu, Home, Sun, Moon, Flame, BarChart2, Calendar, MapPin, User, Settings, MessageSquare, HelpCircle, Mail, Bug, TrendingUp, LogOut, CreditCard } from 'lucide-react'
+import {
+  Menu,
+  Home,
+  Sun,
+  Moon,
+  Flame,
+  BarChart2,
+  Calendar,
+  MapPin,
+  User,
+  Settings,
+  MessageSquare,
+  HelpCircle,
+  Mail,
+  Bug,
+  TrendingUp,
+  LogOut,
+  CreditCard,
+  Sparkles,
+  Activity,
+  LayoutGrid,
+  Route,
+} from 'lucide-react'
 import { NotificationCenter } from './notifications/NotificationCenter'
 import { useTheme } from '@/components/ThemeProvider'
 import { supabase } from '@/lib/supabase'
@@ -26,6 +48,15 @@ const menuSections = [
       { name: 'Monthly Insight', href: '/monthly-insight', icon: Calendar },
       { name: 'Quarterly Trajectory', href: '/quarterly', icon: TrendingUp },
       { name: 'Daily History', href: '/history', icon: MapPin },
+    ],
+  },
+  {
+    label: 'Founder DNA',
+    items: [
+      { name: 'Journey', href: '/founder-dna/journey', icon: Route },
+      { name: 'Archetype', href: '/founder-dna/archetype', icon: Sparkles },
+      { name: 'Rhythm', href: '/founder-dna/rhythm', icon: Activity },
+      { name: 'Patterns', href: '/founder-dna/patterns', icon: LayoutGrid },
     ],
   },
   {
@@ -83,33 +114,44 @@ export function AppHeader() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  if (pathname === '/' || pathname === '/login' || pathname === '/countdown' || pathname?.startsWith('/auth')) return null
+  const hideHeaderPaths = ['/', '/login', '/countdown', '/morning', '/evening', '/emergency', '/history']
+
+  if (
+    !pathname ||
+    hideHeaderPaths.includes(pathname) ||
+    pathname.startsWith('/auth')
+  ) {
+    return null
+  }
 
   return (
     <header
-      className="app-header sticky top-0 left-0 right-0 border-b-2 bg-white dark:bg-gray-800 dark:bg-gray-800 border-gray-200 dark:border-gray-700 dark:border-gray-700 px-4 py-3 flex items-center justify-between"
+      className="app-header sticky top-0 left-0 right-0 border-b border-white/15 bg-[#152b50] px-4 py-3 flex items-center justify-between text-white shadow-sm"
     >
-      <Link href="/dashboard" className="text-lg font-medium text-gray-900 dark:text-gray-100 dark:text-white">
+      <Link
+        href="/dashboard"
+        className="text-lg font-semibold text-white hover:text-[#ef725c] transition-colors"
+      >
         Wheel of Founders
       </Link>
 
-      <div ref={menuRef} className="relative flex items-center gap-2">
-        <NotificationCenter />
+      <div ref={menuRef} className="relative flex items-center gap-1 sm:gap-2">
+        <NotificationCenter triggerClassName="text-white hover:bg-white/15" />
         <Link
           href="/feedback"
-          className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 hover:text-[#ef725c] transition-colors"
+          className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-white/90 hover:text-[#ef725c] transition-colors"
           aria-label="Report a bug"
         >
-          <Bug className="h-3.5 w-3.5" />
+          <Bug className="h-3.5 w-3.5 shrink-0" />
           <span className="hidden sm:inline">Report a bug</span>
         </Link>
         <button
           type="button"
           onClick={() => setMenuOpen(!menuOpen)}
-          className="p-2 rounded-none border-2 border-gray-200 dark:border-gray-700 dark:border-gray-700 transition-colors hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700"
+          className="p-2 rounded-md border border-white/25 text-white transition-colors hover:bg-white/10 hover:text-[#ef725c]"
           aria-label="Open menu"
         >
-          <Menu className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
+          <Menu className="w-6 h-6" />
         </button>
         {menuOpen && (
           <div

@@ -16,6 +16,7 @@ export interface MicroLessonData {
   message: string
   emoji?: string
   action?: { label: string; link: string }
+  kind?: 'state' | 'struggle'
 }
 
 export type MicroLessonLocation = 'dashboard' | 'morning' | 'evening'
@@ -27,9 +28,11 @@ interface MicroLessonProps {
   page?: 'morning' | 'evening'
   /** Callback when user completes evening (e.g. after saving evening review) */
   onRecordCompletedEvening?: () => void
+  /** Tighter spacing + italic gray body (e.g. dashboard under greeting) */
+  compact?: boolean
 }
 
-export function MicroLesson({ location: locationProp, page, onRecordCompletedEvening }: MicroLessonProps) {
+export function MicroLesson({ location: locationProp, page, onRecordCompletedEvening, compact }: MicroLessonProps) {
   const location: MicroLessonLocation = locationProp ?? (page ?? 'morning')
   const [data, setData] = useState<MicroLessonData | null>(null)
   const [dismissed, setDismissed] = useState(true) // start hidden to avoid flash
@@ -101,9 +104,13 @@ export function MicroLesson({ location: locationProp, page, onRecordCompletedEve
 
   const isDashboard = location === 'dashboard'
 
+  const shellClass = compact
+    ? 'bg-[#152b50]/5 dark:bg-[#152b50]/20 border-l-4 border-[#ef725c] p-3 mb-2 rounded-r-lg relative'
+    : 'bg-[#152b50]/5 dark:bg-[#152b50]/20 border-l-4 border-[#ef725c] p-4 mb-6 rounded-r-lg relative'
+
   return (
     <div
-      className={`bg-[#152b50]/5 dark:bg-[#152b50]/20 border-l-4 border-[#ef725c] p-4 mb-6 rounded-r-lg relative ${isDashboard ? 'w-full' : ''}`}
+      className={`${shellClass} ${isDashboard ? 'w-full' : ''}`}
       role="status"
       aria-live="polite"
     >
@@ -117,19 +124,25 @@ export function MicroLesson({ location: locationProp, page, onRecordCompletedEve
       </button>
       <div className="flex items-start gap-3 pr-6">
         {data.emoji && (
-          <span className="text-2xl shrink-0" aria-hidden>
+          <span className={`shrink-0 ${compact ? 'text-xl' : 'text-2xl'}`} aria-hidden>
             {data.emoji}
           </span>
         )}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-[#152b50] dark:text-white leading-snug">
+          <p
+            className={
+              compact
+                ? 'text-sm text-gray-500 dark:text-gray-400 italic leading-snug'
+                : 'text-sm font-medium text-[#152b50] dark:text-white leading-snug'
+            }
+          >
             {data.message}
           </p>
           {data.action && (
             <Link
               href={data.action.link}
               onClick={handleActionClick}
-              className="inline-block mt-2 text-sm font-medium text-[#ef725c] hover:underline"
+              className="inline-block mt-2 text-sm text-[#ef725c] hover:underline"
             >
               {data.action.label} →
             </Link>

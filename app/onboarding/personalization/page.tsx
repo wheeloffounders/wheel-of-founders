@@ -29,6 +29,8 @@ export default function PersonalizationPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (saving) return
+
     setSaving(true)
     setError(null)
 
@@ -56,7 +58,14 @@ export default function PersonalizationPage() {
       const { isNewOnboardingEnabled } = await import('@/lib/feature-flags')
       const qs = isNewOnboardingEnabled() ? '?first=true' : ''
       router.push(`/morning${qs}`)
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
+        console.warn('[Personalization] Request aborted, navigating anyway:', err)
+        const { isNewOnboardingEnabled } = await import('@/lib/feature-flags')
+        const qs = isNewOnboardingEnabled() ? '?first=true' : ''
+        router.push(`/morning${qs}`)
+        return
+      }
       console.error('Failed to save:', err)
       setError(err instanceof Error ? err.message : 'Failed to save')
     } finally {

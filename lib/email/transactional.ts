@@ -4,7 +4,7 @@
  * RESEND_API_KEY = fallback
  */
 
-const DEFAULT_FROM = 'Wheel of Founders <noreply@wheeloffounders.com>'
+const DEFAULT_FROM = 'Mrs. Deer at Wheel of Founders <noreply@wheeloffounders.com>'
 const RATE_LIMIT_DELAY_MS = 600 // ~100 req/min for MailerSend trial
 let lastSendTime = 0
 
@@ -15,6 +15,7 @@ export type TransactionalEmailParams = {
   html: string
   text?: string
   replyTo?: string
+  headers?: Record<string, string>
 }
 
 /**
@@ -65,12 +66,13 @@ async function sendViaMailerSend(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      from: { email: 'noreply@wheeloffounders.com', name: 'Wheel of Founders' },
+      from: { email: 'noreply@wheeloffounders.com', name: 'Mrs. Deer at Wheel of Founders' },
       to: [{ email: params.to, name: params.toName || params.to }],
       subject: params.subject,
       html: params.html,
       text: params.text || params.html.replace(/<[^>]+>/g, ''),
       ...(params.replyTo && { reply_to: { email: params.replyTo } }),
+      ...(params.headers && { headers: params.headers }),
     }),
   })
 
@@ -105,7 +107,9 @@ async function sendViaResend(
       to: [params.to],
       subject: params.subject,
       html: params.html,
+      text: params.text || params.html.replace(/<[^>]+>/g, ''),
       ...(params.replyTo && { reply_to: params.replyTo }),
+      ...(params.headers && { headers: params.headers }),
     }),
   })
 

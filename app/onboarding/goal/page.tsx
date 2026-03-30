@@ -20,6 +20,8 @@ export default function GoalPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (saving) return
+
     setSaving(true)
     setError(null)
 
@@ -83,11 +85,15 @@ export default function GoalPage() {
       }
 
       trackJourneyStep('completed_goal', { goal_length: goal.trim().length })
-      // Brief pause so user sees goal was saved before redirecting
-      setTimeout(() => {
+      // Navigate only after save completes
+      router.replace('/onboarding/personalization')
+    } catch (err: any) {
+      // Handle AbortError specifically (common on mobile/slow networks)
+      if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
+        console.warn('[Goal] Request aborted, navigating anyway:', err)
         router.replace('/onboarding/personalization')
-      }, 500)
-    } catch (err) {
+        return
+      }
       console.error('[Goal] Caught error:', err)
       setError(err instanceof Error ? err.message : 'Failed to save goal')
     } finally {

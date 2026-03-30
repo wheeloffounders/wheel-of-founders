@@ -6,8 +6,14 @@ import Link from 'next/link'
 import { Bell, BarChart2, Check, ChevronRight } from 'lucide-react'
 import { useInAppNotifications } from '@/lib/contexts/InAppNotificationContext'
 import { useNewInsights } from '@/lib/hooks/useNewInsights'
+import { cn } from '@/components/ui/utils'
 
-export function NotificationCenter() {
+export interface NotificationCenterProps {
+  /** Override trigger button styles (e.g. white icon on navy AppHeader). */
+  triggerClassName?: string
+}
+
+export function NotificationCenter({ triggerClassName }: NotificationCenterProps) {
   const router = useRouter()
   const triggerRef = useRef<HTMLButtonElement>(null)
   const { notifications, unreadCount, markRead, markAllRead } = useInAppNotifications()
@@ -41,7 +47,7 @@ export function NotificationCenter() {
       left: `${Math.max(padding, Math.min(left, window.innerWidth - width - padding))}px`,
       width: `${width}px`,
       maxHeight: `${maxHeight}px`,
-      zIndex: 50,
+      zIndex: 110,
     }
   })()
 
@@ -51,7 +57,11 @@ export function NotificationCenter() {
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="relative p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+        className={cn(
+          'relative p-2 rounded-lg',
+          triggerClassName ??
+            'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+        )}
         aria-label={totalBadge > 0 ? `${totalBadge} notifications` : 'Notifications'}
       >
         <Bell className="w-5 h-5" />
@@ -65,13 +75,13 @@ export function NotificationCenter() {
       {open && (
         <>
           <div
-            className="fixed inset-0 z-40"
+            className="fixed inset-0 z-[100] bg-black/25 dark:bg-black/40"
             aria-hidden
             onClick={() => setOpen(false)}
           />
           <div
             style={dropdownStyle}
-            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg flex flex-col"
+            className="isolate bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl ring-1 ring-black/5 dark:ring-white/10 flex flex-col overflow-hidden"
             role="dialog"
             aria-label="Notifications and insights"
           >

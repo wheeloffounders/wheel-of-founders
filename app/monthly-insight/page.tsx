@@ -19,6 +19,7 @@ import { generateTransformationPairs, detectWinThemes } from '@/lib/weekly-analy
 import type { WinWithDate } from '@/lib/weekly-analysis'
 import { ThemeChart } from '@/components/insights/ThemeChart'
 import { Button } from '@/components/ui/button'
+import Link from 'next/link'
 import { TransformationPairs } from '@/components/monthly/TransformationPairs'
 import { MonthlyTrends } from '@/components/monthly/MonthlyTrends'
 import { MonthlyWisdom } from '@/components/monthly/MonthlyWisdom'
@@ -28,6 +29,8 @@ import { LockedFeature } from '@/components/LockedFeature'
 import { getMonthlyProgress } from '@/lib/progress'
 import { colors } from '@/lib/design-tokens'
 import { showRefreshButton } from '@/lib/env'
+import { resolveEmailDisplayName } from '@/lib/email/personalization'
+import { InsightLetterClosing } from '@/components/insights/InsightLetterClosing'
 
 export default function MonthlyInsightPage() {
   const router = useRouter()
@@ -64,6 +67,7 @@ export default function MonthlyInsightPage() {
   const hasTriggeredGenerate = useRef(false)
   const [unlockProgress, setUnlockProgress] = useState<{ current: number; required: number; isUnlocked: boolean } | null>(null)
   const [session, setSession] = useState<SessionWithProfile | null>(null)
+  const [insightGreetingName, setInsightGreetingName] = useState('Founder')
 
   const isEndOfMonth = differenceInDays(endOfMonth(selectedMonth), new Date()) <= 3 || !isSameMonth(selectedMonth, new Date())
   const showFullMonthly = isEndOfMonth
@@ -93,6 +97,18 @@ export default function MonthlyInsightPage() {
       if (!s) router.push('/auth/login')
     })
   }, [router])
+
+  useEffect(() => {
+    if (!session) return
+    void (async () => {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('preferred_name, name, email_address')
+        .eq('id', session.user.id)
+        .maybeSingle()
+      setInsightGreetingName(resolveEmailDisplayName(data, session.user))
+    })()
+  }, [session])
 
   useEffect(() => {
     if (!session) return
@@ -490,10 +506,6 @@ export default function MonthlyInsightPage() {
               Monthly Insight
             </h1>
           </div>
-          <Button variant="outline" onClick={handleExport} disabled={exporting} className="gap-2 shrink-0">
-            <Download className="w-4 h-4" />
-            Export
-          </Button>
         </div>
         <InsightNavigation
           type="monthly"
@@ -505,6 +517,10 @@ export default function MonthlyInsightPage() {
           }}
           nextDisabledMessage={!hasNextMonthInsight ? getNextDisabledMessage() : undefined}
         />
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          Deep dive into <Link href="/founder-dna/rhythm" className="text-[#ef725c] hover:underline">Rhythm</Link>{' '}
+          and <Link href="/founder-dna/patterns" className="text-[#ef725c] hover:underline">Patterns</Link>.
+        </p>
       </div>
 
       {/* Month in Progress - only when viewing current month with no insight yet */}
@@ -522,8 +538,11 @@ export default function MonthlyInsightPage() {
       {/* Full monthly analysis - insight first, then stats */}
       {showFullMonthly && (
         <div className="space-y-8">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 dark:text-white">Your Month in Review</h2>
-          <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300">{format(selectedMonth, 'MMMM yyyy')}</p>
+          <div>
+            <p className="text-base italic text-gray-600 dark:text-gray-300 mb-2">Hi {insightGreetingName},</p>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 dark:text-white">Your Month in Review</h2>
+            <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-1">{format(selectedMonth, 'MMMM yyyy')}</p>
+          </div>
 
           {/* 1. Mrs. Deer's reflection FIRST */}
           <MonthlyWisdom
@@ -560,8 +579,16 @@ export default function MonthlyInsightPage() {
                 : generateTransformationPairs(monthlyWins, monthlyLessons)
             }
           />
+
+          <InsightLetterClosing cadence="month" className="mt-2" />
         </div>
       )}
+      <div className="pt-4 flex justify-end">
+        <Button variant="outline" onClick={handleExport} disabled={exporting} className="gap-2">
+          <Download className="w-4 h-4" />
+          Export
+        </Button>
+      </div>
     </div>
   )
 }

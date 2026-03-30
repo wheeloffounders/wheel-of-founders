@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
+import { fetchUserProfileBundle, invalidateUserProfileBundle } from '@/lib/user-profile-bundle-cache'
 
 export function useHasSeenMorningTour() {
   const [hasSeen, setHasSeen] = useState<boolean | null>(null)
@@ -32,9 +33,11 @@ export function useHasSeenMorningTour() {
     try {
       const session = await getUserSession()
       if (!session) return
-      await (supabase.from('user_profiles') as any)
+      await supabase
+        .from('user_profiles')
         .update({ has_seen_morning_tour: true, updated_at: new Date().toISOString() })
         .eq('id', session.user.id)
+      invalidateUserProfileBundle()
       setHasSeen(true)
     } catch {
       // Ignore

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
-import { format } from 'date-fns'
 import { getServerSession } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+import { getPlanDateString } from '@/lib/effective-plan-date'
+import { getUserTimezoneFromProfile } from '@/lib/timezone'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -14,14 +15,28 @@ export async function GET() {
     }
 
     const db = getServerSupabase()
-    const today = format(new Date(), 'yyyy-MM-dd')
+    const { data: profile } = await db
+      .from('user_profiles')
+      .select('timezone')
+      .eq('id', session.user.id)
+      .maybeSingle()
+    const userTimeZone = getUserTimezoneFromProfile((profile as { timezone?: string | null } | null) ?? null)
+    const planDate = getPlanDateString(userTimeZone, new Date())
 
-    const { data, error } = await db
-      .from('morning_tasks')
-      .select('id, description, completed, plan_date, task_order, action_plan')
-      .eq('user_id', session.user.id)
-      .eq('plan_date', today)
-      .order('task_order', { ascending: true })
+    const [{ data, error }, { data: commitData }] = await Promise.all([
+      db
+        .from('morning_tasks')
+        .select('id, description, completed, plan_date, task_order, action_plan')
+        .eq('user_id', session.user.id)
+        .eq('plan_date', planDate)
+        .order('task_order', { ascending: true }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- column added by migration and may lag generated types
+      (db.from('morning_plan_commits') as any)
+        .select('original_task_count')
+        .eq('user_id', session.user.id)
+        .eq('plan_date', planDate)
+        .maybeSingle(),
+    ])
 
     if (error) {
       console.error('[tasks/today] DB error', error)
@@ -40,12 +55,15 @@ export async function GET() {
       action_plan?: string | null
     }>
 
-    const total = tasks.length
+    const commit = (commitData as { original_task_count?: number | null } | null) ?? null
+    const total = Number.isFinite(commit?.original_task_count)
+      ? Math.max(0, Number(commit?.original_task_count))
+      : tasks.length
     const completedCount = tasks.filter((t) => t.completed === true).length
     const progress = total > 0 ? Math.round((completedCount / total) * 100) : 0
 
     return NextResponse.json({
-      date: today,
+      date: planDate,
       tasks: tasks.map((t) => ({
         id: t.id,
         description: t.description,
@@ -56,6 +74,20 @@ export async function GET() {
         action_plan: t.action_plan ?? null,
       })),
       progress,
+      original_total_count: total,
+      completed_count: completedCount,
+      ...(process.env.NODE_ENV === 'development'
+        ? {
+            debug: {
+              userTimeZone,
+              planDateUsed: planDate,
+              serverTime: new Date().toISOString(),
+              effectiveDateComputed: planDate,
+              tasksCount: tasks.length,
+              rawPlanDate: planDate,
+            },
+          }
+        : {}),
     })
   } catch (err) {
     console.error('[tasks/today] Error', err)

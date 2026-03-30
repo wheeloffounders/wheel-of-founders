@@ -9,16 +9,36 @@ import { colors } from '@/lib/design-tokens'
 interface TrajectoryWisdomProps {
   insight: string | null
   quarterLabel: string
+  /** Main card heading (section 1 in quarterly milestone flow) */
+  title?: string
+  /** First name for letter-style opening */
+  greetingName?: string
   onRefresh?: () => void
   generating?: boolean
   generateError?: string | null
 }
 
-export function TrajectoryWisdom({ insight, quarterLabel, onRefresh, generating, generateError }: TrajectoryWisdomProps) {
+export function TrajectoryWisdom({
+  insight,
+  quarterLabel,
+  title = 'The Quarter in One Glance',
+  greetingName,
+  onRefresh,
+  generating,
+  generateError,
+}: TrajectoryWisdomProps) {
   if (!insight) {
     return (
       <Card>
         <CardContent className="py-12 text-center">
+          {greetingName ? (
+            <p className="text-base italic text-gray-600 dark:text-gray-300 mb-4 text-left max-w-md mx-auto">
+              Hi {greetingName},
+            </p>
+          ) : null}
+          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2 text-left max-w-md mx-auto">
+            {title}
+          </p>
           {generateError ? (
             <>
               <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 text-left">
@@ -66,10 +86,16 @@ export function TrajectoryWisdom({ insight, quarterLabel, onRefresh, generating,
     <Card highlighted className="bg-[#f8f4f0] dark:bg-amber-900/30" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
       <CardHeader>
         <div className="flex items-center justify-between gap-4">
-          <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
-            <Sparkles className="w-6 h-6" style={{ color: colors.amber.DEFAULT }} />
-            Mrs. Deer, your AI companion&apos;s Quarterly Reflection
-          </CardTitle>
+          <div>
+            {greetingName ? (
+              <p className="text-base italic text-gray-600 dark:text-gray-300 mb-2">Hi {greetingName},</p>
+            ) : null}
+            <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
+              <Sparkles className="w-6 h-6" style={{ color: colors.amber.DEFAULT }} />
+              {title}
+            </CardTitle>
+            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">Mrs. Deer&apos;s synthesis · {quarterLabel}</p>
+          </div>
           {onRefresh && (
             <button
               type="button"

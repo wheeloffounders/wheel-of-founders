@@ -11,6 +11,7 @@ export const founderStruggles = [
   { id: 'motivation', label: 'Staying motivated', description: 'I know what to do, I just struggle to do it consistently', icon: Zap },
   { id: 'calm', label: 'Finding calm', description: 'I need more peace and calm in my daily life', icon: Heart },
   { id: 'confidence', label: 'Building confidence as a founder', description: 'I want to feel more confident in my decisions and direction', icon: Target },
+  { id: 'work_life_balance', label: 'Work/Life balance', description: 'I want to be more present at work and at home', icon: Heart },
 ] as const
 
 export type FounderStruggleId = (typeof founderStruggles)[number]['id']

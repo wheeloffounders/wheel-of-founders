@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import {
   format,
   startOfQuarter,
@@ -14,16 +14,25 @@ import { TrendingUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
 import { getFeatureAccess } from '@/lib/features'
-import { TrajectoryStats } from '@/components/quarterly/TrajectoryStats'
-import { DefiningMoments } from '@/components/quarterly/DefiningMoments'
 import { TrajectoryWisdom } from '@/components/quarterly/TrajectoryWisdom'
 import { QuarterlyIntention } from '@/components/quarterly/QuarterlyIntention'
 import { QuarterlyPreview } from '@/components/quarterly/QuarterlyPreview'
+import { HowTheShiftShowedUp } from '@/components/quarterly/HowTheShiftShowedUp'
+import { TransformationThread } from '@/components/quarterly/TransformationThread'
+import { WhatYouCarriedForward } from '@/components/quarterly/WhatYouCarriedForward'
+import { SurpriseTransformation } from '@/components/quarterly/SurpriseTransformation'
+import { NextQuarterQuestion } from '@/components/quarterly/NextQuarterQuestion'
+import { QuarterAtAGlance } from '@/components/quarterly/QuarterAtAGlance'
+import { QuarterlyAllWinsExpandable } from '@/components/quarterly/QuarterlyAllWinsExpandable'
 import { InsightNavigation } from '@/components/InsightNavigation'
 import { LockedFeature } from '@/components/LockedFeature'
 import { getQuarterlyProgress } from '@/lib/progress'
 import { colors } from '@/lib/design-tokens'
 import { showRefreshButton } from '@/lib/env'
+import { fetchQuarterlyData, type QuarterlyData } from '@/lib/quarterly/getQuarterlyData'
+import { buildQuarterlyNarrative } from '@/lib/quarterly/buildQuarterlyNarrative'
+import { resolveEmailDisplayName } from '@/lib/email/personalization'
+import { InsightLetterClosing } from '@/components/insights/InsightLetterClosing'
 
 function parseQuarterParam(q: string): Date | null {
   const m = q.match(/^(\d{4})-Q([1-4])$/)
@@ -40,6 +49,7 @@ function toQuarterParam(d: Date): string {
 
 export default function QuarterlyPage() {
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   const quarterParam = searchParams?.get('quarter')
   const initialQuarter = quarterParam && /^\d{4}-Q[1-4]$/.test(quarterParam)
@@ -57,6 +67,7 @@ export default function QuarterlyPage() {
     reviewsCount: 0,
     decisions: 0,
   })
+  const [quarterlyData, setQuarterlyData] = useState<QuarterlyData | null>(null)
   const [quarterlyWins, setQuarterlyWins] = useState<string[]>([])
   const [quarterlyInsight, setQuarterlyInsight] = useState<string | null>(null)
   const [quarterlyInsightOverride, setQuarterlyInsightOverride] = useState<string | null>(null)
@@ -64,6 +75,7 @@ export default function QuarterlyPage() {
   const [generating, setGenerating] = useState(false)
   const hasTriggeredGenerate = useRef(false)
   const [unlockProgress, setUnlockProgress] = useState<{ current: number; required: number; isUnlocked: boolean } | null>(null)
+  const [quarterlyGreetingName, setQuarterlyGreetingName] = useState('Founder')
 
   const isEndOfQuarter = differenceInDays(endOfQuarter(selectedQuarter), new Date()) <= 7 || !isSameQuarter(selectedQuarter, new Date())
   const showFullQuarterly = isEndOfQuarter
@@ -74,12 +86,19 @@ export default function QuarterlyPage() {
   const hasNextQuarterInsight = periods.some((p) => p === nextQuarterStr)
   const getNextDisabledMessage = () => {
     const qNum = Math.ceil((nextQuarterStart.getMonth() + 1) / 3)
-    const availableMonth = qNum * 3 // 0-indexed: Q1->3(Apr), Q2->6(Jul), Q3->9(Oct), Q4->0(Jan)
+    const availableMonth = qNum * 3
     const availableYear = qNum === 4 ? nextQuarterStart.getFullYear() + 1 : nextQuarterStart.getFullYear()
     const availableMonthNum = qNum === 4 ? 0 : availableMonth
     const monthName = new Date(availableYear, availableMonthNum, 1).toLocaleString('default', { month: 'long' })
     return `Q${qNum} ${nextQuarterStart.getFullYear()} insights will be available on ${monthName} 1, ${availableYear}`
   }
+
+  const narrative = useMemo(() => {
+    if (!quarterlyData) return null
+    return buildQuarterlyNarrative(quarterlyData, quarterlyData.userProfile)
+  }, [quarterlyData])
+
+  const completionRate = stats.totalTasks > 0 ? Math.round((stats.completedTasks / stats.totalTasks) * 100) : 0
 
   useEffect(() => {
     if (quarterParam && /^\d{4}-Q[1-4]$/.test(quarterParam)) {
@@ -88,14 +107,15 @@ export default function QuarterlyPage() {
     }
   }, [quarterParam])
 
-  // When no quarter in URL, redirect to most recent quarter WITH data
   useEffect(() => {
     if (quarterParam || initialRedirectDone) return
     const redirectToLatest = async () => {
       const session = await getUserSession()
       if (!session) return
       try {
-        const { data: { session: supabaseSession } } = await supabase.auth.getSession()
+        const {
+          data: { session: supabaseSession },
+        } = await supabase.auth.getSession()
         const headers: Record<string, string> = {}
         if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
         const res = await fetch('/api/insights/periods?type=quarterly', { headers })
@@ -139,14 +159,15 @@ export default function QuarterlyPage() {
       const session = await getUserSession()
       if (!session) return
       try {
-        const { data: { session: supabaseSession } } = await supabase.auth.getSession()
+        const {
+          data: { session: supabaseSession },
+        } = await supabase.auth.getSession()
         const headers: Record<string, string> = {}
         if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
         const qStr = toQuarterParam(selectedQuarter)
         const res = await fetch(`/api/insights/periods?type=quarterly&current=${qStr}`, { headers })
         const json = await res.json()
         if (json.periods) {
-          // API returns YYYY-MM-DD; convert to YYYY-Q# for navigation
           const converted = json.periods.map((p: string) =>
             /^\d{4}-Q[1-4]$/.test(p) ? p : toQuarterParam(new Date(p))
           )
@@ -169,32 +190,14 @@ export default function QuarterlyPage() {
       }
 
       const quarterStart = format(startOfQuarter(selectedQuarter), 'yyyy-MM-dd')
-      const quarterEnd = format(endOfQuarter(selectedQuarter), 'yyyy-MM-dd')
 
       const features = getFeatureAccess({
         tier: session.user.tier,
         pro_features_enabled: session.user.pro_features_enabled,
       })
 
-      const [tasksRes, reviewsRes, decisionsRes, promptsRes] = await Promise.all([
-        supabase
-          .from('morning_tasks')
-          .select('needle_mover, completed')
-          .gte('plan_date', quarterStart)
-          .lte('plan_date', quarterEnd)
-          .eq('user_id', session.user.id),
-        supabase
-          .from('evening_reviews')
-          .select('id, wins, lessons, review_date')
-          .gte('review_date', quarterStart)
-          .lte('review_date', quarterEnd)
-          .eq('user_id', session.user.id),
-        supabase
-          .from('morning_decisions')
-          .select('id')
-          .gte('plan_date', quarterStart)
-          .lte('plan_date', quarterEnd)
-          .eq('user_id', session.user.id),
+      const [data, promptsRes] = await Promise.all([
+        fetchQuarterlyData(supabase, session.user.id, selectedQuarter),
         features.personalMonthlyInsight
           ? supabase
               .from('personal_prompts')
@@ -208,39 +211,12 @@ export default function QuarterlyPage() {
           : Promise.resolve({ data: null }),
       ])
 
-      const tasks = tasksRes.data ?? []
-      const reviews = reviewsRes.data ?? []
-      const needleMovers = tasks.filter((t) => t.needle_mover).length
-      const needleMoversCompleted = tasks.filter((t) => t.needle_mover && t.completed).length
+      setQuarterlyData(data)
+      setStats(data.stats)
+      setQuarterlyWins(data.allWinsFlat.map((w) => w.text))
 
-      const wins: string[] = []
-      const parseWins = (val: unknown): string[] => {
-        if (!val) return []
-        if (typeof val === 'string') {
-          try {
-            const parsed = JSON.parse(val)
-            return Array.isArray(parsed) ? parsed.filter((s: string) => s?.trim()) : parsed && typeof parsed === 'string' ? [parsed] : []
-          } catch {
-            return val.trim() ? [val] : []
-          }
-        }
-        return []
-      }
-      reviews.forEach((r: { wins?: unknown }) => {
-        wins.push(...parseWins(r.wins))
-      })
-      setQuarterlyWins(wins)
-
-      setStats({
-        totalTasks: tasks.length,
-        completedTasks: tasks.filter((t) => t.completed).length,
-        needleMovers,
-        needleMoversCompleted,
-        reviewsCount: reviews.length,
-        decisions: (decisionsRes.data ?? []).length,
-      })
       if ((promptsRes as { data?: { prompt_text?: string } | null })?.data?.prompt_text) {
-        setQuarterlyInsight(((promptsRes as any).data?.prompt_text) ?? null)
+        setQuarterlyInsight(((promptsRes as { data?: { prompt_text?: string } }).data?.prompt_text) ?? null)
       } else {
         setQuarterlyInsight(null)
       }
@@ -256,12 +232,16 @@ export default function QuarterlyPage() {
 
   const handleGenerateInsight = async () => {
     const session = await getUserSession()
-    const features = session ? getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled }) : null
+    const features = session
+      ? getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
+      : null
     if (!features?.personalMonthlyInsight) return
     setGenerating(true)
     setGenerateError(null)
     try {
-      const { data: { session: supabaseSession } } = await supabase.auth.getSession()
+      const {
+        data: { session: supabaseSession },
+      } = await supabase.auth.getSession()
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
       Object.assign(headers, await import('@/lib/api-client').then((m) => m.getSignedHeadersCached(supabaseSession?.access_token)))
@@ -277,7 +257,9 @@ export default function QuarterlyPage() {
         setQuarterlyInsightOverride(json.prompt)
         setGenerateError(null)
       } else if (json.aiError) {
-        setGenerateError(`[AI ERROR] ${json.error}${json.model ? ` (model: ${json.model})` : ''}${json.status ? ` [status ${json.status}]` : ''}`)
+        setGenerateError(
+          `[AI ERROR] ${json.error}${json.model ? ` (model: ${json.model})` : ''}${json.status ? ` [status ${json.status}]` : ''}`
+        )
       } else {
         setGenerateError(json.error || 'Failed to generate insight')
       }
@@ -295,14 +277,18 @@ export default function QuarterlyPage() {
     if (hasInsight) return
     const doGenerate = async () => {
       const session = await getUserSession()
-      const features = session ? getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled }) : null
+      const features = session
+        ? getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
+        : null
       if (!features?.personalMonthlyInsight) return
       const hasContent = quarterlyWins.length > 0
       if (!hasContent) return
       hasTriggeredGenerate.current = true
       setGenerating(true)
       try {
-        const { data: { session: supabaseSession } } = await supabase.auth.getSession()
+        const {
+          data: { session: supabaseSession },
+        } = await supabase.auth.getSession()
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (supabaseSession?.access_token) headers['Authorization'] = `Bearer ${supabaseSession.access_token}`
         Object.assign(headers, await import('@/lib/api-client').then((m) => m.getSignedHeadersCached(supabaseSession?.access_token)))
@@ -318,7 +304,9 @@ export default function QuarterlyPage() {
           setQuarterlyInsightOverride(json.prompt)
           setGenerateError(null)
         } else if (json.aiError) {
-          setGenerateError(`[AI ERROR] ${json.error}${json.model ? ` (model: ${json.model})` : ''}${json.status ? ` [status ${json.status}]` : ''}`)
+          setGenerateError(
+            `[AI ERROR] ${json.error}${json.model ? ` (model: ${json.model})` : ''}${json.status ? ` [status ${json.status}]` : ''}`
+          )
         }
       } catch (err) {
         console.error('[quarterly] Auto-generate error:', err)
@@ -341,17 +329,18 @@ export default function QuarterlyPage() {
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8">
-        <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300">Loading quarterly insights...</p>
+        <p className="text-gray-700 dark:text-gray-300">Loading quarterly insights...</p>
       </div>
     )
   }
 
+  const allWinsHref = `${pathname || '/quarterly'}?quarter=${currentQuarterStr}#quarterly-all-wins`
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
-      {/* Header */}
       <div className="flex flex-col gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-bold mb-1 flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
+          <h1 className="text-3xl font-bold mb-1 flex items-center gap-2 text-gray-900 dark:text-gray-100">
             <TrendingUp className="w-8 h-8" style={{ color: colors.coral.DEFAULT }} />
             Quarterly Trajectory
           </h1>
@@ -365,7 +354,6 @@ export default function QuarterlyPage() {
         />
       </div>
 
-      {/* Quarter in Progress - only when viewing current quarter with no insight yet */}
       {!showFullQuarterly && isSameQuarter(selectedQuarter, new Date()) && (
         <QuarterlyPreview
           quarterLabel={quarterLabel}
@@ -377,33 +365,53 @@ export default function QuarterlyPage() {
         />
       )}
 
-      {/* Full quarterly analysis - big picture focus, insight first */}
-      {showFullQuarterly && (
+      {showFullQuarterly && narrative && (
         <div className="space-y-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 dark:text-white">Your Quarterly Trajectory</h1>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Your Quarterly Trajectory</h2>
 
-          {/* 1. Mrs. Deer's reflection FIRST - the big picture */}
           <TrajectoryWisdom
             insight={quarterlyInsightOverride ?? quarterlyInsight}
             quarterLabel={quarterLabel}
+            greetingName={quarterlyGreetingName}
             onRefresh={showRefreshButton ? handleGenerateInsight : undefined}
             generating={generating}
             generateError={generateError}
           />
 
-          {/* 2. Minimal stats - just the essentials */}
-          <TrajectoryStats
-            stats={{
-              ...stats,
-              completionRate: stats.totalTasks > 0 ? Math.round((stats.completedTasks / stats.totalTasks) * 100) : 0,
+          <HowTheShiftShowedUp months={narrative.shiftShowedUp} />
+
+          <TransformationThread thread={narrative.transformationThread} />
+
+          <WhatYouCarriedForward strengths={narrative.carriedForward} primaryGoalText={quarterlyData?.userProfile.primary_goal_text} />
+
+          <SurpriseTransformation surprise={narrative.surprise} />
+
+          <QuarterlyIntention
+            onSet={(intention) => {
+              try {
+                localStorage.setItem(`quarterly-intention-${currentQuarterStr}`, intention)
+              } catch {
+                /* ignore */
+              }
             }}
+            placeholder="I commit to..."
           />
 
-          {/* 3. Defining moments - key wins from the quarter */}
-          <DefiningMoments
-            moments={quarterlyWins.map((text) => ({ text }))}
-            quarterLabel={quarterLabel}
+          <NextQuarterQuestion block={narrative.guidingQuestion} />
+
+          <QuarterAtAGlance
+            stats={{
+              ...stats,
+              completionRate,
+            }}
+            viewAllWinsHref={quarterlyData && quarterlyData.allWinsFlat.length > 0 ? allWinsHref : undefined}
           />
+
+          <InsightLetterClosing cadence="quarter" className="mt-2" />
+
+          {quarterlyData && quarterlyData.allWinsFlat.length > 0 && (
+            <QuarterlyAllWinsExpandable wins={quarterlyData.allWinsFlat} quarterLabel={quarterLabel} />
+          )}
         </div>
       )}
     </div>

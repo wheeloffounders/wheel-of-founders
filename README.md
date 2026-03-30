@@ -57,6 +57,8 @@ Daily planning and reflection app for founders: Morning Power List, Evening Revi
 | [Vercel deployment](docs/VERCEL_DEPLOYMENT.md) | **Start here for deploy:** env vars in order, Stripe webhook secret, Supabase URLs |
 | [Production deployment](docs/PRODUCTION_DEPLOYMENT.md) | Full production checklist and monitoring |
 | [Admin testing](docs/ADMIN_TESTING.md) | How to test admin access and data isolation with a fresh account |
+| [Branch structure](docs/BRANCH_STRUCTURE.md) | `production` / `preview` / optional `local` — Git + Vercel setup |
+| [Progressive unlock timeline](docs/PROGRESSIVE_UNLOCK_TIMELINE.md) | Founder DNA + insight pages — unlock days and cadences |
 
 ---
 

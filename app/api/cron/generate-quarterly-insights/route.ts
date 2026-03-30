@@ -1,94 +1,159 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/server-supabase'
-import { getFeatureAccess } from '@/lib/features'
-import { getQuarterStart, getQuarterEnd, toDateStr } from '@/lib/date-utils'
+import { authorizeCronRequest, logCronRequestMeta } from '@/lib/cron-auth'
+import { getEligibleUsersForQuarterlyInsightCron } from '@/lib/quarterly-insight/eligible-users'
+import { processQuarterlyInsightCronUser } from '@/lib/quarterly-insight/process-user'
+import { getUtcIsoQuarterId } from '@/lib/quarterly-insight/utc-iso-quarter'
+import {
+  ensureQuarterlyInsightQuarterRollover,
+  getQuarterlyInsightCursor,
+  isQuarterlyInsightBatchCompleteForQuarter,
+  markQuarterlyInsightBatchComplete,
+  setQuarterlyInsightCursor,
+} from '@/lib/quarterly-insight/quarterly-cron-batch-state'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+const BATCH_SIZE = 50
+const CONCURRENCY = 5
+
 /**
- * Cron: Generate quarterly insights for all active users.
- * Runs Jan 1, Apr 1, Jul 1, Oct 1 at 00:00 UTC. Generates for the previous quarter.
- * Secured by CRON_SECRET.
+ * Cron: Quarterly insights for users whose local time is Jan/Apr/Jul/Oct 1st 00:xx.
+ * Schedule (vercel.json): every 5 minutes on UTC day 1 of Jan/Apr/Jul/Oct (first field * /5; month field 1,4,7,10).
+ * Batch + cron_state cursor until the UTC-quarter wave completes.
+ * Does not skip users on Monday 00 local (quarter-start Mondays included).
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('Authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  logCronRequestMeta('cron/generate-quarterly-insights', request)
+
+  const auth = authorizeCronRequest(request)
+  if (!auth.ok) {
+    return NextResponse.json({ error: 'Unauthorized', reason: auth.reason }, { status: 401 })
   }
 
   const startTime = Date.now()
-  const quarterStart = toDateStr(getQuarterStart())
-  const quarterEnd = toDateStr(getQuarterEnd())
-
+  const now = new Date()
   const db = getServerSupabase()
+  const quarterId = getUtcIsoQuarterId(now)
 
-  const ninetyDaysAgo = new Date()
-  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
-  const cutoff = ninetyDaysAgo.toISOString().slice(0, 10)
+  await ensureQuarterlyInsightQuarterRollover(db, quarterId)
 
-  const { data: reviewUsers } = await db
-    .from('evening_reviews')
-    .select('user_id')
-    .gte('review_date', cutoff)
-  const { data: taskUsers } = await db
-    .from('morning_tasks')
-    .select('user_id')
-    .gte('plan_date', cutoff)
+  if (await isQuarterlyInsightBatchCompleteForQuarter(db, quarterId)) {
+    const totalTime = Date.now() - startTime
+    return NextResponse.json({
+      success: true,
+      mode: 'batched_per_user_timezone',
+      skipped: true,
+      reason: 'batch_complete_for_utc_quarter',
+      isoQuarterId: quarterId,
+      processingTimeMs: totalTime,
+    })
+  }
 
-  const activeIds = new Set<string>()
-  ;(reviewUsers ?? []).forEach((r: { user_id?: string }) => { if (r.user_id) activeIds.add(r.user_id) })
-  ;(taskUsers ?? []).forEach((t: { user_id?: string }) => { if (t.user_id) activeIds.add(t.user_id) })
+  const eligible = await getEligibleUsersForQuarterlyInsightCron(db, now)
 
-  const { data: profiles } = await db
-    .from('user_profiles')
-    .select('id, tier, pro_features_enabled')
-    .in('id', Array.from(activeIds))
+  if (eligible.length === 0) {
+    const totalTime = Date.now() - startTime
+    return NextResponse.json({
+      success: true,
+      mode: 'batched_per_user_timezone',
+      message: 'No eligible users this run',
+      eligibleCount: 0,
+      isoQuarterId: quarterId,
+      processingTimeMs: totalTime,
+    })
+  }
 
-  const userIds = (profiles ?? [])
-    .filter((p: { id: string; tier?: string; pro_features_enabled?: boolean }) =>
-      getFeatureAccess({ tier: p.tier, pro_features_enabled: p.pro_features_enabled }).personalMonthlyInsight
+  const lastUserId = await getQuarterlyInsightCursor(db)
+  let startIndex = 0
+  if (lastUserId) {
+    const idx = eligible.findIndex((u) => u.id === lastUserId)
+    startIndex = idx === -1 ? 0 : idx + 1
+  }
+
+  if (startIndex >= eligible.length) {
+    await markQuarterlyInsightBatchComplete(db, quarterId)
+    const totalTime = Date.now() - startTime
+    return NextResponse.json({
+      success: true,
+      mode: 'batched_per_user_timezone',
+      message: 'All eligible users already processed for this wave',
+      eligibleCount: eligible.length,
+      isoQuarterId: quarterId,
+      batchProcessed: 0,
+      succeeded: 0,
+      failed: 0,
+      remaining: 0,
+      processingTimeMs: totalTime,
+    })
+  }
+
+  const batch = eligible.slice(startIndex, startIndex + BATCH_SIZE)
+
+  type RowResult = { userId: string; success: boolean; error?: string }
+  const results: RowResult[] = []
+
+  for (let i = 0; i < batch.length; i += CONCURRENCY) {
+    const chunk = batch.slice(i, i + CONCURRENCY)
+    const settled = await Promise.allSettled(
+      chunk.map(async (user) => {
+        const r = await processQuarterlyInsightCronUser({
+          db,
+          userId: user.id,
+          timeZone: user.timezone,
+          now,
+        })
+        return { userId: user.id, success: r.success, error: r.error } satisfies RowResult
+      })
     )
-    .map((p: { id: string }) => p.id)
 
-  let processed = 0
-  let succeeded = 0
-  let failed = 0
-  const errors: { userId: string; error: string }[] = []
-
-  const { generateQuarterlyInsightForUser } = await import('@/lib/batch-quarterly-insight')
-
-  for (const userId of userIds) {
-    try {
-      const result = await generateQuarterlyInsightForUser(userId, quarterStart, quarterEnd)
-      processed++
-      if (result.success) {
-        succeeded++
+    for (let j = 0; j < settled.length; j++) {
+      const s = settled[j]
+      const userId = chunk[j]?.id ?? 'unknown'
+      if (s.status === 'fulfilled') {
+        results.push(s.value)
       } else {
-        failed++
-        if (result.error) errors.push({ userId, error: result.error })
+        const reason = s.reason instanceof Error ? s.reason.message : String(s.reason)
+        results.push({ userId, success: false, error: reason })
       }
-    } catch (err) {
-      processed++
-      failed++
-      errors.push({ userId, error: err instanceof Error ? err.message : 'Unknown error' })
-      console.error(`[cron/quarterly-insights] User ${userId}:`, err)
     }
   }
 
+  const succeeded = results.filter((r) => r.success).length
+  const failed = results.filter((r) => !r.success).length
+  const errors = results
+    .filter((r) => !r.success && r.error)
+    .map((r) => ({ userId: r.userId, error: r.error ?? 'unknown' }))
+    .slice(0, 20)
+
+  const nextIndex = startIndex + batch.length
+  const remaining = Math.max(0, eligible.length - nextIndex)
+
+  if (nextIndex >= eligible.length) {
+    await markQuarterlyInsightBatchComplete(db, quarterId)
+  } else {
+    const lastProcessed = batch[batch.length - 1]
+    if (lastProcessed) await setQuarterlyInsightCursor(db, lastProcessed.id)
+  }
+
   const totalTime = Date.now() - startTime
-  console.log(`[cron/quarterly-insights] quarterStart=${quarterStart} quarterEnd=${quarterEnd} users=${userIds.length} processed=${processed} succeeded=${succeeded} failed=${failed} timeMs=${totalTime}`)
+  console.log(
+    `[cron/quarterly-insights] quarter=${quarterId} eligible=${eligible.length} batch=${batch.length} startIndex=${startIndex} succeeded=${succeeded} failed=${failed} remaining=${remaining} timeMs=${totalTime}`
+  )
 
   return NextResponse.json({
     success: true,
-    quarterStart,
-    quarterEnd,
-    totalUsers: userIds.length,
-    processed,
+    mode: 'batched_per_user_timezone',
+    isoQuarterId: quarterId,
+    eligibleCount: eligible.length,
+    startIndex,
+    batchProcessed: batch.length,
     succeeded,
     failed,
-    errors: errors.slice(0, 20),
+    remaining,
+    errors,
     processingTimeMs: totalTime,
+    batchComplete: nextIndex >= eligible.length,
   })
 }

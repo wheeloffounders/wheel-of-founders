@@ -4,19 +4,68 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useTutorial } from '@/lib/contexts/TutorialContext'
-import { Plus, Sun, Moon, BarChart2, User, Calendar, Settings, Home, MapPin, Bell, MessageSquare, LogOut, AlertCircle, Book } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import {
+  Plus,
+  Sun,
+  Moon,
+  BarChart2,
+  User,
+  Calendar,
+  Settings,
+  Home,
+  MapPin,
+  MessageSquare,
+  LogOut,
+  AlertCircle,
+  Book,
+  Sparkles,
+  Activity,
+  LayoutGrid,
+  Route,
+  Lock,
+} from 'lucide-react'
 import { useNewInsights } from '@/lib/hooks/useNewInsights'
+import { useWhatsNew } from '@/lib/hooks/useWhatsNew'
 import { useHasSeenMorningTour } from '@/lib/hooks/useHasSeenMorningTour'
 import { supabase } from '@/lib/supabase'
 import { resetAnalytics } from '@/lib/analytics'
 import { colors } from '@/lib/design-tokens'
 import { useProgress } from '@/lib/hooks/useProgress'
+import { useFounderJourney } from '@/lib/hooks/useFounderJourney'
 import { ProgressCircle } from '@/components/ProgressCircle'
+import {
+  WEEKLY_INSIGHT_MIN_DAYS,
+  MONTHLY_INSIGHT_MIN_DAYS,
+  QUARTERLY_INSIGHT_MIN_DAYS,
+} from '@/lib/founder-dna/unlock-schedule-config'
+import { ARCHETYPE_PREVIEW_MIN_DAYS } from '@/lib/founder-dna/archetype-timing'
 
 const insightsItems = [
-  { name: 'Weekly Insight', href: '/weekly', icon: Calendar, showProgress: false },
-  { name: 'Monthly Insight', href: '/monthly-insight', icon: Calendar, showProgress: true as const, progressKey: 'monthly' as const },
-  { name: 'Quarterly Trajectory', href: '/quarterly', icon: BarChart2, showProgress: true as const, progressKey: 'quarterly' as const },
+  {
+    name: 'Weekly Insight',
+    href: '/weekly',
+    icon: Calendar,
+    showProgress: true as const,
+    progressKey: 'weekly' as const,
+    unlockMinDays: WEEKLY_INSIGHT_MIN_DAYS,
+  },
+  {
+    name: 'Monthly Insight',
+    href: '/monthly-insight',
+    icon: Calendar,
+    showProgress: true as const,
+    progressKey: 'monthly' as const,
+    unlockMinDays: MONTHLY_INSIGHT_MIN_DAYS,
+  },
+  {
+    name: 'Quarterly Trajectory',
+    href: '/quarterly',
+    icon: BarChart2,
+    showProgress: true as const,
+    progressKey: 'quarterly' as const,
+    unlockMinDays: QUARTERLY_INSIGHT_MIN_DAYS,
+  },
   { name: 'Daily History', href: '/history', icon: MapPin, showProgress: false },
 ]
 
@@ -26,8 +75,26 @@ const todayItems = [
   { name: 'Evening', href: '/evening', icon: Moon, bg: colors.navy.DEFAULT, color: '#FFFFFF' },
 ]
 
-const profileItems = [
+type ProfileNavItem = {
+  name: string
+  href: string
+  icon: LucideIcon
+  unlockMinDays?: number
+  showProgress?: boolean
+}
+
+const profileItems: ProfileNavItem[] = [
   { name: 'Profile', href: '/profile', icon: User },
+  {
+    name: 'Archetype',
+    href: '/founder-dna/archetype',
+    icon: Sparkles,
+    unlockMinDays: ARCHETYPE_PREVIEW_MIN_DAYS,
+    showProgress: true,
+  },
+  { name: 'Rhythm', href: '/founder-dna/rhythm', icon: Activity },
+  { name: 'Patterns', href: '/founder-dna/patterns', icon: LayoutGrid },
+  { name: 'Journey', href: '/founder-dna/journey', icon: Route },
 ]
 
 const settingsItems = [
@@ -40,12 +107,21 @@ const settingsItems = [
 const menuItemClass = 'flex items-center gap-3 px-4 min-h-[56px] text-sm font-medium hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 transition-colors mx-1 text-gray-900 dark:text-gray-100 dark:text-gray-100'
 const navButtonClass = 'flex flex-col items-center gap-1 min-w-[56px] py-2 rounded-none transition-colors'
 
+function navItemUnlocked(daysWithEntries: number, unlockMinDays?: number) {
+  if (unlockMinDays == null) return true
+  return daysWithEntries >= unlockMinDays
+}
+
 export function BottomNav() {
   const pathname = usePathname()
   const { isActive: isTutorialActive, step: tutorialStep, setStep: setTutorialStep } = useTutorial()
-  const { monthly, quarterly } = useProgress()
+  const { data: journey } = useFounderJourney()
+  const daysWithEntries =
+    journey?.milestones?.daysWithEntries ?? journey?.milestones?.daysActive ?? 0
+  const { weekly, monthly, quarterly } = useProgress()
   const { hasSeenMorningTour } = useHasSeenMorningTour()
   const { totalNew: newInsightsCount } = useNewInsights()
+  const { hasNew: hasFounderDnaNew } = useWhatsNew()
   const [insightsOpen, setInsightsOpen] = useState(false)
   const [todayOpen, setTodayOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -126,7 +202,8 @@ export function BottomNav() {
   const isDashboardActive = pathname === '/dashboard'
   const isInsightsActive = pathname === '/weekly' || pathname === '/history' || pathname === '/monthly-insight' || pathname === '/quarterly'
   const isTodayActive = pathname === '/morning' || pathname === '/evening' || pathname === '/emergency'
-  const isProfileActive = pathname === '/profile' || pathname === '/history'
+  const isProfileActive =
+    pathname === '/profile' || pathname === '/history' || pathname?.startsWith('/founder-dna')
   const isSettingsActive = pathname?.startsWith('/settings') || pathname === '/feedback'
 
   const menuOpen = insightsOpen || todayOpen || profileOpen || settingsOpen
@@ -173,7 +250,7 @@ export function BottomNav() {
           <Link
             href="/dashboard"
             data-tour="dashboard"
-            className={`${navButtonClass} ${isDashboardActive ? 'text-[#ef725c] dark:text-[#f0886c]' : 'text-gray-700 dark:text-gray-300 dark:text-gray-300'}`}
+            className={`${navButtonClass} relative ${isDashboardActive ? 'text-[#ef725c] dark:text-[#f0886c]' : 'text-gray-700 dark:text-gray-300 dark:text-gray-300'}`}
           >
             <Home className="w-6 h-6" strokeWidth={isDashboardActive ? 2.5 : 2} />
             <span className={`text-xs font-medium ${isDashboardActive ? '' : 'text-gray-600 dark:text-gray-400 dark:text-gray-400'}`}>Dashboard</span>
@@ -199,11 +276,37 @@ export function BottomNav() {
                 className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 py-2 rounded-none shadow-lg border-2 border-gray-200 dark:border-gray-700 dark:border-gray-700 min-w-[200px] z-[60] bg-white dark:bg-gray-800 dark:bg-gray-800"
               >
                 {insightsItems.map((item) => {
-                  const Icon = item.icon
-                  const progress = item.showProgress && item.progressKey === 'monthly' ? monthly : item.showProgress && item.progressKey === 'quarterly' ? quarterly : null
+                  const FeatureIcon = item.icon
+                  const progress =
+                    item.showProgress && item.progressKey === 'weekly'
+                      ? weekly
+                      : item.showProgress && item.progressKey === 'monthly'
+                        ? monthly
+                        : item.showProgress && item.progressKey === 'quarterly'
+                          ? quarterly
+                          : null
+                  const insightUnlockDays =
+                    'unlockMinDays' in item
+                      ? (item as { unlockMinDays: number }).unlockMinDays
+                      : undefined
+                  const unlocked = navItemUnlocked(daysWithEntries, insightUnlockDays)
+                  const RowIcon = unlocked ? FeatureIcon : Lock
+                  const lockLabel =
+                    !unlocked && insightUnlockDays != null
+                      ? ` — unlocks at ${insightUnlockDays} days with entries`
+                      : ''
                   return (
-                    <Link key={item.name} href={item.href} onClick={closeAll} className={menuItemClass}>
-                      <Icon className="w-5 h-5 flex-shrink-0" />
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      onClick={closeAll}
+                      className={menuItemClass}
+                      aria-label={unlocked ? item.name : `${item.name} (locked)${lockLabel}`}
+                    >
+                      <RowIcon
+                        className={`w-5 h-5 flex-shrink-0 ${unlocked ? '' : 'text-amber-600 dark:text-amber-500'}`}
+                        aria-hidden
+                      />
                       <span className="flex-1">{item.name}</span>
                       {progress && (
                         <ProgressCircle current={progress.current} required={progress.required} size="sm" showFraction />
@@ -290,22 +393,61 @@ export function BottomNav() {
               type="button"
               data-tour="profile"
               onClick={() => { setProfileOpen(!profileOpen); if (!profileOpen) { setInsightsOpen(false); setTodayOpen(false); setSettingsOpen(false) } }}
-              className={`${navButtonClass} ${isProfileActive ? 'text-[#ef725c] dark:text-[#f0886c]' : 'text-gray-700 dark:text-gray-300 dark:text-gray-300'}`}
+              className={`${navButtonClass} relative ${isProfileActive ? 'text-[#ef725c] dark:text-[#f0886c]' : 'text-gray-700 dark:text-gray-300 dark:text-gray-300'}`}
             >
-              <User className="w-6 h-6" strokeWidth={isProfileActive ? 2.5 : 2} />
+              <span className="relative inline-block">
+                <User className="w-6 h-6" strokeWidth={isProfileActive ? 2.5 : 2} />
+                {isLoggedIn && hasFounderDnaNew ? (
+                  <span
+                    className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#ef725c] rounded-full ring-2 ring-white dark:ring-gray-800"
+                    aria-hidden
+                  />
+                ) : null}
+              </span>
               <span className={`text-xs font-medium ${isProfileActive ? '' : 'text-gray-600 dark:text-gray-400 dark:text-gray-400'}`}>Profile</span>
             </button>
             {profileOpen && (
               <div
-                className="absolute bottom-full right-0 mb-2 py-2 rounded-none shadow-lg border-2 border-gray-200 dark:border-gray-700 dark:border-gray-700 min-w-[180px] z-[60] bg-white dark:bg-gray-800 dark:bg-gray-800"
+                className="absolute bottom-full right-0 mb-2 py-2 rounded-none shadow-lg border-2 border-gray-200 dark:border-gray-700 dark:border-gray-700 min-w-[220px] max-h-[min(70vh,420px)] overflow-y-auto z-[60] bg-white dark:bg-gray-800 dark:bg-gray-800"
               >
-                {profileItems.map((item) => {
-                  const Icon = item.icon
+                {profileItems.map((item, index) => {
+                  const FeatureIcon = item.icon
+                  const unlockMinDays = item.unlockMinDays
+                  const unlocked = navItemUnlocked(daysWithEntries, unlockMinDays)
+                  const RowIcon = unlocked ? FeatureIcon : Lock
+                  const lockLabel =
+                    !unlocked && unlockMinDays != null
+                      ? ` — unlocks at ${unlockMinDays} days with entries`
+                      : ''
+                  const showArchetypeProgress = item.showProgress && unlockMinDays != null
                   return (
-                    <Link key={item.name} href={item.href} onClick={closeAll} className={menuItemClass}>
-                      <Icon className="w-5 h-5 flex-shrink-0" />
-                      {item.name}
-                    </Link>
+                    <div key={item.href}>
+                      {index === 1 ? (
+                        <div className="px-4 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-600 mt-1">
+                          Founder DNA
+                        </div>
+                      ) : null}
+                      <Link
+                        href={item.href}
+                        onClick={closeAll}
+                        className={menuItemClass}
+                        aria-label={unlocked ? item.name : `${item.name} (locked)${lockLabel}`}
+                      >
+                        <RowIcon
+                          className={`w-5 h-5 flex-shrink-0 ${unlocked ? '' : 'text-amber-600 dark:text-amber-500'}`}
+                          aria-hidden
+                        />
+                        <span className="flex-1">{item.name}</span>
+                        {showArchetypeProgress ? (
+                          <ProgressCircle
+                            current={daysWithEntries}
+                            required={unlockMinDays}
+                            size="sm"
+                            showFraction
+                          />
+                        ) : null}
+                      </Link>
+                    </div>
                   )
                 })}
               </div>

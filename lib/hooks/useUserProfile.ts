@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
+import { invalidateUserProfileBundle } from '@/lib/user-profile-bundle-cache'
 
 export interface UserProfile {
   id: string
@@ -96,6 +97,7 @@ export function useUserProfile() {
       if (data) {
         setProfile(data)
       }
+      invalidateUserProfileBundle()
     } catch (err) {
       console.error('Error updating profile:', err)
       throw err

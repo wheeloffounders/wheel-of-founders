@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getUserSession } from '@/lib/auth'
+import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { sendTransactionalEmail } from '@/lib/email/transactional'
 import { getServerSupabase } from '@/lib/server-supabase'
 
@@ -41,12 +41,14 @@ export async function POST(req: NextRequest) {
     if (isCron) {
       // Internal/cron call - allowed
     } else {
-      // User-initiated: must be authenticated and email must match user
-      const session = await getUserSession()
+      // User-initiated: must be authenticated (via cookies/Authorization) and email must match user
+      const session = await getServerSessionFromRequest(req)
       if (!session) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
       const db = getServerSupabase()
+
+      // Ensure the email matches the authenticated user.
       const { data: profileData } = await db
         .from('user_profiles')
         .select('email_address')
@@ -54,8 +56,28 @@ export async function POST(req: NextRequest) {
         .maybeSingle()
       const profile = profileData as { email_address?: string } | null
       const userEmail = profile?.email_address || session.user.email
+
       if (!userEmail || email.toLowerCase() !== userEmail.toLowerCase()) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+
+      // For weekly_digest, respect notification settings (opt‑out).
+      if (template === 'weekly_digest') {
+        const { data: notifRow } = await (db.from('user_notification_settings') as any)
+          .select('weekly_insights_enabled')
+          .eq('user_id', session.user.id)
+          .maybeSingle()
+
+        const weeklyInsightsEnabled =
+          (notifRow as { weekly_insights_enabled?: boolean } | null)?.weekly_insights_enabled
+
+        if (weeklyInsightsEnabled === false) {
+          // User explicitly opted out – skip sending but return success-like response.
+          return NextResponse.json({
+            ok: false,
+            reason: 'opted_out',
+          })
+        }
       }
     }
 

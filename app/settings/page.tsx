@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Settings, Mail, Check, Download, FileText, MessageSquare, Loader2, Bell, Target, Users } from 'lucide-react'
+import { Settings, Check, Download, FileText, MessageSquare, Loader2, Bell, Target, Users } from 'lucide-react'
 import { founderStruggles } from '@/lib/founder-struggles'
 import { InfoTooltip } from '@/components/InfoTooltip'
 import { supabase } from '@/lib/supabase'
@@ -17,11 +17,6 @@ export default function SettingsPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(true)
-  const [welcomeEmailEnabled, setWelcomeEmailEnabled] = useState(true)
-  const [exportNotificationEnabled, setExportNotificationEnabled] = useState(true)
-  const [communityInsightsEnabled, setCommunityInsightsEnabled] = useState(true)
-  const [emailAddress, setEmailAddress] = useState('')
   const [preferredName, setPreferredName] = useState('')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [userTier, setUserTier] = useState<string>('beta')
@@ -56,7 +51,7 @@ export default function SettingsPage() {
     try {
       const { data, error } = await supabase
         .from('user_profiles')
-        .select('weekly_email_enabled, welcome_email_enabled, export_notification_enabled, community_insights_enabled, email_address, preferred_name, name, plan_type, struggles, struggles_other')
+        .select('preferred_name, name, plan_type, struggles, struggles_other')
         .eq('id', userId)
         .maybeSingle()
 
@@ -69,21 +64,10 @@ export default function SettingsPage() {
       }
 
       if (data) {
-        setWeeklyEmailEnabled(data.weekly_email_enabled ?? true)
-        setWelcomeEmailEnabled(data.welcome_email_enabled ?? true)
-        setExportNotificationEnabled(data.export_notification_enabled ?? true)
-        setCommunityInsightsEnabled(data.community_insights_enabled ?? true)
-        setEmailAddress(data.email_address || '')
         setPreferredName(data.preferred_name || data.name || '')
         setHasDuo((data as { plan_type?: string }).plan_type === 'duo_primary' || (data as { plan_type?: string }).plan_type === 'duo_secondary')
         setSelectedStruggles(Array.isArray((data as { struggles?: string[] }).struggles) ? (data as { struggles: string[] }).struggles : [])
         setOtherStruggle((data as { struggles_other?: string }).struggles_other || '')
-      } else {
-        // Get email from auth user
-        const { data: authData } = await supabase.auth.getUser()
-        if (authData?.user?.email) {
-          setEmailAddress(authData.user.email)
-        }
       }
     } catch (error) {
       console.warn('Unexpected error fetching settings:', (error as any)?.message || error)
@@ -104,23 +88,11 @@ export default function SettingsPage() {
     }
 
     try {
-      // Get email from auth if not set
-      let finalEmail = emailAddress
-      if (!finalEmail) {
-        const { data: authData } = await supabase.auth.getUser()
-        finalEmail = authData?.user?.email || ''
-      }
-
       const { error } = await supabase
         .from('user_profiles')
         .upsert(
           {
             id: session.user.id,
-            weekly_email_enabled: weeklyEmailEnabled,
-            welcome_email_enabled: welcomeEmailEnabled,
-            export_notification_enabled: exportNotificationEnabled,
-            community_insights_enabled: communityInsightsEnabled,
-            email_address: finalEmail,
             preferred_name: preferredName.trim() || null,
             updated_at: new Date().toISOString(),
           },
@@ -223,10 +195,10 @@ export default function SettingsPage() {
 
       {/* 3. Notification Reminders */}
       <div className="card bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white flex items-center gap-3">
-              <Bell className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white flex items-center gap-3 flex-wrap">
+              <Bell className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white shrink-0" />
               Notification Reminders
               <InfoTooltip text="Get push notifications for daily reminders, insights, and profile completion." position="right" />
             </h2>
@@ -236,7 +208,7 @@ export default function SettingsPage() {
           </div>
           <Link
             href="/settings/notifications"
-            className="px-4 py-2 text-gray-900 dark:text-gray-100 border border-[#152b50] dark:border-[#334155] rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900 transition text-sm font-medium shrink-0"
+            className="inline-flex items-center justify-center px-4 py-2 text-gray-900 dark:text-gray-100 border border-[#152b50] dark:border-[#334155] rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900 transition text-sm font-medium whitespace-nowrap shrink-0 self-start sm:self-center"
           >
             Manage Notifications
           </Link>
@@ -363,134 +335,6 @@ export default function SettingsPage() {
             className="mt-4 px-4 py-2 bg-[#152b50] text-white rounded-lg text-sm font-medium hover:bg-[#1a3565] transition disabled:opacity-70 disabled:cursor-not-allowed"
           >
             {savingGoal ? 'Saving...' : 'Save Personalization'}
-          </button>
-        </div>
-      </div>
-
-      {/* 5. Email Preferences */}
-      <div className="card bg-white dark:bg-gray-800 rounded-xl shadow-lg px-4 md:px-5 py-4 md:py-5 border-2 border-gray-200 dark:border-gray-700">
-        <div className="flex items-center gap-3 mb-6">
-          <Mail className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Email Preferences</h2>
-          <InfoTooltip text="Control which emails you receive: weekly summaries, welcome emails, export notifications, and community updates." position="right" />
-        </div>
-
-        {/* Email Address */}
-        <div className="mb-6">
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-            Email Address
-          </label>
-          <SpeechToTextInput
-            type="email"
-            id="email"
-            value={emailAddress}
-            onChange={(e) => setEmailAddress(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
-            placeholder="your@email.com"
-          />
-          <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
-            This email will be used for weekly summary emails.
-          </p>
-        </div>
-
-        {/* Weekly Email Toggle */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 rounded-lg mb-4">
-          <div className="flex-1">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-1">Weekly Summary Emails</h3>
-            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
-              Receive a personalized weekly summary every Sunday at 8 PM with your focus score
-              trends, accomplishments, and insights.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setWeeklyEmailEnabled(!weeklyEmailEnabled)}
-            className={`ml-4 relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#ef725c] focus:ring-offset-2 ${
-              weeklyEmailEnabled ? 'bg-[#ef725c]' : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
-            }`}
-            role="switch"
-            aria-checked={weeklyEmailEnabled}
-          >
-            <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-gray-800 dark:bg-gray-800 shadow ring-0 transition duration-200 ease-in-out ${
-                weeklyEmailEnabled ? 'translate-x-5' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </div>
-
-        {/* Welcome Email Toggle */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 rounded-lg mb-4">
-          <div className="flex-1">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-1">Welcome Email</h3>
-            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
-              Receive a welcome email after signup with tips to get started.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setWelcomeEmailEnabled(!welcomeEmailEnabled)}
-            className={`ml-4 relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#ef725c] focus:ring-offset-2 ${
-              welcomeEmailEnabled ? 'bg-[#ef725c]' : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
-            }`}
-            role="switch"
-            aria-checked={welcomeEmailEnabled}
-          >
-            <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-gray-800 dark:bg-gray-800 shadow ring-0 transition duration-200 ease-in-out ${
-                welcomeEmailEnabled ? 'translate-x-5' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </div>
-
-        {/* Export Notification Toggle */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 rounded-lg mb-4">
-          <div className="flex-1">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-1">Export Ready Notification</h3>
-            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
-              Receive an email when your data export is ready with a download link.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setExportNotificationEnabled(!exportNotificationEnabled)}
-            className={`ml-4 relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#ef725c] focus:ring-offset-2 ${
-              exportNotificationEnabled ? 'bg-[#ef725c]' : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
-            }`}
-            role="switch"
-            aria-checked={exportNotificationEnabled}
-          >
-            <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-gray-800 dark:bg-gray-800 shadow ring-0 transition duration-200 ease-in-out ${
-                exportNotificationEnabled ? 'translate-x-5' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </div>
-
-        {/* Community Insights Toggle */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 rounded-lg">
-          <div className="flex-1">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-1">Community Insights</h3>
-            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
-              See anonymized insights from fellow founders. Your data contributes to these patterns but is never individually identified.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setCommunityInsightsEnabled(!communityInsightsEnabled)}
-            className={`ml-4 relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#ef725c] focus:ring-offset-2 ${
-              communityInsightsEnabled ? 'bg-[#ef725c]' : 'bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'
-            }`}
-            role="switch"
-            aria-checked={communityInsightsEnabled}
-          >
-            <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-gray-800 dark:bg-gray-800 shadow ring-0 transition duration-200 ease-in-out ${
-                communityInsightsEnabled ? 'translate-x-5' : 'translate-x-0'
-              }`}
-            />
           </button>
         </div>
       </div>

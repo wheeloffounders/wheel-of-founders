@@ -1,10 +1,15 @@
 /**
- * Progress calculation for monthly/quarterly insight unlocks.
- * Counts distinct days with ANY entries (morning tasks OR evening reviews).
+ * Insight page unlocks: days with entries (unique dates with morning commits or evening reviews).
+ * Aligns with /api/founder-dna/journey progressive unlocks.
  */
 
 import { supabase } from '@/lib/supabase'
-import { subDays, format } from 'date-fns'
+import { getDaysWithEntries } from '@/lib/founder-dna/days-with-entries'
+import {
+  MONTHLY_INSIGHT_MIN_DAYS,
+  QUARTERLY_INSIGHT_MIN_DAYS,
+  WEEKLY_INSIGHT_MIN_DAYS,
+} from '@/lib/founder-dna/unlock-schedule-config'
 
 export interface ProgressData {
   current: number
@@ -13,85 +18,33 @@ export interface ProgressData {
   isUnlocked: boolean
 }
 
-const MONTHLY_REQUIRED = 15
-const MONTHLY_WINDOW_DAYS = 30
-const QUARTERLY_REQUIRED = 45
-const QUARTERLY_WINDOW_DAYS = 90
+function progressForDaysWithEntries(daysWithEntries: number, required: number): ProgressData {
+  const current = Math.min(daysWithEntries, required)
+  const percentage = required > 0 ? Math.min(100, Math.round((current / required) * 100)) : 0
+  return {
+    current,
+    required,
+    percentage,
+    isUnlocked: daysWithEntries >= required,
+  }
+}
 
-async function getActiveDaysInRange(
-  userId: string,
-  startDate: string,
-  endDate: string
-): Promise<Set<string>> {
-  const dates = new Set<string>()
-
-  const [tasksRes, reviewsRes] = await Promise.all([
-    supabase
-      .from('morning_tasks')
-      .select('plan_date')
-      .eq('user_id', userId)
-      .gte('plan_date', startDate)
-      .lte('plan_date', endDate),
-    supabase
-      .from('evening_reviews')
-      .select('review_date')
-      .eq('user_id', userId)
-      .gte('review_date', startDate)
-      .lte('review_date', endDate),
-  ])
-
-  const tasks = tasksRes.data ?? []
-  const reviews = reviewsRes.data ?? []
-
-  tasks.forEach((t) => {
-    if (t.plan_date) dates.add(t.plan_date)
-  })
-  reviews.forEach((r) => {
-    if (r.review_date) dates.add(r.review_date)
-  })
-
-  return dates
+export async function getWeeklyInsightProgress(userId: string): Promise<ProgressData> {
+  const dwe = await getDaysWithEntries(userId, supabase)
+  return progressForDaysWithEntries(dwe, WEEKLY_INSIGHT_MIN_DAYS)
 }
 
 export async function getMonthlyProgress(userId: string): Promise<ProgressData> {
-  const end = new Date()
-  const start = subDays(end, MONTHLY_WINDOW_DAYS)
-  const startStr = format(start, 'yyyy-MM-dd')
-  const endStr = format(end, 'yyyy-MM-dd')
-
-  const dates = await getActiveDaysInRange(userId, startStr, endStr)
-  const current = dates.size
-  const percentage = Math.min(100, Math.round((current / MONTHLY_REQUIRED) * 100))
-  const isUnlocked = current >= MONTHLY_REQUIRED
-
-  return {
-    current,
-    required: MONTHLY_REQUIRED,
-    percentage,
-    isUnlocked,
-  }
+  const dwe = await getDaysWithEntries(userId, supabase)
+  return progressForDaysWithEntries(dwe, MONTHLY_INSIGHT_MIN_DAYS)
 }
 
 export async function getQuarterlyProgress(userId: string): Promise<ProgressData> {
-  const end = new Date()
-  const start = subDays(end, QUARTERLY_WINDOW_DAYS)
-  const startStr = format(start, 'yyyy-MM-dd')
-  const endStr = format(end, 'yyyy-MM-dd')
-
-  const dates = await getActiveDaysInRange(userId, startStr, endStr)
-  const current = dates.size
-  const percentage = Math.min(100, Math.round((current / QUARTERLY_REQUIRED) * 100))
-  const isUnlocked = current >= QUARTERLY_REQUIRED
-
-  return {
-    current,
-    required: QUARTERLY_REQUIRED,
-    percentage,
-    isUnlocked,
-  }
+  const dwe = await getDaysWithEntries(userId, supabase)
+  return progressForDaysWithEntries(dwe, QUARTERLY_INSIGHT_MIN_DAYS)
 }
 
-export type UnlockType = 'monthly' | 'quarterly'
+export type UnlockType = 'weekly' | 'monthly' | 'quarterly'
 
 export interface NextUnlockResult {
   type: UnlockType
@@ -99,21 +52,20 @@ export interface NextUnlockResult {
   daysRemaining: number
 }
 
+/** Next insight page unlock by days with entries (weekly → monthly → quarterly). */
 export async function getNextUnlock(userId: string): Promise<NextUnlockResult | null> {
-  const [monthly, quarterly] = await Promise.all([
+  const [w, m, q] = await Promise.all([
+    getWeeklyInsightProgress(userId),
     getMonthlyProgress(userId),
     getQuarterlyProgress(userId),
   ])
 
-  if (monthly.isUnlocked && quarterly.isUnlocked) return null
-  if (monthly.isUnlocked) return { type: 'quarterly', progress: quarterly, daysRemaining: quarterly.required - quarterly.current }
-  if (quarterly.isUnlocked) return { type: 'monthly', progress: monthly, daysRemaining: monthly.required - monthly.current }
-
-  const monthlyRemaining = monthly.required - monthly.current
-  const quarterlyRemaining = quarterly.required - quarterly.current
-
-  if (monthlyRemaining <= quarterlyRemaining) {
-    return { type: 'monthly', progress: monthly, daysRemaining: monthlyRemaining }
+  if (w.isUnlocked && m.isUnlocked && q.isUnlocked) return null
+  if (!w.isUnlocked) {
+    return { type: 'weekly', progress: w, daysRemaining: Math.max(0, w.required - w.current) }
   }
-  return { type: 'quarterly', progress: quarterly, daysRemaining: quarterlyRemaining }
+  if (!m.isUnlocked) {
+    return { type: 'monthly', progress: m, daysRemaining: Math.max(0, m.required - m.current) }
+  }
+  return { type: 'quarterly', progress: q, daysRemaining: Math.max(0, q.required - q.current) }
 }

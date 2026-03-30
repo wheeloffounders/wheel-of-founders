@@ -47,15 +47,28 @@ export async function detectAndStoreTimezone(userId: string): Promise<void> {
 }
 
 export async function getUserSession(): Promise<SessionWithProfile | null> {
-  const { data: { session } } = await supabase.auth.getSession()
-  
+  // Validate JWT with Auth (not just local storage). Stale getSession() + expired token
+  // yields a user id in JS but auth.uid() = null in Postgres → RLS failures on insert/update.
+  const { data: userData, error: userError } = await supabase.auth.getUser()
+  const verifiedUser = userData?.user
+  if (userError || !verifiedUser) return null
+
+  let {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session) {
+    const { data: refreshed } = await supabase.auth.refreshSession()
+    session = refreshed.session ?? null
+  }
   if (!session) return null
-  
+
+  const userId = verifiedUser.id
+
   // Get user profile with tier and admin info
   const { data: profileData } = await supabase
     .from('user_profiles')
     .select('tier, pro_features_enabled, is_admin, admin_role, timezone')
-    .eq('id', session.user.id)
+    .eq('id', userId)
     .maybeSingle()
   
   type ProfileRow = {
@@ -70,45 +83,79 @@ export async function getUserSession(): Promise<SessionWithProfile | null> {
   // If profile doesn't exist, create it with beta defaults
   if (!profile) {
     // Detect timezone before creating profile
-    await detectAndStoreTimezone(session.user.id)
-    
+    await detectAndStoreTimezone(userId)
+
     const { data: newProfile } = await supabase
       .from('user_profiles')
       .insert({
-        id: session.user.id,
-        email: session.user.email,
+        id: userId,
+        email: verifiedUser.email,
         tier: 'beta',
         pro_features_enabled: true,
         created_at: new Date().toISOString(),
       })
       .select('tier, pro_features_enabled, is_admin, admin_role')
       .single()
-    
+
     return {
       ...session,
       user: {
         ...session.user,
+        ...verifiedUser,
         tier: newProfile?.tier || 'beta',
         pro_features_enabled: newProfile?.pro_features_enabled ?? true,
         is_admin: newProfile?.is_admin ?? false,
         admin_role: newProfile?.admin_role ?? null,
-      }
+      },
     } as SessionWithProfile
   }
-  
+
   // Check if timezone needs to be detected (first time login)
   if (!profile.timezone) {
-    await detectAndStoreTimezone(session.user.id)
+    await detectAndStoreTimezone(userId)
   }
-  
+
   return {
     ...session,
     user: {
       ...session.user,
+      ...verifiedUser,
       tier: profile.tier || 'beta',
       pro_features_enabled: profile.pro_features_enabled ?? true,
       is_admin: profile.is_admin ?? false,
       admin_role: profile.admin_role ?? null,
-    }
+    },
   } as SessionWithProfile
+}
+
+/**
+ * Refresh the access token immediately before RLS-scoped writes so PostgREST sends a JWT
+ * that matches `auth.uid()` (avoids false RLS failures when local session lags).
+ */
+export async function refreshSessionForWrite(): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { data, error } = await supabase.auth.refreshSession()
+  if (error || !data.session) {
+    return {
+      ok: false,
+      message: 'Your session expired. Please sign in again.',
+    }
+  }
+  return { ok: true }
+}
+
+/** PostgREST / Postgres errors that often clear after `refreshSessionForWrite` + one retry */
+export function isRlsOrAuthPermissionError(error: unknown): boolean {
+  if (error === null || error === undefined || typeof error !== 'object') return false
+  const e = error as { message?: string; code?: string; details?: string }
+  const msg = `${e.message ?? ''} ${e.details ?? ''}`.toLowerCase()
+  const code = String(e.code ?? '')
+  return (
+    msg.includes('row-level security') ||
+    msg.includes('violates row-level security') ||
+    msg.includes('permission denied') ||
+    msg.includes('jwt expired') ||
+    msg.includes('invalid jwt') ||
+    code === '42501' ||
+    code === 'PGRST301'
+  )
 }

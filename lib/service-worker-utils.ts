@@ -15,7 +15,7 @@ export async function forceServiceWorkerUpdate(): Promise<void> {
     await reg.unregister()
     console.log('[sw-utils] Unregistered', reg.scope)
   }
-  const reg = await navigator.serviceWorker.register(SW_URL)
+  const reg = await navigator.serviceWorker.register(SW_URL, { scope: '/' })
   console.log('[sw-utils] Re-registered', reg.scope, '- reload the page to use new SW')
   // Optional: reload so the new SW takes control
   window.location.reload()

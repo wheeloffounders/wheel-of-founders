@@ -1,23 +1,35 @@
 'use client'
 
 import { useMemo } from 'react'
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns'
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  startOfWeek,
+  endOfWeek,
+  isSameMonth,
+  addMonths,
+  subMonths,
+} from 'date-fns'
 import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Card, CardHeader, CardContent } from '@/components/ui/card'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { formatMonthYear } from '@/lib/date-utils'
 import type { DayStatus } from '@/lib/date-utils'
 
 type MonthStatusMap = Record<string, DayStatus>
 
-interface CalendarModalProps {
+export interface CalendarModalProps {
   isOpen: boolean
   onClose: () => void
   currentMonth: Date
   onMonthChange?: (month: Date) => void
   onSelectDate: (date: string) => void
   monthStatus: MonthStatusMap
+  /** When set, dates after this day (calendar string) are not selectable. Omit to allow any date (past and future). */
   maxDate?: Date
+  /** Highlight the active plan/review date (yyyy-MM-dd). */
+  selectedDate?: string
   className?: string
 }
 
@@ -29,6 +41,9 @@ const STATUS_CHAR: Record<DayStatus, string> = {
   future: '–',
 }
 
+const selectClass =
+  'rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm px-2 py-1.5 min-w-0'
+
 export function CalendarModal({
   isOpen,
   onClose,
@@ -36,7 +51,8 @@ export function CalendarModal({
   onMonthChange,
   onSelectDate,
   monthStatus,
-  maxDate = new Date(),
+  maxDate,
+  selectedDate,
   className = '',
 }: CalendarModalProps) {
   const monthStart = startOfMonth(currentMonth)
@@ -44,6 +60,24 @@ export function CalendarModal({
   const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 })
   const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 })
   const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd })
+
+  const maxKey = maxDate != null ? format(maxDate, 'yyyy-MM-dd') : null
+
+  const years = useMemo(() => {
+    const y = new Date().getFullYear()
+    const list: number[] = []
+    for (let yr = y - 25; yr <= y + 10; yr++) list.push(yr)
+    return list
+  }, [])
+
+  const monthLabels = useMemo(
+    () =>
+      Array.from({ length: 12 }, (_, i) => ({
+        value: i,
+        label: format(new Date(2000, i, 1), 'MMMM'),
+      })),
+    [],
+  )
 
   const weeks = useMemo(() => {
     const w: Date[][] = []
@@ -58,50 +92,88 @@ export function CalendarModal({
     return monthStatus[key] ?? 'empty'
   }
 
-  const isFuture = (d: Date): boolean => {
-    const key = format(d, 'yyyy-MM-dd')
-    const maxKey = format(maxDate, 'yyyy-MM-dd')
-    return key > maxKey
+  const isFutureBlocked = (d: Date): boolean => {
+    if (maxKey == null) return false
+    return format(d, 'yyyy-MM-dd') > maxKey
   }
 
   const handleDayClick = (d: Date) => {
-    if (isFuture(d)) return
+    if (isFutureBlocked(d)) return
     onSelectDate(format(d, 'yyyy-MM-dd'))
     onClose()
   }
 
   const handleToday = () => {
-    onSelectDate(format(maxDate, 'yyyy-MM-dd'))
+    onSelectDate(format(new Date(), 'yyyy-MM-dd'))
     onClose()
+  }
+
+  const applyMonth = (monthIndex: number) => {
+    onMonthChange?.(startOfMonth(new Date(currentMonth.getFullYear(), monthIndex, 1)))
+  }
+
+  const applyYear = (year: number) => {
+    onMonthChange?.(startOfMonth(new Date(year, currentMonth.getMonth(), 1)))
   }
 
   if (!isOpen) return null
 
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/40 ${className}`}>
-      <Card className="max-w-md w-full mx-4 shadow-xl">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
-            onClick={() => onMonthChange?.(subMonths(currentMonth, 1))}
-            aria-label="Previous month"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-          <CardTitle className="text-lg font-semibold">
-            {formatMonthYear(currentMonth)}
-          </CardTitle>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
-            onClick={() => onMonthChange?.(addMonths(currentMonth, 1))}
-            aria-label="Next month"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </Button>
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 ${className}`}>
+      <Card className="max-w-md w-full shadow-xl max-h-[90vh] overflow-y-auto">
+        <CardHeader className="space-y-3 pb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 shrink-0 p-0"
+              onClick={() => onMonthChange?.(subMonths(currentMonth, 1))}
+              aria-label="Previous month"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <div className="flex flex-1 min-w-0 flex-wrap items-center justify-center gap-2">
+              <label className="sr-only" htmlFor="calendar-month-select">
+                Month
+              </label>
+              <select
+                id="calendar-month-select"
+                className={`${selectClass} max-w-[10rem]`}
+                value={currentMonth.getMonth()}
+                onChange={(e) => applyMonth(Number(e.target.value))}
+              >
+                {monthLabels.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              <label className="sr-only" htmlFor="calendar-year-select">
+                Year
+              </label>
+              <select
+                id="calendar-year-select"
+                className={`${selectClass} w-[4.5rem]`}
+                value={currentMonth.getFullYear()}
+                onChange={(e) => applyYear(Number(e.target.value))}
+              >
+                {years.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 shrink-0 p-0"
+              onClick={() => onMonthChange?.(addMonths(currentMonth, 1))}
+              aria-label="Next month"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -114,34 +186,43 @@ export function CalendarModal({
               <div key={wi} className="grid grid-cols-7 gap-1">
                 {week.map((d) => {
                   const status = getStatus(d)
-                  const future = isFuture(d)
+                  const blocked = isFutureBlocked(d)
                   const inMonth = isSameMonth(d, currentMonth)
+                  const dateStr = format(d, 'yyyy-MM-dd')
+                  const selected = selectedDate === dateStr
+                  const hasActivity = status === 'complete' || status === 'half'
+
                   return (
                     <button
-                      key={d.toISOString()}
+                      key={dateStr}
                       type="button"
-                      disabled={future}
+                      disabled={blocked}
                       onClick={() => handleDayClick(d)}
                       className={`
-                        flex flex-col items-center justify-center p-2 rounded-lg text-sm transition-colors
-                        ${future ? 'cursor-not-allowed text-gray-300 dark:text-gray-600' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}
+                        flex flex-col items-center justify-center rounded-lg p-2 text-sm transition-colors
+                        ${blocked ? 'cursor-not-allowed text-gray-300 dark:text-gray-600' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}
                         ${inMonth ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500'}
+                        ${
+                          selected
+                            ? 'ring-2 ring-[#ef725c] ring-offset-2 ring-offset-white dark:ring-offset-gray-950 bg-[#ef725c]/10'
+                            : ''
+                        }
                       `}
-                      title={future ? 'Future' : format(d, 'EEEE, MMM d')}
+                      title={blocked ? 'Not available' : format(d, 'EEEE, MMM d')}
                     >
-                      <span>{format(d, 'd')}</span>
+                      <span className={hasActivity && !blocked ? 'font-semibold' : ''}>{format(d, 'd')}</span>
                       <span
                         className={
                           status === 'complete'
                             ? 'text-emerald-600 dark:text-emerald-400'
                             : status === 'half'
                               ? 'text-amber-600 dark:text-amber-400'
-                              : status === 'future' || future
+                              : status === 'future' || blocked
                                 ? 'text-gray-400 dark:text-gray-500'
                                 : 'text-gray-400 dark:text-gray-500'
                         }
                       >
-                        {future ? '–' : STATUS_CHAR[status]}
+                        {blocked ? '–' : STATUS_CHAR[status]}
                       </span>
                     </button>
                   )

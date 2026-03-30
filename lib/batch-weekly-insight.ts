@@ -440,6 +440,13 @@ export async function generateWeeklyInsightForUser(
       },
     })
 
+    Sentry.addBreadcrumb({
+      category: 'weekly-insights',
+      message: 'Weekly insight generation completed',
+      level: 'info',
+      data: { userId, weekStart, weekEnd },
+    })
+
     return { success: true, insight }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
@@ -460,12 +467,15 @@ export async function generateWeeklyInsightForUser(
 
     Sentry.captureException(err, {
       tags: {
-        feature: 'weekly_insight',
+        feature: 'weekly-insights',
+        type: 'generation',
         week_start: weekStart,
         attempt: String(attemptNumber),
       },
       extra: {
         userId,
+        weekStart,
+        weekEnd,
         metrics: {
           tasks: tasks.length,
           reviews: reviews.length,

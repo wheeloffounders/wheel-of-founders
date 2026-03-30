@@ -24,6 +24,7 @@ type MobileSidebarProps = {
   onSignOut: () => void
   theme: 'light' | 'dark'
   onToggleTheme: () => void
+  weeklyProgress?: ProgressData | null
   monthlyProgress?: ProgressData | null
   quarterlyProgress?: ProgressData | null
 }
@@ -40,6 +41,7 @@ export default function MobileSidebar({
   onSignOut,
   theme,
   onToggleTheme,
+  weeklyProgress,
   monthlyProgress,
   quarterlyProgress,
 }: MobileSidebarProps) {
@@ -111,7 +113,14 @@ export default function MobileSidebar({
   const renderLink = (item: NavItem) => {
     const Icon = item.icon
     const isActive = pathname === item.href
-    const progress = item.href === '/monthly-insight' ? monthlyProgress : item.href === '/quarterly' ? quarterlyProgress : null
+    const progress =
+      item.href === '/weekly'
+        ? weeklyProgress
+        : item.href === '/monthly-insight'
+          ? monthlyProgress
+          : item.href === '/quarterly'
+            ? quarterlyProgress
+            : null
     return (
       <li key={item.name}>
         <Link href={item.href} onClick={onClose} className={linkClass(isActive)}>

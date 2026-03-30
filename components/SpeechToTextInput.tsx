@@ -38,7 +38,12 @@ export default function SpeechToTextInput({
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
   const [isListening, setIsListening] = useState(false)
-  const supportsSpeech = getSpeechRecognition() !== null
+  /** Must be false on first paint (SSR + hydration) — detect in useEffect to avoid mismatch */
+  const [supportsSpeech, setSupportsSpeech] = useState(false)
+
+  useEffect(() => {
+    setSupportsSpeech(getSpeechRecognition() !== null)
+  }, [])
 
   const isTextarea = as === 'textarea' || multiline
 

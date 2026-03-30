@@ -25,8 +25,9 @@ export const DASHBOARD_STEPS: Step[] = [
   },
   {
     target: '[data-tour="story-unlocks"]',
-    content: "After 10 days of journaling, you'll unlock Your Story (your journey) and Unseen Wins (patterns Mrs. Deer spots).",
-    title: '📖 Your Story & Unseen Wins',
+    content:
+      "After 10 days, open Profile → Rhythm for both: Your Story So Far (green — recent evening wins) and Unseen Wins (blue — Mrs. Deer generates the pattern when you visit Rhythm).",
+    title: '📖 Your Story So Far & Unseen Wins',
     placement: 'top' as const,
     disableBeacon: true,
   },
@@ -111,6 +112,7 @@ export function ComprehensiveTour() {
     return () => {
       console.log('🔍 [Tour] Component unmounting, cleaning up')
       if (typeof document !== 'undefined') {
+        document.querySelectorAll('.react-joyride-portal').forEach((el) => el.remove())
         document.querySelectorAll('[id^="react-joyride"]').forEach((el) => el.remove())
         document.querySelectorAll('.react-joyride__tooltip').forEach((el) => el.remove())
         document.querySelectorAll('.react-joyride__overlay').forEach((el) => el.remove())
@@ -162,6 +164,9 @@ export function ComprehensiveTour() {
     if (tourEnded) {
       console.log('🔍 [Tour] Tour ended, calling dismissTour', { status, action })
       setRun(false) // Stop Joyride immediately before unmount
+      if (typeof document !== 'undefined') {
+        document.querySelectorAll('.react-joyride-portal').forEach((el) => el.remove())
+      }
       trackJourneyStep('completed_comprehensive_tour', {
         via: status === STATUS.SKIPPED || action === ACTIONS.CLOSE ? 'skipped' : 'finished',
       })

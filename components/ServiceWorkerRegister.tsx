@@ -13,7 +13,7 @@ export default function ServiceWorkerRegister() {
     if (!isLocalhost && !isDev && process.env.NODE_ENV !== 'production') return
 
     navigator.serviceWorker
-      .register('/sw.js')
+      .register('/sw.js', { scope: '/' })
       .then((registration) => {
         console.log('[sw] Registered scope:', registration.scope)
         if (registration.installing) {

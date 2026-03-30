@@ -1,4 +1,5 @@
 import type { UserSituation, MicroLessonPayload } from './types'
+import { microLessonVariants } from './variants'
 
 /**
  * Single micro-lesson per situation. Mrs. Deer voice: warm, wise, slightly poetic, not fluffy.
@@ -124,6 +125,14 @@ export const microLessons: Record<UserSituation, MicroLessonPayload> = {
     action: { label: 'Open dashboard', link: '/dashboard' },
     priority: 2,
   },
+}
+
+// Keep lesson messages in sync with variant catalog (first variant is canonical fallback).
+for (const key of Object.keys(microLessons) as UserSituation[]) {
+  const variants = microLessonVariants[key]
+  if (Array.isArray(variants) && variants.length > 0) {
+    microLessons[key].message = variants[0]
+  }
 }
 
 /**

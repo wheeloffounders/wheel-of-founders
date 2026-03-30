@@ -1,25 +1,27 @@
 # Wheel of Founders — Project Context Document
 
-> Use this document to give AI assistants full context of the project. Updated: February 2025.
+> Use this document to give AI assistants full context of the project. Updated: March 2026.
 
 ---
 
 ## 1. Current Status
 
-**Phase:** 🟢 **Beta / Pre-Launch** — Production-ready, awaiting beta users.
+**Phase:** 🟢 **Beta / Active Stabilization** — Feature-complete core loop plus Founder DNA rollout, with ongoing reliability hardening.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| **Core product** | ✅ Complete | Morning, evening, emergency, AI coaching all functional |
+| **Core product** | ✅ Complete | Morning, evening, emergency, AI coaching functional |
+| **Founder DNA** | ✅ Live | Archetype, journey, trends, milestones, celebrations, unlock timeline |
 | **Design & UX** | ✅ Complete | Bauhaus design system, 5 Mrs. Deer expressions, animations |
 | **Backend** | ✅ Complete | Supabase auth, DB, RLS, crons |
 | **Analytics** | ✅ Complete | PostHog page views, custom events |
+| **Calendar + reminders** | ✅ Live | ICS feed, provider links, calendar reminder controls |
 | **Launch page** | ✅ Complete | Countdown, email signup, images at `/` |
 | **Payments** | ⏸️ Disabled | Stripe wired but disabled for beta |
-| **Testing** | ⚠️ Pending | E2E tests exist; manual device testing recommended |
-| **Beta program** | 📋 Planned | Invite 10–20 users, collect feedback |
+| **Testing** | ⚠️ Ongoing | E2E coverage exists; timezone/device manual checks still important |
+| **Beta program** | 🟡 Active | Collecting and shipping rapid feedback loops |
 
-**Next immediate actions:** Run E2E tests (`npm run test:e2e`), invite first beta users, monitor analytics.
+**Next immediate actions:** run targeted migrations (`111_reset_backups.sql`, `112_fix_pre4am_plan_date_offset.sql`), validate timezone founder-day behavior on real devices, monitor cron/email health.
 
 ---
 
@@ -41,6 +43,10 @@
 - **Monthly Insight** (`/monthly-insight`) — Themes, transformation pairs, wisdom
 - **Quarterly Trajectory** (`/quarterly`) — Big-picture reflection, defining moments
 - **Dashboard** (`/dashboard`) — Today's compass, morning/evening status, Founder's Lens (AI prompt), quick stats
+- **Founder DNA** (`/founder-dna/*`) — Archetype, journey timeline, celebration gap, recurring question, postponement patterns, trends
+- **Badges & Celebrations** — Unlock flow, confetti modals, gallery, milestone guidance
+- **Calendar Subscription** — Private ICS feed + Google/Outlook/Apple-friendly links
+- **Email System** — Transactional templates, reminders, engagement tracking, unsubscribe/preferences
 - **Launch Page** (`/`) — Countdown to launch, email signup, before/after imagery
 
 ### Brand
@@ -81,12 +87,14 @@
 ### User & Account ✅
 | Feature | Route | Status |
 |---------|-------|--------|
-| Login/Signup | `/login` | ✅ | Google OAuth, email/password |
+| Login/Signup | `/auth/login`, `/auth/signup` | ✅ | Google OAuth, email/password |
 | Profile | `/profile` | ✅ | Goals, struggles, stage, role, "message to Mrs. Deer", hobbies, etc. |
 | Settings | `/settings` | ✅ | Preferred name, email, weekly email, welcome email, export notification, community insights |
 | Notifications | `/settings/notifications` | ✅ | Morning/evening reminder times |
 | Timezone | `/settings/timezone` | ✅ | Timezone selection |
 | Data Export | `/settings` (#data-export) | ✅ | JSON, CSV, PDF export |
+| Reset + Undo | `/profile` | ✅ | Reset onboarding/all entries with short undo window (backup/restore) |
+| Calendar Preferences | `/settings` + APIs | ✅ | Calendar reminder + feed subscription token/links |
 
 ### Onboarding ✅
 | Step | Status | Description |
@@ -109,6 +117,8 @@
 | About page | ✅ `/about` |
 | Feedback page | ✅ `/feedback` |
 | Design system (internal) | ✅ `/design-system` |
+| Founder DNA pages | ✅ `/founder-dna/*` |
+| What's New card | ✅ Latest insight prioritization (today first, then last 7 days) |
 
 ### Admin Routes ✅
 | Route | Purpose |
@@ -117,6 +127,10 @@
 | `/admin/analytics` | Analytics overview |
 | `/admin/cross-user-analytics` | Cross-user pattern analytics |
 | `/admin/experiments` | A/B experiment management |
+| `/admin/calendar-analytics` | Calendar usage analytics |
+| `/admin/email-tests` | Transactional email testing/smoke checks |
+| `/admin/errors` | Error/weekly insight diagnostics |
+| `/admin/journey-funnel` | Journey conversion diagnostics |
 
 ### Not Implemented / Disabled
 | Feature | Status |
@@ -131,7 +145,7 @@
 ## 4. User Flows
 
 ### New User: Signup → First Morning
-1. User visits `/` (launch page) or `/login`
+1. User visits `/` (launch page) or `/auth/login`
 2. User signs up via Google OAuth or email/password
 3. Auth callback: create `user_profiles`, send welcome email, add to MailerLite
 4. Redirect to `/dashboard`
@@ -141,7 +155,7 @@
 8. User completes first morning plan
 
 ### Daily Loop (Returning User)
-1. User opens app → `/dashboard` (or `/login` if not authenticated)
+1. User opens app → `/dashboard` (or `/auth/login` if not authenticated)
 2. Dashboard shows: greeting, today's intention (if set), morning/evening status, Founder's Lens (AI prompt if available)
 3. **Morning:** User goes to `/morning` → adds tasks, marks needle movers, sets action plans, adds decision → Save
 4. **Post-morning:** AI prompt generated and shown (or on next dashboard visit)
@@ -279,12 +293,15 @@
 | `app/weekly/page.tsx` | Weekly insight: patterns, transformation, intention |
 | `app/monthly-insight/page.tsx` | Monthly themes, transformation pairs |
 | `app/quarterly/page.tsx` | Quarterly trajectory, defining moments |
-| `app/login/page.tsx` | Login/signup (Google OAuth, email/password) |
+| `app/auth/login/page.tsx` | Primary login route (Google OAuth, email/password) |
+| `app/auth/signup/page.tsx` | Signup route |
 | `app/auth/callback/route.ts` | OAuth callback: create profile, MailerLite, welcome email |
 | `app/settings/page.tsx` | Settings: name, email, notifications, export |
 | `app/settings/notifications/page.tsx` | Morning/evening reminder times |
+| `app/settings/timezone/page.tsx` | Timezone management |
 | `app/history/page.tsx` | Journey / history view |
 | `app/feedback/page.tsx` | Long-form feedback form |
+| `app/founder-dna/*` | Founder DNA experience pages (archetype, journey, trends, schedule, etc.) |
 
 ### Lib (Core Logic)
 | File | Purpose |
@@ -293,10 +310,15 @@
 | `lib/supabase.ts` | Client-side Supabase client (anon key) |
 | `lib/server-supabase.ts` | Server-side Supabase (service role for admin) |
 | `lib/features.ts` | `getFeatureAccess()` — tier-based feature flags |
+| `lib/effective-plan-date.ts` | Founder-day date logic (4am cutoff) + timezone-aware helpers |
+| `lib/timezone.ts` | User timezone utilities and date math helpers |
 | `lib/design-tokens.ts` | Colors, typography, spacing |
 | `lib/ai-client.ts` | OpenAI-compatible API client |
 | `lib/personal-coaching.ts` | Mrs. Deer prompt generation |
 | `lib/stage-detection.ts` | Gentle Architect stage detection |
+| `lib/founder-dna/*` | Founder DNA generation, schedule, insights, milestones |
+| `lib/email/*` | Transactional templates, sender, personalization, tracking |
+| `lib/badges/*` | Badge definitions and unlock evaluation |
 | `lib/mrs-deer.ts` | Mrs. Deer utilities, stage labels |
 | `lib/streak.ts` | Streak calculation |
 | `lib/analytics.ts` | PostHog: trackEvent, trackPageView, identifyUser |
@@ -323,16 +345,18 @@
 ### API Routes (examples)
 | Route | Purpose |
 |-------|---------|
-| `app/api/launch-signup/route.ts` | Launch email → MailerLite |
-| `app/api/feedback/route.ts` | Submit feedback |
-| `app/api/analyze-manual/route.ts` | Trigger manual pattern analysis |
-| `app/api/cron/analyze-patterns` | Cron: pattern extraction |
-| `app/api/cron/daily-analytics` | Cron: daily stats |
-| `app/api/cron/send-notifications` | Cron: morning/evening reminders |
-| `app/api/export/route.ts` | Create export job |
-| `app/api/weekly-insight/generate` | Generate weekly insight |
-| `app/api/monthly-insight/generate` | Generate monthly insight |
-| `app/api/quarterly-insight/generate` | Generate quarterly insight |
+| `app/api/tasks/today/route.ts` | Fetch tasks for effective founder-day date |
+| `app/api/tasks/move/route.ts` | Move task to tomorrow (timezone-aware) |
+| `app/api/tasks/undo-move/route.ts` | Restore moved task |
+| `app/api/user/reset-onboarding/route.ts` | Reset onboarding/full data with backup metadata |
+| `app/api/user/undo-reset/route.ts` | Undo reset from short-lived backup |
+| `app/api/user/calendar-subscription/route.ts` | Create/read private calendar subscription links |
+| `app/api/calendar/feed/route.ts` | ICS calendar feed via token |
+| `app/api/user/email-preferences/route.ts` | Email preference toggles |
+| `app/api/email/transactional/send/route.ts` | Transactional send endpoint |
+| `app/api/founder-dna/*/route.ts` | Founder DNA cards/insight APIs |
+| `app/api/cron/send-email-reminders/route.ts` | Scheduled reminder emails |
+| `app/api/cron/generate-weekly-insights/route.ts` | Weekly insight cron generation |
 
 ---
 
@@ -352,7 +376,7 @@
 ### Session Handling
 - **Client**: `supabase.auth.getSession()` — used in components for auth checks
 - **App**: `getUserSession()` from `lib/auth.ts` — returns session + profile (tier, pro_features_enabled, is_admin)
-- Pages that require auth call `getUserSession()` and redirect to `/login?returnTo=/dashboard` if null
+- Pages that require auth call `getUserSession()` and redirect to `/auth/login?returnTo=/dashboard` if null
 
 ### User Tiers
 - **beta** (default): Full Pro+ access during beta
@@ -371,11 +395,11 @@
 
 *(Update this section as priorities change.)*
 
+- **Timezone consistency verification** — Monitor founder-day (4am cutoff) alignment across dashboard, morning, and task APIs after recent fixes
+- **Run targeted data correction migration** — Apply `supabase/migrations/112_fix_pre4am_plan_date_offset.sql` to repair pre-4am misdated `morning_tasks`
 - **Feedback API authentication** — Ensuring feedback submissions work for authenticated users
 - **Emergency insight saving** — Persisting AI-generated emergency insights
 - **Push notifications** — Web push via `user_notification_settings.push_subscription`; cron sends reminders
-- **Dark mode** — Nested card contrast (white-on-white) fixed; ongoing polish
-- **Launch page** — Live at `/`; dashboard at `/dashboard`
 
 ---
 
@@ -387,6 +411,10 @@
 - **Notification system** — `user_notification_settings`, cron for morning/evening reminders
 - **MailerLite launch group** — `MAILERLITE_GROUP_LAUNCH` for launch signups
 - **PostHog** — Page views, custom events (launch_page_view, launch_signup_success)
+- **Founder-day date alignment (4am cutoff)** — Dashboard + tasks flow now align with morning page using timezone-aware effective plan dates (`getPlanDateString` in server paths)
+- **Dashboard timezone safeguards** — `TaskWidget` now computes client debug effective date from profile timezone and triggers timezone sync if profile is still default UTC
+- **Reset onboarding + all entries with Undo** — Added backup/restore flow via `reset_backups`, new endpoints `app/api/user/reset-onboarding/route.ts` and `app/api/user/undo-reset/route.ts`
+- **Safe data repair migration** — Added `supabase/migrations/112_fix_pre4am_plan_date_offset.sql` for targeted correction of pre-4am misdated tasks
 
 ---
 
@@ -398,25 +426,29 @@ wheel-of-founders/
 │   ├── layout.tsx          # Root layout
 │   ├── page.tsx            # Launch page (/)
 │   ├── dashboard/          # Dashboard (/dashboard)
-│   ├── morning/             # Morning Plan
-│   ├── evening/             # Evening Review
-│   ├── emergency/           # Firefighter mode
-│   ├── weekly/              # Weekly insight
+│   ├── morning/            # Morning Plan
+│   ├── evening/            # Evening Review
+│   ├── emergency/          # Firefighter mode
+│   ├── weekly/             # Weekly insight
 │   ├── monthly-insight/
 │   ├── quarterly/
-│   ├── login/
+│   ├── auth/               # login/signup/callback/password flows
 │   ├── auth/callback/
 │   ├── settings/
 │   ├── feedback/
 │   ├── history/
 │   ├── profile/
+│   ├── founder-dna/        # Founder DNA pages
 │   ├── admin/
-│   └── api/                 # API routes
+│   └── api/                # API routes
 ├── components/
-│   ├── ui/                  # Card, Button, Badge, Input
-│   ├── weekly/              # Weekly insight components
-│   ├── monthly/             # Monthly insight components
-│   ├── quarterly/           # Quarterly components
+│   ├── ui/                 # Card, Button, Badge, Input
+│   ├── dashboard/          # Dashboard widgets/cards
+│   ├── founder-dna/        # Founder DNA cards/modals/charts
+│   ├── badges/             # Badge unlock + celebration flow
+│   ├── weekly/             # Weekly insight components
+│   ├── monthly/            # Monthly insight components
+│   ├── quarterly/          # Quarterly components
 │   ├── MrsDeerAvatar.tsx
 │   ├── MrsDeerMessageBubble.tsx
 │   ├── AppHeader.tsx
@@ -428,6 +460,11 @@ wheel-of-founders/
 │   ├── supabase.ts
 │   ├── server-supabase.ts
 │   ├── features.ts
+│   ├── effective-plan-date.ts
+│   ├── timezone.ts
+│   ├── founder-dna/
+│   ├── email/
+│   ├── badges/
 │   ├── design-tokens.ts
 │   ├── ai-client.ts
 │   ├── personal-coaching.ts
@@ -454,9 +491,10 @@ wheel-of-founders/
 
 ### Configuration
 - **next.config.ts** — Redirects (e.g. `/admin/analytics/cross-user` → `/admin/cross-user-analytics`)
-- **vercel.json** — Crons: analyze-patterns, daily-analytics, refresh-cohort, send-notifications
+- **vercel.json** — Crons: analytics, insights generation, reminders, pattern analysis (see file for full list)
 - **postcss.config.mjs** — Tailwind v4
 - **globals.css** — Tailwind import, dark mode variant
+- **docs/BRANCH_STRUCTURE.md** — Branching model (`production` stable, `preview` integration)
 
 ### Environment Variables (see `docs/ENVIRONMENT_VARIABLES.md`)
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`

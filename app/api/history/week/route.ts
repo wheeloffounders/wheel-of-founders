@@ -4,6 +4,27 @@ import { getServerSupabase } from '@/lib/server-supabase'
 
 export const dynamic = 'force-dynamic'
 
+/** Calendar dates as yyyy-MM-dd (matches DB date columns). Avoid local Date + toISOString() — that shifts keys vs plan_date/review_date. */
+function addOneDayYMD(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  dt.setUTCDate(dt.getUTCDate() + 1)
+  const yy = dt.getUTCFullYear()
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getUTCDate()).padStart(2, '0')
+  return `${yy}-${mm}-${dd}`
+}
+
+function eachYMDInRange(start: string, end: string): string[] {
+  const out: string[] = []
+  let cur = start
+  while (cur <= end) {
+    out.push(cur)
+    cur = addOneDayYMD(cur)
+  }
+  return out
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSessionFromRequest(request)
@@ -140,25 +161,8 @@ export async function GET(request: NextRequest) {
       }
     > = {}
 
-    const dateStrs = new Set<string>()
-    tasks.forEach((t) => dateStrs.add(t.plan_date))
-    decisions.forEach((d) => dateStrs.add(d.plan_date))
-    reviews.forEach((r) => dateStrs.add(r.review_date))
-    prompts.forEach((p) => dateStrs.add(p.prompt_date))
-    emergencies.forEach((e) => dateStrs.add(e.fire_date))
-
-    const sortedDates = Array.from(dateStrs).sort()
-
-    // Build days for all dates in the week range (Mon-Sun)
-    const allDatesInWeek: string[] = []
-    const [sy, sm, sd] = start.split('-').map(Number)
-    const [ey, em, ed] = end.split('-').map(Number)
-    let d = new Date(sy, sm - 1, sd)
-    const endDate = new Date(ey, em - 1, ed)
-    while (d <= endDate) {
-      allDatesInWeek.push(d.toISOString().slice(0, 10))
-      d.setDate(d.getDate() + 1)
-    }
+    // Build days for every calendar day in [start, end] using naive YMD (aligned with DB dates)
+    const allDatesInWeek = eachYMDInRange(start, end)
 
     allDatesInWeek.forEach((dateStr) => {
       const dayTasks = tasks.filter((t) => t.plan_date === dateStr).sort((a, b) => (a.task_order ?? 0) - (b.task_order ?? 0))
@@ -181,11 +185,18 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
-      weekStart: start,
-      weekEnd: end,
-      days,
-    })
+    return NextResponse.json(
+      {
+        weekStart: start,
+        weekEnd: end,
+        days,
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, must-revalidate',
+        },
+      }
+    )
   } catch (error) {
     console.error('[history/week] Error:', error)
     return NextResponse.json({ error: 'Failed to fetch week data' }, { status: 500 })

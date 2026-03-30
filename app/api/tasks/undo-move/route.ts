@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { format } from 'date-fns'
 import { getServerSession } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+import { getPlanDateString } from '@/lib/effective-plan-date'
+import { getUserTimezoneFromProfile } from '@/lib/timezone'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -25,12 +26,18 @@ export async function POST(req: NextRequest) {
     }
 
     const db = getServerSupabase() as any
-    const today = format(new Date(), 'yyyy-MM-dd')
+    const { data: profile } = await db
+      .from('user_profiles')
+      .select('timezone')
+      .eq('id', session.user.id)
+      .maybeSingle()
+    const userTimeZone = getUserTimezoneFromProfile((profile as { timezone?: string | null } | null) ?? null)
+    const planDate = getPlanDateString(userTimeZone, new Date())
     const nowIso = new Date().toISOString()
 
     const { error } = await db
       .from('morning_tasks')
-      .update({ plan_date: today, updated_at: nowIso })
+      .update({ plan_date: planDate, updated_at: nowIso })
       .eq('id', taskId)
       .eq('user_id', session.user.id)
 
@@ -39,7 +46,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to undo move' }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, originalPlanDate: today })
+    return NextResponse.json({ success: true, originalPlanDate: planDate })
   } catch (err) {
     console.error('[tasks/undo-move] Error', err)
     return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })

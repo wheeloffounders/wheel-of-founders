@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import type { ReactNode } from 'react'
+import { Suspense, type ReactNode } from 'react'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
@@ -11,6 +11,7 @@ import { Toast } from '@/components/Toast'
 import { BottomNav } from '@/components/BottomNav'
 import { OfflineBanner } from '@/components/OfflineBanner'
 import { AppHeader } from '@/components/AppHeader'
+import { MainWithPadding } from '@/components/MainWithPadding'
 import { DuoUpgradeBanner } from '@/components/DuoUpgradeBanner'
 import { AppFooter } from '@/components/AppFooter'
 import { ThemeProvider } from '@/components/ThemeProvider'
@@ -23,6 +24,10 @@ import { JoyrideTutorial } from '@/components/tutorial/JoyrideTutorial'
 import { ComprehensiveTourGate } from '@/components/ComprehensiveTourGate'
 import { isTourEnabled } from '@/lib/feature-flags'
 import { GlobalErrorHandlers } from '@/components/GlobalErrorHandlers'
+import { FooterMicroLesson } from '@/components/FooterMicroLesson'
+import { SplashWithMicroLesson } from '@/components/SplashWithMicroLesson'
+import { PullToRefresh } from '@/components/PullToRefresh'
+import { SafeAreaDebugOverlay } from '@/components/SafeAreaDebugOverlay'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -76,6 +81,8 @@ export default async function RootLayout({
             `,
           }}
         />
+        <link rel="preload" href="/dashboard/cta-dark.png" as="image" />
+        <link rel="preload" href="/dashboard/morning_02.png" as="image" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#152b50" />
         <meta name="mobile-web-app-capable" content="yes" />
@@ -100,9 +107,14 @@ export default async function RootLayout({
         <ServiceWorkerRegister />
         <InstallPrompt />
         <OfflineBanner />
+        <SplashWithMicroLesson />
         <AppHeader />
         <DuoUpgradeBanner />
-        <main className="min-h-screen pt-4 pb-24">{children}</main>
+        <PullToRefresh />
+        <Suspense fallback={null}>
+          <SafeAreaDebugOverlay />
+        </Suspense>
+        <MainWithPadding>{children}</MainWithPadding>
         <BottomNav />
         {isTourEnabled() && (
           <>
@@ -112,6 +124,7 @@ export default async function RootLayout({
         )}
         <Toast />
         <FeedbackPopUp />
+        <FooterMicroLesson />
         <AppFooter />
         </InAppNotificationProvider>
         </ComprehensiveTourProvider>

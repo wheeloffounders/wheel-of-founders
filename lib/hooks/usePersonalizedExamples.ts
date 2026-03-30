@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
+import { fetchUserProfileBundle } from '@/lib/user-profile-bundle-cache'
 
 const CACHE_KEY = 'wof_personalized_examples'
 const CACHE_HOURS = 24
@@ -77,13 +78,8 @@ export function usePersonalizedExamples(): PersonalizedExamples {
     const session = await getUserSession()
     if (!session) return null
 
-    const { data } = await supabase
-      .from('user_profiles')
-      .select('primary_goal_text')
-      .eq('id', session.user.id)
-      .maybeSingle()
-
-    const text = (data as { primary_goal_text?: string } | null)?.primary_goal_text?.trim()
+    const bundle = await fetchUserProfileBundle()
+    const text = bundle?.primary_goal_text?.trim()
     return text || null
   }, [])
 

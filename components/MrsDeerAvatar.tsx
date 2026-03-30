@@ -2,17 +2,19 @@
 
 import { motion, useReducedMotion } from 'framer-motion'
 import Image from 'next/image'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 export type Expression = 'welcoming' | 'thoughtful' | 'encouraging' | 'celebratory' | 'empathetic'
 
 interface MrsDeerAvatarProps {
   expression?: Expression
-  size?: 'small' | 'medium' | 'mobile' | 'large' | 'hero'
+  /** @deprecated Prefer `small` — `sm` is an alias */
+  size?: 'sm' | 'small' | 'medium' | 'mobile' | 'large' | 'hero'
   className?: string
 }
 
 const sizeMap = {
+  sm: { width: 32, height: 32, className: 'w-8 h-8' },
   small: { width: 40, height: 40, className: 'w-10 h-10' },
   medium: { width: 48, height: 48, className: 'w-12 h-12' },
   mobile: { width: 56, height: 56, className: 'w-14 h-14' },
@@ -50,47 +52,49 @@ export function MrsDeerAvatar({
   className = '',
 }: MrsDeerAvatarProps) {
   const style = expressionStyles[expression]
-  const sizeConfig = sizeMap[size]
+  const resolvedSize = size === 'sm' ? 'sm' : size
+  const sizeConfig = sizeMap[resolvedSize] ?? sizeMap.medium
   const prefersReducedMotion = useReducedMotion()
-  const [isVisible, setIsVisible] = useState(false)
-
-  useEffect(() => {
-    setIsVisible(true)
-  }, [])
+  const [isVisible] = useState(true)
 
   // Animation variants per expression
+  const bezier = (a: number, b: number, c: number, d: number): [number, number, number, number] => [
+    a,
+    b,
+    c,
+    d,
+  ]
   const expressionAnimations = {
     welcoming: {
       initial: { opacity: 0, scale: 0.9 },
       animate: { opacity: 1, scale: 1 },
-      transition: { duration: 0.6, ease: [0.22, 1, 0.36, 
-1] as any  },
+      transition: { duration: 0.6, ease: bezier(0.22, 1, 0.36, 1) },
     },
     thoughtful: {
       initial: { opacity: 0, scale: 0.95 },
       animate: { opacity: 1, scale: 1 },
-      transition: { duration: 0.5, delay: 0.1, ease: [0.22, 1, 0.36, 1] as any },
+      transition: { duration: 0.5, delay: 0.1, ease: bezier(0.22, 1, 0.36, 1) },
     },
     encouraging: {
       initial: { opacity: 0, y: -4 },
       animate: { opacity: 1, y: 0 },
-      transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] as any },
+      transition: { duration: 0.4, ease: bezier(0.22, 1, 0.36, 1) },
     },
     celebratory: {
       initial: { opacity: 0, scale: 0.8 },
-      animate: { 
-        opacity: 1, 
+      animate: {
+        opacity: 1,
         scale: 1,
       },
-      transition: { 
+      transition: {
         duration: 0.5,
-        ease: [0.34, 1.56, 0.64, 1] as any , // Bouncy ease for celebration
+        ease: bezier(0.34, 1.56, 0.64, 1),
       },
     },
     empathetic: {
       initial: { opacity: 0, scale: 0.95 },
       animate: { opacity: 1, scale: 1 },
-      transition: { duration: 0.7, ease: [0.22, 1, 0.36, 1] as any },
+      transition: { duration: 0.7, ease: bezier(0.22, 1, 0.36, 1) },
     },
   }
 

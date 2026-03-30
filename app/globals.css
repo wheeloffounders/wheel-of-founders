@@ -11,6 +11,7 @@
 html {
   overflow-x: hidden;
   width: 100%;
+  margin: 0;
 }
 
 body {
@@ -18,6 +19,22 @@ body {
   overflow-x: hidden;
   width: 100%;
   position: relative;
+  margin: 0;
+}
+
+/* Safe area: full-bleed colored headers under status bar / notch (requires viewport-fit=cover on meta viewport) */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Legacy alias — PageHeader now uses .page-header-bleed + inline backgroundColor */
+.pt-page-header-safe {
+  padding-top: max(1rem, env(safe-area-inset-top, 0px));
+}
+
+/* PageHeader top padding: notch + min title offset (viewport-fit=cover in layout) */
+.page-header-bleed {
+  padding-top: max(1rem, env(safe-area-inset-top, 0px));
 }
 
 /* Z-index layers - consistent stacking order */
@@ -45,8 +62,14 @@ header,
   isolation: isolate; /* Own stacking context for reliable layering */
 }
 
-nav:not(.bottom-nav) {
+/* In-page left rails (Morning/Evening/Emergency/History): must NOT use header z-index or they paint above fixed bottom nav */
+nav:not(.bottom-nav):not(.page-sidebar-nav) {
   z-index: var(--z-index-header) !important;
+}
+
+/* Left-rail week lists: stay in page flow below fixed UI (see nav rule above) */
+.page-sidebar-nav {
+  z-index: auto !important;
 }
 
 /* Bottom navigation */

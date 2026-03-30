@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { format, addDays } from 'date-fns'
 import { getServerSession } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+import { getPlanDateString } from '@/lib/effective-plan-date'
+import { addDaysToYmdInTz, getUserTimezoneFromProfile } from '@/lib/timezone'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -21,10 +22,17 @@ export async function POST(req: NextRequest) {
     }
 
     const db = getServerSupabase() as any
+    const { data: profile } = await db
+      .from('user_profiles')
+      .select('timezone')
+      .eq('id', session.user.id)
+      .maybeSingle()
+    const userTimeZone = getUserTimezoneFromProfile((profile as { timezone?: string | null } | null) ?? null)
 
     let newDate: string
     if (!targetDate || targetDate === 'tomorrow') {
-      newDate = format(addDays(new Date(), 1), 'yyyy-MM-dd')
+      const todayYmd = getPlanDateString(userTimeZone, new Date())
+      newDate = addDaysToYmdInTz(todayYmd, 1, userTimeZone)
     } else {
       newDate = targetDate
     }
@@ -100,6 +108,17 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error('[tasks/move] DB error', error)
       return NextResponse.json({ error: 'Failed to move task' }, { status: 500 })
+    }
+
+    // Destination day is not "saved" until the user saves again (moved tasks are not an explicit plan commit).
+    const { error: commitDelError } = await db
+      .from('morning_plan_commits')
+      .delete()
+      .eq('user_id', session.user.id)
+      .eq('plan_date', newDate)
+
+    if (commitDelError) {
+      console.error('[tasks/move] morning_plan_commits delete error', commitDelError)
     }
 
     return NextResponse.json({ success: true, newPlanDate: newDate })

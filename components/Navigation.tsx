@@ -19,7 +19,7 @@ export type NavItem = {
 export default function Navigation() {
   const pathname = usePathname()
   const router = useRouter()
-  const { monthly, quarterly } = useProgress()
+  const { weekly, monthly, quarterly } = useProgress()
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [insightsOpen, setInsightsOpen] = useState(false)
@@ -204,9 +204,10 @@ const isProfileActive = pathname
                   >
                     {insightsItems.map((item) => {
                       const Icon = item.icon
+                      const isWeekly = item.href === '/weekly'
                       const isMonthly = item.href === '/monthly-insight'
                       const isQuarterly = item.href === '/quarterly'
-                      const progress = isMonthly ? monthly : isQuarterly ? quarterly : null
+                      const progress = isWeekly ? weekly : isMonthly ? monthly : isQuarterly ? quarterly : null
                       return (
                         <Link key={item.name} href={item.href} onClick={() => setInsightsOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-white/90 hover:bg-white dark:bg-gray-800/10">
                           <Icon className="w-4 h-4 flex-shrink-0" />
@@ -307,6 +308,7 @@ const isProfileActive = pathname
         onSignOut={handleSignOut}
         theme={theme}
         onToggleTheme={toggleTheme}
+        weeklyProgress={weekly}
         monthlyProgress={monthly}
         quarterlyProgress={quarterly}
       />

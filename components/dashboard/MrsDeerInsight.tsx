@@ -64,7 +64,7 @@ export function MrsDeerInsight() {
 
   if (loading) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 border-l-4 border-l-amber-400 p-4">
         <div className="animate-pulse space-y-2">
           <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4" />
           <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded" />
@@ -79,7 +79,7 @@ export function MrsDeerInsight() {
   const preview = insight.split(/\s+/).slice(0, 25).join(' ') + (insight.split(/\s+/).length > 25 ? '...' : '')
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 border-l-4 border-l-amber-400 overflow-hidden">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}

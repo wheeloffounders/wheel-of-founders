@@ -1,43 +1,45 @@
 'use client'
 
-import { Suspense, useState, useEffect } from 'react'
+import { Suspense, useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getUserSession } from '@/lib/auth'
 import { CheckCircle, X, Moon } from 'lucide-react'
 import { spacing } from '@/lib/design-tokens'
 import { useDataSync } from '@/lib/hooks/useDataSync'
-import { LastUpdated } from '@/components/LastUpdated'
-import { LoadingWithRetry } from '@/components/LoadingWithRetry'
-import { DashboardProgress } from '@/components/DashboardProgress'
+import { LoadingWithMicroLesson } from '@/components/LoadingWithMicroLesson'
 import { ProfileReminderBanner } from '@/components/ProfileReminderBanner'
-import { showRefreshButton } from '@/lib/env'
 import {
-  Greeting,
+  DashboardHeader,
   TodaysIntention,
   MrsDeerInsight,
-  ProgressZone,
-  QuickLinks,
+  DynamicCTACard,
+  ComingUpNext,
+  WhatsNewToday,
+  ArchetypeTeaser,
+  JourneyProgress,
+  TaskWidget,
 } from '@/components/dashboard'
-import { MicroLesson } from '@/components/MicroLesson'
 import { TourPopUp } from '@/components/TourPopUp'
 import { IndependentTour } from '@/components/IndependentTour'
-import { PatternBuilding } from '@/components/dashboard/PatternBuilding'
-import { UnseenWins } from '@/components/dashboard/UnseenWins'
-import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
 import { Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { format } from 'date-fns'
 import { useComprehensiveTour } from '@/lib/contexts/ComprehensiveTourContext'
 import { isTourEnabled } from '@/lib/feature-flags'
+import { useFounderJourney } from '@/lib/hooks/useFounderJourney'
+import { getEffectivePlanDate, getPlanDateString } from '@/lib/effective-plan-date'
+import { getUserTimezoneFromProfile } from '@/lib/timezone'
 
 function DashboardContent() {
-  const { syncData, isSyncing, lastSynced } = useDataSync()
-  const tourCtx = useComprehensiveTour()
+  const { syncData } = useDataSync()
+  useComprehensiveTour()
+  const { data: journeyData } = useFounderJourney()
   const [loading, setLoading] = useState(true)
   const [userTier, setUserTier] = useState<string>('beta')
   const [showWelcome, setShowWelcome] = useState(false)
   const [showEveningReminder, setShowEveningReminder] = useState(false)
+  /** Founder-day date in user profile timezone (matches morning page + /api/tasks/today). */
+  const [eveningPlanDate, setEveningPlanDate] = useState<string | null>(null)
   const searchParams = useSearchParams()
   const router = useRouter()
 
@@ -61,76 +63,64 @@ function DashboardContent() {
     }
   }, [searchParams])
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      const session = await getUserSession()
-      if (!session) {
-        router.push('/auth/login?returnTo=/dashboard')
-        return
-      }
-      setUserTier(session.user.tier || 'beta')
-
-      // Gentle evening reminder: onboarding_step 2 = morning done, evening optional
-      const today = format(new Date(), 'yyyy-MM-dd')
-      const [profileRes, reviewRes, morningRes] = await Promise.all([
-        (supabase.from('user_profiles') as any)
-          .select('onboarding_step, onboarding_completed_at')
-          .eq('id', session.user.id)
-          .maybeSingle(),
-        supabase
-          .from('evening_reviews')
-          .select('id')
-          .eq('user_id', session.user.id)
-          .eq('review_date', today)
-          .maybeSingle(),
-        supabase
-          .from('morning_tasks')
-          .select('id')
-          .eq('user_id', session.user.id)
-          .limit(1),
-      ])
-      const onboardingStep = (profileRes.data as { onboarding_step?: number })?.onboarding_step
-      const onboardingCompleted = (profileRes.data as { onboarding_completed_at?: string })?.onboarding_completed_at
-      const hasEveningToday = !!reviewRes.data
-      const hasMorningTasks = (morningRes.data?.length ?? 0) > 0
-
-      setShowEveningReminder(onboardingStep === 2 && !hasEveningToday)
-
-      // Fallback: Stage 2 user landed on dashboard (e.g. email/password login bypasses auth callback)
-      if (onboardingCompleted && !hasMorningTasks && !window.location.search.includes('first=true')) {
-        const { isNewOnboardingEnabled } = await import('@/lib/feature-flags')
-        const path = isNewOnboardingEnabled() ? '/morning?first=true&resume=true' : '/morning'
-        console.log('[Dashboard] No morning tasks found, redirecting to', path)
-        router.replace(path)
-        return
-      }
-
-      setLoading(false)
+  const checkAuth = useCallback(async () => {
+    const session = await getUserSession()
+    if (!session) {
+      router.push('/auth/login?returnTo=/dashboard')
+      return
     }
-    checkAuth()
+    setUserTier(session.user.tier || 'beta')
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit profile columns
+    const { data: profileData } = await (supabase.from('user_profiles') as any)
+      .select('onboarding_step, onboarding_completed_at, timezone')
+      .eq('id', session.user.id)
+      .maybeSingle()
+
+    const profileRow = profileData as {
+      onboarding_step?: number
+      onboarding_completed_at?: string
+      timezone?: string | null
+    } | null
+    const onboardingStep = profileRow?.onboarding_step
+    const onboardingCompleted = profileRow?.onboarding_completed_at
+    const planDate = getPlanDateString(getUserTimezoneFromProfile(profileRow))
+    setEveningPlanDate(planDate)
+
+    const [reviewRes, morningRes] = await Promise.all([
+      supabase
+        .from('evening_reviews')
+        .select('id')
+        .eq('user_id', session.user.id)
+        .eq('review_date', planDate)
+        .maybeSingle(),
+      supabase.from('morning_tasks').select('id').eq('user_id', session.user.id).limit(1),
+    ])
+    const hasEveningToday = !!reviewRes.data
+    const hasMorningTasks = (morningRes.data?.length ?? 0) > 0
+
+    setShowEveningReminder(onboardingStep === 2 && !hasEveningToday)
+
+    if (onboardingCompleted && !hasMorningTasks && !window.location.search.includes('first=true')) {
+      const { isNewOnboardingEnabled } = await import('@/lib/feature-flags')
+      const path = isNewOnboardingEnabled() ? '/morning?first=true&resume=true' : '/morning'
+      console.log('[Dashboard] No morning tasks found, redirecting to', path)
+      router.replace(path)
+      return
+    }
+
+    setLoading(false)
   }, [router])
+
+  useEffect(() => {
+    void checkAuth()
+  }, [checkAuth])
 
   useEffect(() => {
     const handleSyncRequest = () => syncData(true)
     window.addEventListener('data-sync-request', handleSyncRequest)
     return () => window.removeEventListener('data-sync-request', handleSyncRequest)
   }, [syncData])
-
-  // Temporary: log elements with white background inside the dashboard (helps find Progress Zone culprits)
-  useEffect(() => {
-    const t = setTimeout(() => {
-      const whiteElements = document.querySelectorAll('[class*="bg-white"]')
-      console.log('🔍 [Dashboard] Elements with bg-white:', whiteElements.length)
-      whiteElements.forEach((el, i) => {
-        console.log(`🔍 [Dashboard] White element ${i}:`, {
-          tag: el.tagName,
-          classes: el.className,
-          parent: el.parentElement?.className,
-        })
-      })
-    }, 1000)
-    return () => clearTimeout(t)
-  }, [loading])
 
   useEffect(() => {
     let touchStartY = 0
@@ -155,10 +145,7 @@ function DashboardContent() {
 
   return (
     <div className="w-full">
-      <div className="w-full px-4 md:px-5" data-tour="dashboard-micro-lesson">
-        <MicroLesson location="dashboard" />
-      </div>
-      <div className="max-w-7xl mx-auto px-4 md:px-5 py-8" style={{ paddingTop: spacing['2xl'], paddingBottom: spacing['2xl'] }}>
+      <div className="max-w-7xl mx-auto px-4 md:px-5 py-8" style={{ paddingTop: spacing['xl'], paddingBottom: spacing['2xl'] }}>
       {showWelcome && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-xl">
@@ -190,7 +177,7 @@ function DashboardContent() {
         </div>
       )}
       {showEveningReminder && (
-        <Link href="/evening" className="block mb-4">
+        <Link href={`/evening?date=${eveningPlanDate ?? getEffectivePlanDate()}#evening-form`} className="block mb-4">
           <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
             <p className="text-sm text-blue-800 dark:text-blue-200 flex items-center gap-2">
               <Moon className="w-4 h-4 flex-shrink-0" />
@@ -199,11 +186,9 @@ function DashboardContent() {
           </div>
         </Link>
       )}
-      <LastUpdated timestamp={lastSynced} isSyncing={isSyncing} onRefresh={showRefreshButton ? () => syncData(true) : undefined} />
-
       {loading ? (
         <div className="max-w-3xl mx-auto px-4 md:px-5 py-8">
-          <LoadingWithRetry message="Loading your day..." onRetry={() => window.location.reload()} timeoutMs={8000} />
+          <LoadingWithMicroLesson message="Loading your day..." onRetry={() => window.location.reload()} timeoutMs={8000} location="dashboard" />
         </div>
       ) : (
         <>
@@ -211,67 +196,49 @@ function DashboardContent() {
 
           <TourPopUp />
 
-          {/* TEMPORARY DEBUG BUTTON - REMOVE AFTER FIXING */}
-          {process.env.NODE_ENV === 'development' && (
-            <button
-              type="button"
-              onClick={() => {
-                console.log('🔴 [DEBUG] Manual force tour')
-                if (tourCtx?.startTour) {
-                  tourCtx.startTour()
-                } else {
-                  console.warn('🔴 [DEBUG] No tour context — using IndependentTour fallback')
-                  localStorage.setItem('force-tour', 'true')
-                  window.location.reload()
-                }
-              }}
-              className="fixed bottom-24 right-4 z-[100] bg-red-500 text-white px-3 py-2 rounded-lg text-sm font-medium shadow-lg"
-            >
-              🚨 FORCE TOUR
-            </button>
-          )}
-
           {isTourEnabled() && <IndependentTour />}
           <div className="space-y-4">
-            {/* Step 1a: Greeting, Intention, Mrs. Deer, then unified Progress Zone */}
             <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Greeting />
-                {userTier === 'beta' && <Badge variant="amber">Beta</Badge>}
+              <DashboardHeader tierLabel={userTier === 'beta' ? 'Beta' : userTier} />
+              <div className="lg:hidden">
+                <Suspense
+                  fallback={
+                    <div
+                      className="h-full min-h-[170px] border-2 border-gray-200 dark:border-gray-600 bg-[#ecf9ef] dark:bg-[#d8efff] animate-pulse"
+                      aria-hidden
+                    />
+                  }
+                >
+                  <DynamicCTACard />
+                </Suspense>
               </div>
               <TodaysIntention />
               <MrsDeerInsight />
-              <ProgressZone />
             </div>
 
-            {/* Step 3a: Your Story So Far & Unseen Wins */}
-            <div data-tour="story-unlocks" className="space-y-4">
-              <UnseenWins />
-              <PatternBuilding />
-            </div>
-
-            {/* Step 3b: Monthly & Quarterly Insights (DashboardProgress has data-tour when rendered) */}
-            <DashboardProgress />
-
-            {/* Quick links */}
-            <div data-tour="dashboard-quick-links">
-              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">
-                Quick Links
-              </h3>
-              <QuickLinks />
-            </div>
-
-            {/* Dev only: Admin dashboard link */}
-            {showRefreshButton && (
-              <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                <Link
-                  href="/admin"
-                  className="inline-flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400 hover:underline"
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="hidden lg:block">
+                <Suspense
+                  fallback={
+                    <div
+                      className="h-full min-h-[170px] border-2 border-gray-200 dark:border-gray-600 bg-[#ecf9ef] dark:bg-[#d8efff] animate-pulse"
+                      aria-hidden
+                    />
+                  }
                 >
-                  ⚙️ Admin Dashboard
-                </Link>
+                  <DynamicCTACard />
+                </Suspense>
               </div>
-            )}
+              <JourneyProgress />
+              <ComingUpNext items={journeyData?.nextUnlocks} />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <TaskWidget />
+              <WhatsNewToday />
+            </div>
+
+            <ArchetypeTeaser />
           </div>
 
           {userTier === 'free' && (
@@ -302,7 +269,7 @@ function DashboardContent() {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-8"><LoadingWithRetry message="Loading..." onRetry={() => window.location.reload()} timeoutMs={5000} /></div>}>
+    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-8"><LoadingWithMicroLesson message="Loading..." onRetry={() => window.location.reload()} timeoutMs={5000} location="dashboard" /></div>}>
       <DashboardContent />
     </Suspense>
   )

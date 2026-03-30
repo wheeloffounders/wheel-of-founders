@@ -69,6 +69,8 @@ interface DiaryDayCardProps {
   dateStr: string
   dateLabel: string
   isToday: boolean
+  /** When false, hide the top date row (sidebar already shows the date). */
+  showDateHeader?: boolean
   morningInsight: string | null
   morningTasks: MorningTask[]
   morningDecisions: MorningDecision[]
@@ -76,12 +78,20 @@ interface DiaryDayCardProps {
   emergencies: Emergency[]
   eveningReview: EveningReview | null
   eveningInsight: string | null
+  stats?: {
+    morningCompleted: boolean
+    eveningCompleted: boolean
+    currentStreak: number
+    daysWithEntries: number
+    nextBadge: { name: string; daysRemaining: number; note?: string } | null
+  }
 }
 
 export function DiaryDayCard({
   dateStr,
   dateLabel,
   isToday,
+  showDateHeader = true,
   morningInsight,
   morningTasks,
   morningDecisions,
@@ -89,6 +99,7 @@ export function DiaryDayCard({
   emergencies,
   eveningReview,
   eveningInsight,
+  stats,
 }: DiaryDayCardProps) {
   const hasReflection =
     !!eveningReview &&
@@ -129,12 +140,14 @@ export function DiaryDayCard({
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-          {dateLabel}
-          {isToday && <span className="ml-2 text-sm font-medium text-[#ef725c]">Today</span>}
-        </h2>
-      </div>
+      {showDateHeader ? (
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            {dateLabel}
+            {isToday && <span className="ml-2 text-sm font-medium text-[#ef725c]">Today</span>}
+          </h2>
+        </div>
+      ) : null}
 
       <div className="p-6 space-y-6">
         {/* 1. Morning Insight */}
@@ -153,6 +166,9 @@ export function DiaryDayCard({
         )}
 
         {/* 2. Morning Plan */}
+        {(morningTasks.length > 0 || morningDecisions.length > 0) && (
+          <div className="border-t border-gray-200 dark:border-gray-700" />
+        )}
         {(morningTasks.length > 0 || morningDecisions.length > 0) && (
           <section>
             <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
@@ -201,6 +217,9 @@ export function DiaryDayCard({
 
         {/* 3. Post-Morning Insight */}
         {postMorningInsight?.trim() && (
+          <div className="border-t border-gray-200 dark:border-gray-700" />
+        )}
+        {postMorningInsight?.trim() && (
           <section>
             <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
               <span className="text-base">📝</span>
@@ -215,6 +234,9 @@ export function DiaryDayCard({
         )}
 
         {/* 4. Emergency + Emergency Insight */}
+        {emergencies.length > 0 && (
+          <div className="border-t border-gray-200 dark:border-gray-700" />
+        )}
         {emergencies.length > 0 && (
           <section>
             <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
@@ -263,6 +285,9 @@ export function DiaryDayCard({
         )}
 
         {/* 5. Evening Reflection */}
+        {(hasReflection || (!morningInsight && !morningTasks.length && !postMorningInsight && emergencies.length === 0 ? false : true)) && (
+          <div className="border-t border-gray-200 dark:border-gray-700" />
+        )}
         {hasReflection ? (
           <section>
             <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
@@ -311,6 +336,9 @@ export function DiaryDayCard({
 
         {/* 6. Evening Insight */}
         {eveningInsight?.trim() && (
+          <div className="border-t border-gray-200 dark:border-gray-700" />
+        )}
+        {eveningInsight?.trim() && (
           <section>
             <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
               <span className="text-base">🦌</span>
@@ -339,6 +367,46 @@ export function DiaryDayCard({
             )}
           </div>
         )}
+
+        {/* 8. Today's Stats */}
+        {stats ? (
+          <>
+            <div className="border-t border-gray-200 dark:border-gray-700" />
+            <section>
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                <span className="text-base">✨</span>
+                Today&apos;s Stats
+              </h3>
+              <ul className="space-y-1 text-sm text-gray-800 dark:text-gray-200">
+                <li>Morning completed: {stats.morningCompleted ? '✅' : '❌'}</li>
+                <li>Evening completed: {stats.eveningCompleted ? '✅' : '❌'}</li>
+                <li>Current streak: {stats.currentStreak} day{stats.currentStreak === 1 ? '' : 's'}</li>
+                <li>Total days with entries: {stats.daysWithEntries}</li>
+              </ul>
+
+              <div className="mt-4">
+                <h4 className="text-xs font-semibold tracking-wide uppercase text-gray-500 dark:text-gray-400 mb-1">📈 Coming Up</h4>
+                {stats.nextBadge ? (
+                  <p className="text-sm text-gray-800 dark:text-gray-200">
+                    {stats.nextBadge.note ? (
+                      <>
+                        Next: <span className="font-medium">{stats.nextBadge.name}</span> — {stats.nextBadge.note}
+                      </>
+                    ) : (
+                      <>
+                        Next badge: <span className="font-medium">{stats.nextBadge.name}</span> in{' '}
+                        <span className="font-medium">{stats.nextBadge.daysRemaining}</span> more day
+                        {stats.nextBadge.daysRemaining === 1 ? '' : 's'}
+                      </>
+                    )}
+                  </p>
+                ) : (
+                  <p className="text-sm text-emerald-700 dark:text-emerald-300">🎉 All badges unlocked! You&apos;re on a roll!</p>
+                )}
+              </div>
+            </section>
+          </>
+        ) : null}
       </div>
     </div>
   )

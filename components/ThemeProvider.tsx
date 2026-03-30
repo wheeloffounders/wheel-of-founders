@@ -19,44 +19,26 @@ function getInitialTheme(): Theme {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored === 'light' || stored === 'dark') return stored
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    return prefersDark ? 'dark' : 'light'
+    return 'light'
   } catch {
     return 'light'
   }
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('light')
-  const [mounted, setMounted] = useState(false)
+  const [theme, setThemeState] = useState<Theme>(() => getInitialTheme())
 
   useEffect(() => {
-    setThemeState(getInitialTheme())
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
-    if (!mounted) return
-    const savedTheme = localStorage.getItem(STORAGE_KEY) as Theme | null
-    if (savedTheme === 'light' || savedTheme === 'dark') {
-      setThemeState(savedTheme)
-      document.documentElement.classList.toggle('dark', savedTheme === 'dark')
-    } else {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-      const initialTheme: Theme = prefersDark ? 'dark' : 'light'
-      setThemeState(initialTheme)
-      document.documentElement.classList.toggle('dark', initialTheme === 'dark')
-    }
-  }, [mounted])
-
-  const setTheme = (newTheme: Theme) => {
-    setThemeState(newTheme)
+    document.documentElement.classList.toggle('dark', theme === 'dark')
     try {
-      localStorage.setItem(STORAGE_KEY, newTheme)
+      localStorage.setItem(STORAGE_KEY, theme)
     } catch {
       // ignore (e.g. incognito storage full)
     }
-    document.documentElement.classList.toggle('dark', newTheme === 'dark')
+  }, [theme])
+
+  const setTheme = (newTheme: Theme) => {
+    setThemeState(newTheme)
   }
 
   const toggleTheme = () => {

@@ -77,9 +77,10 @@ export async function fetchDetectionState(
   const lastReview = reviews[0]?.review_date ?? null
   const lastPlan = tasks.length ? tasks.reduce((max, t) => (t.plan_date > max ? t.plan_date : max), tasks[0].plan_date) : null
   const lastActivityDate = [lastReview, lastPlan].filter(Boolean).sort().reverse()[0] ?? null
+  const hasAnyActivity = reviewDates.size > 0 || planDates.size > 0
   const daysSinceLastActivity = lastActivityDate
     ? Math.floor((new Date(today).getTime() - new Date(lastActivityDate).getTime()) / (1000 * 60 * 60 * 24))
-    : 999
+    : 0
 
   const currentStreak = profile?.current_streak ?? 0
 
@@ -304,6 +305,7 @@ export function detectHighestPrioritySituation(
     eveningsWithoutMorningCount,
     profileCompleted,
   } = state
+  const hasAnyActivity = totalMorningPlanDays > 0 || totalEveningReviews > 0
 
   const completionRate =
     yesterdayTaskCount > 0
@@ -326,7 +328,7 @@ export function detectHighestPrioritySituation(
   if (hasEveningYesterday && !hasMorningToday && totalMorningPlanDays >= 1) {
     return { situation: 'evening-done-morning-pending', tokens: {} }
   }
-  if (daysSinceLastActivity >= 3) {
+  if (hasAnyActivity && daysSinceLastActivity >= 3) {
     return { situation: 'missed-multiple-days', tokens: { days: daysSinceLastActivity } }
   }
   if (totalMorningPlanDays === 0 && totalEveningReviews === 0) {
@@ -362,7 +364,7 @@ export function detectHighestPrioritySituation(
   if (currentStreak >= 14 || totalEveningReviews >= 14) {
     return { situation: 'power-user', tokens: {} }
   }
-  if (daysSinceLastActivity >= 5 && totalEveningReviews >= 3) {
+  if (hasAnyActivity && daysSinceLastActivity >= 5 && totalEveningReviews >= 3) {
     return { situation: 'at-risk-churn', tokens: {} }
   }
   if (yesterdayTaskCount > 0 && completionRate >= 80) {

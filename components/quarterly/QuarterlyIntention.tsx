@@ -10,7 +10,7 @@ interface QuarterlyIntentionProps {
   placeholder?: string
 }
 
-export function QuarterlyIntention({ onSet, placeholder = "What's your focus for the next quarter?" }: QuarterlyIntentionProps) {
+export function QuarterlyIntention({ onSet, placeholder = 'I commit to...' }: QuarterlyIntentionProps) {
   const [intention, setIntention] = useState('')
   const [saved, setSaved] = useState(false)
 
@@ -44,7 +44,7 @@ export function QuarterlyIntention({ onSet, placeholder = "What's your focus for
           disabled={!intention.trim() || saved}
           className="w-full"
         >
-          {saved ? 'Intention Set' : 'Set Quarterly Intention'}
+          {saved ? 'Commitment saved' : 'Save my commitment'}
         </Button>
       </CardContent>
     </Card>

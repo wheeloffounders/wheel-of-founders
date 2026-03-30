@@ -3,11 +3,21 @@ import { format } from 'date-fns'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { fetchDetectionState, detectUserSituation, detectHighestPrioritySituation } from '@/lib/micro-lessons/detect-user-situation'
-import { getLessonForSituation } from '@/lib/micro-lessons/lessons'
+import { getLessonForSituation, replaceTokens } from '@/lib/micro-lessons/lessons'
+import { microLessonVariants } from '@/lib/micro-lessons/variants'
+import { getCustomStruggleTip, getTipForStruggle } from '@/lib/micro-lessons/struggle-tips'
+import {
+  parseRotationMemory,
+  stringifyRotationMemory,
+  chooseStruggleKey,
+  chooseVariantIndex,
+} from '@/lib/micro-lessons/rotation'
 import { detectProcrastinationPatterns } from '@/lib/pattern-detection/procrastination'
 import type { UserSituation } from '@/lib/micro-lessons/types'
 
 export const dynamic = 'force-dynamic'
+
+const STRUGGLE_TIP_PROBABILITY = 0.2
 
 /** GET: Returns the one micro-lesson for this user. location=dashboard uses highest-priority; morning|evening use page context. Records impression. */
 export async function GET(request: NextRequest) {
@@ -99,12 +109,70 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ lesson: null })
     }
 
-    const lesson = getLessonForSituation(result.situation as UserSituation, result.tokens)
+    const { data: profile } = await db
+      .from('user_profiles')
+      .select('struggles, struggles_other, last_micro_lesson_variant')
+      .eq('id', session.user.id)
+      .maybeSingle()
+
+    const profileRow = (profile ?? {}) as {
+      struggles?: unknown
+      struggles_other?: string | null
+      last_micro_lesson_variant?: string | null
+    }
+
+    const selectedStruggles = Array.isArray(profileRow.struggles)
+      ? profileRow.struggles.filter((s): s is string => typeof s === 'string')
+      : []
+    const customTip = getCustomStruggleTip(profileRow.struggles_other)
+    const availableStruggleKeys = selectedStruggles.filter((s) => !!getTipForStruggle(s))
+    if (customTip) availableStruggleKeys.push(customTip.key)
+
+    let rotationMemory = parseRotationMemory(profileRow.last_micro_lesson_variant)
+    let chosenSituation = result.situation
+    let lesson = getLessonForSituation(chosenSituation as UserSituation, result.tokens)
+    let tipKind: 'state' | 'struggle' = 'state'
+
+    if (availableStruggleKeys.length > 0 && Math.random() < STRUGGLE_TIP_PROBABILITY) {
+      const strugglePick = chooseStruggleKey(rotationMemory, availableStruggleKeys)
+      rotationMemory = strugglePick.nextMemory
+      const chosenKey = strugglePick.key
+      const struggleTip =
+        chosenKey === customTip?.key ? customTip : (chosenKey ? getTipForStruggle(chosenKey) : null)
+      if (struggleTip) {
+        tipKind = 'struggle'
+        lesson = {
+          message: struggleTip.message,
+          emoji: struggleTip.emoji,
+          action: struggleTip.action,
+          priority: 0,
+        }
+        chosenSituation = `struggle:${struggleTip.key}` as UserSituation
+      }
+    }
+
+    if (tipKind === 'state') {
+      const variants = microLessonVariants[result.situation]
+      if (Array.isArray(variants) && variants.length > 0) {
+        const variantPick = chooseVariantIndex(rotationMemory, result.situation, variants.length)
+        rotationMemory = variantPick.nextMemory
+        const variantTemplate = variants[variantPick.index]
+        lesson = {
+          ...lesson,
+          message: replaceTokens(variantTemplate, result.tokens),
+        }
+        chosenSituation = `${result.situation}#${variantPick.index}` as UserSituation
+      }
+    }
+
+    await (db.from('user_profiles') as any)
+      .update({ last_micro_lesson_variant: stringifyRotationMemory(rotationMemory), updated_at: new Date().toISOString() })
+      .eq('id', session.user.id)
 
     // Record impression for learning loop
     const { error: insertError } = await (db.from('micro_lesson_impressions') as any).insert({
       user_id: session.user.id,
-      situation: result.situation,
+      situation: chosenSituation,
       lesson_message: lesson.message,
       viewed_at: new Date().toISOString(),
     })
@@ -114,10 +182,11 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       lesson: {
-        situation: result.situation,
+        situation: chosenSituation,
         message: lesson.message,
         emoji: lesson.emoji,
         action: lesson.action,
+        kind: tipKind,
       },
     })
   } catch (err) {
@@ -137,6 +206,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({})) as {
       action_taken?: boolean
       completed_evening?: boolean
+      feedback?: {
+        location?: 'dashboard' | 'morning' | 'evening'
+        response?: string
+        lesson_message?: string
+      }
     }
 
     const db = getServerSupabase()
@@ -154,13 +228,41 @@ export async function POST(request: NextRequest) {
     const updates: { action_taken?: boolean; completed_evening?: boolean } = {}
     if (body.action_taken === true) updates.action_taken = true
     if (body.completed_evening === true) updates.completed_evening = true
-    if (Object.keys(updates).length === 0) {
-      return NextResponse.json({ success: true })
+    if (Object.keys(updates).length > 0) {
+      await (db.from('micro_lesson_impressions') as any)
+        .update(updates)
+        .eq('id', latest.id)
     }
 
-    await (db.from('micro_lesson_impressions') as any)
-      .update(updates)
-      .eq('id', latest.id)
+    if (body.feedback?.response && body.feedback?.lesson_message) {
+      const { data: profile } = await (db.from('user_profiles') as any)
+        .select('micro_lesson_feedback')
+        .eq('id', session.user.id)
+        .maybeSingle()
+
+      const existingFeedback =
+        profile && typeof profile.micro_lesson_feedback === 'object' && profile.micro_lesson_feedback !== null
+          ? profile.micro_lesson_feedback
+          : {}
+
+      const timestamp = new Date().toISOString()
+      const nextFeedback = {
+        ...existingFeedback,
+        last_response: {
+          location: body.feedback.location ?? 'dashboard',
+          response: body.feedback.response,
+          lesson_message: body.feedback.lesson_message,
+          responded_at: timestamp,
+        },
+      }
+
+      await (db.from('user_profiles') as any)
+        .update({
+          micro_lesson_feedback: nextFeedback,
+          updated_at: timestamp,
+        })
+        .eq('id', session.user.id)
+    }
 
     return NextResponse.json({ success: true })
   } catch (err) {

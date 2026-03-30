@@ -1,7 +1,7 @@
 
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { FileText, Sparkles, Check, Edit2, Settings, Clock, MessageSquare } from 'lucide-react'
 import { founderStruggles } from '@/lib/founder-struggles'
@@ -12,6 +12,7 @@ import { AICoachPrompt } from '@/components/AICoachPrompt'
 import SpeechToTextInput from '@/components/SpeechToTextInput'
 import { trackEvent } from '@/lib/analytics'
 import Link from 'next/link'
+import { isDevelopment, isPreview } from '@/lib/env'
 
 const HOBBY_OPTIONS = [
   { value: 'sports_fitness', label: 'Sports / fitness', emoji: '🏃' },
@@ -77,6 +78,26 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [showDevTools, setShowDevTools] = useState(false)
+  const [undoReset, setUndoReset] = useState<{ backupId: string; expiresAt: string } | null>(null)
+  const [undoInFlight, setUndoInFlight] = useState(false)
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Determine if dev tools should be visible (dev, preview, or ?dev=true)
+  let shouldShowDevTools = isDevelopment || isPreview
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search)
+    const forceDev = params.get('dev') === 'true'
+    if (forceDev) {
+      shouldShowDevTools = true
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    // Temporary debug log
+    // eslint-disable-next-line no-console
+    console.log('[Profile Debug] isDevelopment:', isDevelopment, 'isPreview:', isPreview, 'shouldShowDevTools:', shouldShowDevTools)
+  }
   
   // Profile data
   const [name, setName] = useState('')
@@ -103,6 +124,14 @@ export default function ProfilePage() {
   const [profileInsight, setProfileInsight] = useState<string | null>(null)
   const [generatingInsight, setGeneratingInsight] = useState(false)
   const [session, setSession] = useState<Awaited<ReturnType<typeof getUserSession>> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) {
+        clearTimeout(undoTimerRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -385,6 +414,42 @@ export default function ProfilePage() {
       console.error('❌ Failed to generate profile insight:', error)
     } finally {
       setGeneratingInsight(false)
+    }
+  }
+
+  const handleUndoReset = async () => {
+    if (!undoReset?.backupId || undoInFlight) return
+    setUndoInFlight(true)
+    try {
+      const { data: authData } = await supabase.auth.getSession()
+      const headers: HeadersInit = { 'Content-Type': 'application/json' }
+      if (authData.session?.access_token) {
+        headers.Authorization = `Bearer ${authData.session.access_token}`
+      }
+      const res = await fetch('/api/user/undo-reset', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ backupId: undoReset.backupId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMessage({
+          type: 'error',
+          text: typeof data?.error === 'string' ? data.error : 'Failed to undo reset.',
+        })
+        return
+      }
+      if (undoTimerRef.current) {
+        clearTimeout(undoTimerRef.current)
+        undoTimerRef.current = null
+      }
+      setUndoReset(null)
+      setMessage({ type: 'success', text: 'Reset undone. Your data has been restored.' })
+    } catch (error) {
+      console.error('[DevTools] Failed to undo reset:', error)
+      setMessage({ type: 'error', text: 'Failed to undo reset. Check console for details.' })
+    } finally {
+      setUndoInFlight(false)
     }
   }
 
@@ -917,8 +982,150 @@ export default function ProfilePage() {
         </div>
       )}
 
+      {undoReset && (
+        <div className="mb-6 p-4 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 flex items-center justify-between gap-3">
+          <p className="text-sm">
+            All data deleted. You can undo this action for 10 seconds.
+          </p>
+          <button
+            type="button"
+            onClick={handleUndoReset}
+            disabled={undoInFlight}
+            className="px-3 py-1 rounded bg-amber-700 text-white text-sm hover:bg-amber-800 disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {undoInFlight ? 'Undoing...' : 'Undo'}
+          </button>
+        </div>
+      )}
+
+      {shouldShowDevTools && (
+        <div className="mt-4 p-4 border-2 border-red-300 rounded-lg bg-red-50">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-red-800">🧪 Dev Tools</span>
+            <button
+              type="button"
+              onClick={() => setShowDevTools((v) => !v)}
+              className="text-xs text-red-600 underline"
+            >
+              {showDevTools ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          {showDevTools && (
+            <div className="mt-2 space-y-3">
+              <p className="text-xs text-red-700">⚠️ Full reset can be undone for 10 seconds only.</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const sess = await getUserSession()
+                    if (!sess?.user?.id) {
+                      router.push('/auth/login')
+                      return
+                    }
+                    const userEmail = sess.user.email || 'this account'
+                    const confirmed = window.confirm(
+                      `Are you sure you want to reset all data for ${userEmail}? This action cannot be undone.`
+                    )
+                    if (!confirmed) return
+                    const { data: authData } = await supabase.auth.getSession()
+                    const headers: HeadersInit = { 'Content-Type': 'application/json' }
+                    if (authData.session?.access_token) {
+                      headers.Authorization = `Bearer ${authData.session.access_token}`
+                    }
+                    const res = await fetch('/api/user/reset-onboarding', {
+                      method: 'POST',
+                      headers,
+                      body: JSON.stringify({ scope: 'onboarding' }),
+                    })
+                    const data = await res.json().catch(() => ({}))
+                    if (!res.ok) {
+                      console.error('[DevTools] Failed to reset onboarding:', data)
+                      setMessage({
+                        type: 'error',
+                        text:
+                          typeof data?.error === 'string'
+                            ? data.error
+                            : 'Failed to reset onboarding. Check console for details.',
+                      })
+                      return
+                    }
+                    setMessage({ type: 'success', text: 'Onboarding reset for this user.' })
+                    router.push('/onboarding/goal')
+                  }}
+                  className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                >
+                  🔄 Reset Onboarding
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const sess = await getUserSession()
+                    if (!sess?.user?.id) {
+                      router.push('/auth/login')
+                      return
+                    }
+                    const { data: authData } = await supabase.auth.getSession()
+                    const headers: HeadersInit = { 'Content-Type': 'application/json' }
+                    if (authData.session?.access_token) {
+                      headers.Authorization = `Bearer ${authData.session.access_token}`
+                    }
+                    const res = await fetch('/api/user/reset-onboarding', {
+                      method: 'POST',
+                      headers,
+                      body: JSON.stringify({ scope: 'full' }),
+                    })
+                    const raw = await res.text()
+                    const data = (() => {
+                      if (!raw) return {}
+                      try {
+                        return JSON.parse(raw) as Record<string, unknown>
+                      } catch {
+                        return {}
+                      }
+                    })()
+                    if (!res.ok) {
+                      const debugLine = `[DevTools] reset-all failed status=${res.status} ${res.statusText} body=${raw || '<empty>'}`
+                      console.error(debugLine)
+                      setMessage({
+                        type: 'error',
+                        text:
+                          typeof data?.error === 'string'
+                            ? data.error
+                            : `Failed to reset all entries (HTTP ${res.status}). ${raw ? `Server says: ${raw}` : 'No response body.'}`,
+                      })
+                      return
+                    }
+                    if (undoTimerRef.current) {
+                      clearTimeout(undoTimerRef.current)
+                      undoTimerRef.current = null
+                    }
+                    if (typeof data?.backupId === 'string' && typeof data?.undoExpiresAt === 'string') {
+                      setUndoReset({ backupId: data.backupId, expiresAt: data.undoExpiresAt })
+                      undoTimerRef.current = setTimeout(() => {
+                        setUndoReset(null)
+                        undoTimerRef.current = null
+                      }, Math.max(0, new Date(data.undoExpiresAt).getTime() - Date.now()))
+                    }
+                    setMessage({
+                      type: 'success',
+                      text:
+                        typeof data?.warning === 'string'
+                          ? `Onboarding and all entries reset. ${data.warning}`
+                          : 'Onboarding and all entries reset for this user. Undo is available for 10 seconds.',
+                    })
+                  }}
+                  className="px-3 py-1 bg-red-700 text-white text-sm rounded hover:bg-red-800"
+                >
+                  🧨 Reset Onboarding + All Entries
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Save Button */}
-      <div className="flex justify-end gap-3">
+      <div className="flex justify-end gap-3 mt-4">
         <button
           type="button"
           onClick={handleSave}

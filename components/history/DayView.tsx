@@ -1,7 +1,7 @@
 'use client'
 
-import { format } from 'date-fns'
 import { DiaryDayCard } from './DiaryDayCard'
+import Link from 'next/link'
 
 export interface DayData {
   morningInsight: string | null
@@ -13,15 +13,34 @@ export interface DayData {
   eveningInsight: string | null
 }
 
+function isEveningComplete(ev: DayData['eveningReview']): boolean {
+  if (!ev) return false
+  return !!(
+    ev.journal?.trim() ||
+    ev.wins ||
+    ev.lessons ||
+    ev.mood != null ||
+    ev.energy != null
+  )
+}
+
 interface DayViewProps {
   dateStr: string
   dateLabel: string
   isToday: boolean
   dayData: DayData | null
   loading?: boolean
+  /** Hide duplicate date row in the card when the sidebar already shows the date. */
+  hideDateHeader?: boolean
+  celebrate?: boolean
+  stats?: {
+    currentStreak: number
+    daysWithEntries: number
+    nextBadge: { name: string; daysRemaining: number; note?: string } | null
+  }
 }
 
-export function DayView({ dateStr, dateLabel, isToday, dayData, loading }: DayViewProps) {
+export function DayView({ dateStr, dateLabel, isToday, dayData, loading, hideDateHeader, celebrate, stats }: DayViewProps) {
   if (loading) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
@@ -43,23 +62,63 @@ export function DayView({ dateStr, dateLabel, isToday, dayData, loading }: DayVi
     )
   }
 
+  const showDayInProgress =
+    isToday && dayData && !isEveningComplete(dayData.eveningReview)
+
   return (
-    <DiaryDayCard
-      dateStr={dateStr}
-      dateLabel={dateLabel}
-      isToday={isToday}
-      morningInsight={dayData.morningInsight}
-      morningTasks={dayData.morningPlan.tasks.map((t) => ({
-        id: t.id,
-        description: t.description,
-        needle_mover: t.needle_mover,
-        completed: t.completed,
-      }))}
-      morningDecisions={dayData.morningPlan.decision ? [dayData.morningPlan.decision] : []}
-      postMorningInsight={dayData.postMorningInsight}
-      emergencies={dayData.emergencies}
-      eveningReview={dayData.eveningReview}
-      eveningInsight={dayData.eveningInsight}
-    />
+    <div className="max-w-3xl mx-auto space-y-4">
+      {celebrate && isToday && stats ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-4 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-100">
+          <p className="text-lg font-semibold">🎉 Day {stats.daysWithEntries} Complete! 🎉</p>
+          <p className="text-sm mt-1">You&apos;ve added another day to your founder&apos;s journey.</p>
+          <p className="text-sm mt-1">
+            Your streak: {stats.currentStreak} day{stats.currentStreak === 1 ? '' : 's'} | Total days with entries: {stats.daysWithEntries}
+          </p>
+          <Link href="/dashboard" className="inline-flex mt-3 text-sm font-medium text-emerald-700 dark:text-emerald-300 hover:underline">
+            Back to Dashboard
+          </Link>
+        </div>
+      ) : null}
+      {showDayInProgress && (
+        <div
+          className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+          role="status"
+        >
+          <span className="font-medium">Day in progress…</span>{' '}
+          <span className="text-amber-900/90 dark:text-amber-200/90">
+            Complete your evening reflection to close the loop.
+          </span>
+        </div>
+      )}
+      <DiaryDayCard
+        dateStr={dateStr}
+        dateLabel={dateLabel}
+        isToday={isToday}
+        showDateHeader={!hideDateHeader}
+        morningInsight={dayData.morningInsight}
+        morningTasks={dayData.morningPlan.tasks.map((t) => ({
+          id: t.id,
+          description: t.description,
+          needle_mover: t.needle_mover,
+          completed: t.completed,
+        }))}
+        morningDecisions={dayData.morningPlan.decision ? [dayData.morningPlan.decision] : []}
+        postMorningInsight={dayData.postMorningInsight}
+        emergencies={dayData.emergencies}
+        eveningReview={dayData.eveningReview}
+        eveningInsight={dayData.eveningInsight}
+        stats={
+          stats
+            ? {
+                morningCompleted: dayData.morningPlan.tasks.length > 0,
+                eveningCompleted: isEveningComplete(dayData.eveningReview),
+                currentStreak: stats.currentStreak,
+                daysWithEntries: stats.daysWithEntries,
+                nextBadge: stats.nextBadge,
+              }
+            : undefined
+        }
+      />
+    </div>
   )
 }

@@ -1,39 +1,39 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { format, formatDistanceToNow, isToday, subDays, startOfMonth } from 'date-fns'
-import { Target, Zap, X, AlertCircle, Edit2, Check, Square, Save, X as XIcon, HelpCircle, Trash2 } from 'lucide-react'
+import { format, formatDistanceToNow, subDays, startOfMonth, addYears } from 'date-fns'
+import { Target, Zap, X, AlertCircle, Edit2, Check, Square, Save, X as XIcon, HelpCircle, Trash2, Lock, Sun } from 'lucide-react'
 import { InfoTooltip } from '@/components/InfoTooltip'
 import SpeechToTextInput from '@/components/SpeechToTextInput'
 import { supabase } from '@/lib/supabase'
-import { getUserSession } from '@/lib/auth'
+import { getUserSession, refreshSessionForWrite, isRlsOrAuthPermissionError } from '@/lib/auth'
 import { AICoachPrompt } from '@/components/AICoachPrompt'
 import { getFeatureAccess } from '@/lib/features'
-import { DateNavigator } from '@/components/DateNavigator'
-import { CalendarModal } from '@/components/CalendarModal'
+import { PageHeader } from '@/components/ui/PageHeader'
+import { WeekNavigator } from '@/components/ui/WeekNavigator'
+import { DatePickerModal } from '@/components/ui/DatePickerModal'
 import type { DayStatus } from '@/lib/date-utils'
 import { useUserLanguage } from '@/lib/use-user-language'
 import { getUserGoal, getActionPlanOptions, type UserGoal } from '@/lib/user-language'
 import { trackEvent } from '@/lib/analytics'
 import { trackFunnelStep } from '@/lib/analytics/track-funnel'
 import { trackJourneyStep } from '@/lib/analytics/journey-tracking'
-import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { LoadingWithMicroLesson } from '@/components/LoadingWithMicroLesson'
 import { ProgressIndicator } from '@/components/ProgressIndicator'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
 import { ConfirmModal } from '@/components/ConfirmModal'
 import { StreamingIndicator } from '@/components/StreamingIndicator'
 import { useStreamingInsight } from '@/lib/hooks/useStreamingInsight'
 import { usePersonalizedExamples } from '@/lib/hooks/usePersonalizedExamples'
 import { useHasSeenMorningTour } from '@/lib/hooks/useHasSeenMorningTour'
-import { colors, typography, spacing } from '@/lib/design-tokens'
+import { useFirstBadgeCheck } from '@/lib/hooks/useFirstBadgeCheck'
+import { colors, spacing } from '@/lib/design-tokens'
 import { motion, useReducedMotion } from 'framer-motion'
 import { TutorialProgress } from '@/components/TutorialProgress'
-import { MicroLesson } from '@/components/MicroLesson'
 import { ReflectionPopup } from '@/components/ReflectionPopup'
 import { getTimeAwareness } from '@/lib/time-utils'
 import { useTutorial } from '@/lib/contexts/TutorialContext'
@@ -43,6 +43,21 @@ import { generateExamplesForUser } from '@/lib/profile-examples'
 import { FirstTimeSuccessModal } from '@/components/FirstTimeSuccessModal'
 import { isNewOnboardingEnabled } from '@/lib/feature-flags'
 import { trackErrorSync } from '@/lib/error-tracker'
+import { getDaysWithEntries } from '@/lib/founder-dna/days-with-entries'
+import { isMorningInsightsUnlocked } from '@/lib/founder-dna/unlock-schedule-config'
+import { getUserDaysActiveCalendar, getUserTimezoneFromProfile } from '@/lib/timezone'
+import { FirstBadgeCelebration } from '@/components/founder-dna/FirstBadgeCelebration'
+import { FirstDayBadgeModal } from '@/components/onboarding/FirstDayBadgeModal'
+import { ReminderSetupScreen } from '@/components/onboarding/ReminderSetupScreen'
+import { UpcomingUnlocksTeaser } from '@/components/onboarding/UpcomingUnlocksTeaser'
+import { CalendarReminderModal, type CalendarReminderType } from '@/components/CalendarReminderModal'
+import { EmptyTasks } from '@/components/tasks/EmptyTasks'
+import { handleCalendarAdd } from '@/lib/calendar'
+import { getEffectivePlanDate, getPlanDateString } from '@/lib/effective-plan-date'
+import { useMediaQuery } from '@/lib/hooks/useMediaQuery'
+import { fetchUserProfileBundle } from '@/lib/user-profile-bundle-cache'
+import { PageSidebar } from '@/components/layout/PageSidebar'
+import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
 
 export type ActionPlanOption2 = 'my_zone' | 'systemize' | 'delegate_founder' | 'eliminate_founder' | 'quick_win_founder'
 
@@ -81,6 +96,22 @@ const EMPTY_TASK: Task = {
   needleMover: null,
   isProactive: null,
   actionPlan: 'my_zone',
+}
+
+const INITIAL_DECISION: Decision = {
+  decision: '',
+  decisionType: 'strategic',
+  whyThisDecision: '',
+}
+
+/** True only when at least one task has text or the decision field is non-empty (avoids treating blank DB rows as a saved plan). */
+function hasMeaningfulPlanContent(
+  loadedTasks: Array<{ description?: string | null }>,
+  decisionRow: { decision?: string | null } | null
+): boolean {
+  const hasTaskText = loadedTasks.some((t) => (t.description || '').trim().length > 0)
+  const d = typeof decisionRow?.decision === 'string' ? decisionRow.decision.trim() : ''
+  return hasTaskText || d.length > 0
 }
 
 function generateTaskId(): string {
@@ -127,6 +158,8 @@ export default function MorningPage() {
   const { insight: streamingInsight, isStreaming: isStreamingPostMorning, error: streamingError, startStream } = useStreamingInsight()
   const personalizedExamples = usePersonalizedExamples()
   const { markSeenMorningTour } = useHasSeenMorningTour()
+  const { showCelebration: showFirstSparkCelebration, setShowCelebration: setFirstSparkCelebration } =
+    useFirstBadgeCheck()
   const { step: tutorialStep, nextStep: tutorialNextStep, isActive: tutorialActive, setCanProceed, setStep } = useTutorial()
   const hasAutoAdvancedFromPowerRef = useRef(false)
   const [showReflectionPopup, setShowReflectionPopup] = useState(false)
@@ -146,10 +179,53 @@ export default function MorningPage() {
   const [decisionCategory, setDecisionCategory] = useState<string>('other')
   const [showFirstTimeModal, setShowFirstTimeModal] = useState(false)
   const [showFirstTimeInsightCTA, setShowFirstTimeInsightCTA] = useState(false)
+  const [showCalendarReminderModal, setShowCalendarReminderModal] = useState(false)
+  const [calendarReminderTime, setCalendarReminderTime] = useState('20:00')
+  const [calendarReminderType, setCalendarReminderType] = useState<CalendarReminderType | null>(null)
+  const [showFirstDayBadgeModal, setShowFirstDayBadgeModal] = useState(false)
+  const [showPostMorningReminderSetup, setShowPostMorningReminderSetup] = useState(false)
+  const [showUpcomingUnlocksTeaser, setShowUpcomingUnlocksTeaser] = useState(false)
+  /** Account-age days since signup (calendar); still used for analytics / display where relevant. */
+  const [accountDaysActive, setAccountDaysActive] = useState<number | null>(null)
+  /** Days-with-entries + evening count — gates Mrs. Deer morning / post-morning AI (matches journey). */
+  const [insightActivityGate, setInsightActivityGate] = useState<{ dwe: number; ev: number } | null>(null)
+
+  const morningInsightsReady = useMemo(
+    () =>
+      insightActivityGate !== null &&
+      isMorningInsightsUnlocked(insightActivityGate.dwe, insightActivityGate.ev),
+    [insightActivityGate],
+  )
+
+  const isMobile = useMediaQuery('(max-width: 768px)')
 
   // ========== DEBUGGING SAVE ISSUE ==========
   const [debugSaveAttempted, setDebugSaveAttempted] = useState(false)
   const savePlanRef = useRef<() => Promise<void>>(() => Promise.resolve())
+
+  const maybeShowCalendarReminder = useCallback(async (userId: string) => {
+    if (typeof window === 'undefined') return
+    try {
+      const session = await getUserSession()
+      if (!session || session.user.id !== userId) return
+      const bundle = await fetchUserProfileBundle()
+      const existingTime = bundle?.calendar_reminder_time
+      const existingType = bundle?.calendar_reminder_type as CalendarReminderType | null | undefined
+
+      if (existingTime) {
+        setCalendarReminderTime(String(existingTime).slice(0, 5))
+        if (existingType) setCalendarReminderType(existingType)
+        return
+      }
+
+      const shownCount = Number.parseInt(localStorage.getItem('calendarModalShown') || '0', 10)
+      if (shownCount < 3) {
+        setShowCalendarReminderModal(true)
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
   useEffect(() => {
     if (typeof window === 'undefined') return
     console.log('🔍 [MORNING DEBUG] Page loaded', {
@@ -251,6 +327,7 @@ export default function MorningPage() {
   useEffect(() => {
     if (!planDate) return
 
+    const ac = new AbortController()
     let cancelled = false
     const loadScheduledSuggestions = async () => {
       setScheduledSuggestionsLoading(true)
@@ -258,6 +335,7 @@ export default function MorningPage() {
       try {
         const res = await fetch(`/api/suggestions/today?date=${encodeURIComponent(planDate)}`, {
           credentials: 'include',
+          signal: ac.signal,
         })
         if (!res.ok) {
           const body = await res.json().catch(() => ({}))
@@ -267,6 +345,7 @@ export default function MorningPage() {
         if (cancelled) return
         setScheduledSuggestions(body.suggestions || [])
       } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return
         console.error('[Morning] Failed to load scheduled suggestions:', err)
         if (!cancelled) {
           setSuggestionsError('Unable to load suggestions right now.')
@@ -281,6 +360,7 @@ export default function MorningPage() {
     loadScheduledSuggestions()
     return () => {
       cancelled = true
+      ac.abort()
     }
   }, [planDate])
 
@@ -426,13 +506,30 @@ export default function MorningPage() {
 
   // Initialize planDate from URL or today
   useEffect(() => {
-    if (planDate === '') {
+    if (planDate !== '') return
+    let cancelled = false
+    const initPlanDate = async () => {
       const dateParam = searchParams?.get('date')
-      const initial =
-        dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
-          ? dateParam
-          : format(new Date(), 'yyyy-MM-dd')
-      setPlanDate(initial)
+      if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+        if (!cancelled) setPlanDate(dateParam)
+        return
+      }
+      const session = await getUserSession()
+      if (!session?.user?.id) {
+        if (!cancelled) setPlanDate(getEffectivePlanDate())
+        return
+      }
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('timezone')
+        .eq('id', session.user.id)
+        .maybeSingle()
+      const tz = (profile as { timezone?: string | null } | null)?.timezone?.trim() || 'UTC'
+      if (!cancelled) setPlanDate(getPlanDateString(tz))
+    }
+    void initPlanDate()
+    return () => {
+      cancelled = true
     }
   }, [searchParams])
 
@@ -455,29 +552,60 @@ export default function MorningPage() {
     trackFunnelStep('morning_flow', name, step)
   }, [])
 
-  const loadTodayPlan = useCallback(async (opts?: { silent?: boolean }) => {
+  const loadTodayPlan = useCallback(async (opts?: { silent?: boolean; signal?: AbortSignal }) => {
     const session = await getUserSession()
     if (!session) return
+    if (opts?.signal?.aborted) return
 
     if (!opts?.silent) setLoading(true)
     try {
       const features = getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
-      const [prefsRes, tasksRes, decisionsRes, postMorningInsightRes] = await Promise.all([
-        fetch('/api/user-preferences', { credentials: 'include', cache: 'no-store' }).then((r) => r.json()).catch(() => ({ planning_mode: 'full' })),
+      let prefsJson: { planning_mode?: 'full' | 'light' } = { planning_mode: 'full' }
+      try {
+        const r = await fetch('/api/user-preferences', {
+          credentials: 'include',
+          cache: 'no-store',
+          signal: opts?.signal,
+        })
+        prefsJson = (await r.json()) as { planning_mode?: 'full' | 'light' }
+      } catch (e) {
+        if (opts?.signal?.aborted || (e instanceof Error && e.name === 'AbortError')) return
+        prefsJson = { planning_mode: 'full' }
+      }
+      if (opts?.signal?.aborted) return
+
+      const [tasksRes, decisionsRes, commitRes, postMorningInsightRes] = await Promise.all([
         supabase.from('morning_tasks').select('*').eq('plan_date', planDate).eq('user_id', session.user.id).order('task_order', { ascending: true }),
         supabase.from('morning_decisions').select('*').eq('plan_date', planDate).eq('user_id', session.user.id).maybeSingle(),
-        features.dailyPostMorningPrompt
+        supabase.from('morning_plan_commits').select('committed_at').eq('user_id', session.user.id).eq('plan_date', planDate).maybeSingle(),
+        features.dailyPostMorningPrompt && morningInsightsReady
           ? (async () => {
               const { data, error } = await supabase.from('personal_prompts').select('id, prompt_text, prompt_type, prompt_date, generated_at').eq('user_id', session.user.id).eq('prompt_date', planDate).eq('prompt_type', 'post_morning').order('generated_at', { ascending: false }).limit(1).maybeSingle()
               return { data, error }
             })()
           : Promise.resolve({ data: null, error: null }),
       ])
-      const planning_mode = (prefsRes as { planning_mode?: 'full' | 'light' })?.planning_mode ?? 'full'
+      if (opts?.signal?.aborted) return
+
+      const planning_mode = prefsJson?.planning_mode ?? 'full'
       setPlanningMode(planning_mode)
       const loadedTasks = (tasksRes.data ?? []) as Array<{ id: string; description: string; why_this_matters?: string; needle_mover: boolean; is_proactive?: boolean | null; action_plan?: string; completed?: boolean; created_at: string; updated_at: string }>
-      const hasPlanForDate = loadedTasks.length > 0 || decisionsRes.data
-      if (hasPlanForDate && postMorningInsightRes?.data?.prompt_text) {
+      const decisionRow = decisionsRes.data as
+        | { id: string; decision: string; decision_type: string; why_this_decision?: string | null; created_at: string; updated_at: string }
+        | null
+      const hasMeaningfulPlan = hasMeaningfulPlanContent(loadedTasks, decisionRow)
+      const hasCommittedPlan = !!(commitRes.data && !commitRes.error)
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Morning] loadTodayPlan', planDate, {
+          taskDescriptions: loadedTasks.map((t) => t.description),
+          decisionText: decisionRow?.decision ?? null,
+          hasMeaningfulPlan,
+          hasCommittedPlan,
+        })
+      }
+
+      if (hasMeaningfulPlan && postMorningInsightRes?.data?.prompt_text) {
         const insight = postMorningInsightRes.data.prompt_text
         const row = postMorningInsightRes.data as { id?: string }
         if (row?.id) setPostMorningInsightId(row.id)
@@ -485,40 +613,96 @@ export default function MorningPage() {
           console.warn('[MORNING] Banned phrases in DB insight, showing anyway')
         }
         setPostMorningInsight(insight)
-      } else if (!hasPlanForDate) {
+      } else if (!hasMeaningfulPlan) {
         setPostMorningInsight(null)
         setPostMorningInsightId(null)
       }
-      if (loadedTasks.length > 0 || decisionsRes.data) {
-        setHasPlan(true)
+      if (hasMeaningfulPlan) {
+        setHasPlan(hasCommittedPlan && !isFirstTime)
         if (loadedTasks.length > 0) {
           setTasks(loadedTasks.map((t) => ({ id: generateTaskId(), dbId: t.id, description: t.description, whyThisMatters: t.why_this_matters || '', needleMover: t.needle_mover ?? null, isProactive: t.is_proactive ?? null, actionPlan: (t.action_plan as ActionPlanOption2) || 'my_zone', completed: t.completed || false })))
           setPlanCreatedAt(new Date(loadedTasks[0].created_at))
           setPlanUpdatedAt(new Date(loadedTasks[0].updated_at))
+        } else {
+          const maxTasks = planning_mode === 'light' ? 2 : 3
+          setTasks(Array.from({ length: maxTasks }, () => ({ ...EMPTY_TASK, id: generateTaskId() })))
         }
-        if (decisionsRes.data) {
-          setDecision({ decision: decisionsRes.data.decision, decisionType: decisionsRes.data.decision_type as 'strategic' | 'tactical', whyThisDecision: decisionsRes.data.why_this_decision || '' })
-          setDecisionDbId(decisionsRes.data.id)
-          setPlanCreatedAt((prev) => prev ?? new Date(decisionsRes.data.created_at))
-          setPlanUpdatedAt(new Date(decisionsRes.data.updated_at))
+        if (decisionRow) {
+          setDecision({
+            decision: decisionRow.decision ?? '',
+            decisionType: decisionRow.decision_type as 'strategic' | 'tactical',
+            whyThisDecision: decisionRow.why_this_decision || '',
+          })
+          setDecisionDbId(decisionRow.id)
+          setPlanCreatedAt((prev) => prev ?? new Date(decisionRow.created_at))
+          setPlanUpdatedAt(new Date(decisionRow.updated_at))
+        } else {
+          setDecision(INITIAL_DECISION)
+          setDecisionDbId(null)
         }
       } else {
         setHasPlan(false)
         const maxTasks = planning_mode === 'light' ? 2 : 3
         setTasks(Array.from({ length: maxTasks }, () => ({ ...EMPTY_TASK, id: generateTaskId() })))
         setPostMorningInsight(null)
+        setDecision(INITIAL_DECISION)
+        setDecisionDbId(null)
+        setPlanCreatedAt(null)
+        setPlanUpdatedAt(null)
       }
-      trackEvent('morning_page_view', { has_existing_plan: loadedTasks.length > 0 || !!decisionsRes.data, plan_date: planDate })
-      trackJourneyStep('viewed_morning', { has_existing_plan: loadedTasks.length > 0 || !!decisionsRes.data })
+      trackEvent('morning_page_view', { has_existing_plan: hasCommittedPlan, plan_date: planDate })
+      trackJourneyStep('viewed_morning', { has_existing_plan: hasCommittedPlan })
       fireFunnelStep(1, 'morning_page_view')
     } catch (err) {
+      if (opts?.signal?.aborted || (err instanceof Error && err.name === 'AbortError')) return
       setError(err instanceof Error ? err.message : 'Failed to load plan')
     } finally {
-      setLoading(false)
+      if (opts?.signal?.aborted) return
+      if (!opts?.silent) setLoading(false)
     }
-  }, [planDate, fireFunnelStep])
+  }, [planDate, fireFunnelStep, morningInsightsReady, isFirstTime])
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return
+    const showSaveButton = editingTasks || editingDecision || !hasPlan
+    const branch = loading
+      ? 'loading'
+      : isFirstTime && !hasPlan && showFirstTimeInsightCTA
+        ? 'firstTime_insightWait'
+        : isFirstTime && !hasPlan
+          ? 'firstTime_form'
+          : 'main'
+    const saveHiddenReason =
+      showSaveButton || branch !== 'main'
+        ? null
+        : hasPlan && !editingTasks && !editingDecision
+          ? 'Plan exists: primary save is hidden; use Edit on Today\'s Focus or Decision, then Save.'
+          : 'unknown'
+    console.log('[MORNING STATE]', {
+      hasPlan,
+      saving,
+      editFlags: { editingTasks, editingDecision },
+      showSaveButton,
+      branch,
+      isFirstTime,
+      isTutorial,
+      morningInsightPresent: !!morningInsight,
+      ...(saveHiddenReason ? { saveHiddenReason } : {}),
+    })
+  }, [
+    hasPlan,
+    saving,
+    editingTasks,
+    editingDecision,
+    morningInsight,
+    loading,
+    isFirstTime,
+    showFirstTimeInsightCTA,
+    isTutorial,
+  ])
 
   const generateFreshPostMorningInsight = useCallback(async () => {
+    if (!morningInsightsReady) return
     console.log('🚨 DIAGNOSTIC - Tasks in state when generating insight:', JSON.stringify(tasks.map((t) => ({
       description: t.description,
       whyThisMatters: t.whyThisMatters,
@@ -664,21 +848,43 @@ export default function MorningPage() {
     } catch (err) {
       console.error('[MORNING] Failed to stream fresh insight:', err)
     }
-  }, [planDate, logBannedPhrasesIfAny, startStream, loadTodayPlan, tasks, decision])
+  }, [planDate, logBannedPhrasesIfAny, startStream, loadTodayPlan, tasks, decision, morningInsightsReady])
 
   useEffect(() => {
+    let cancelled = false
     const checkAuth = async () => {
       const session = await getUserSession()
       if (!session) {
-        router.push('/auth/login')
+        if (!cancelled) router.push('/auth/login')
         return
       }
+      if (cancelled) return
       setUserTier(session.user.tier || 'beta')
-      
+
       // Load user's goal for personalized action plans
       const goal = await getUserGoal(session.user.id)
+      if (cancelled) return
       setUserGoal(goal)
-      
+
+      const bundle = await fetchUserProfileBundle()
+      if (cancelled) return
+      const row = bundle
+        ? { created_at: bundle.created_at ?? undefined, timezone: bundle.timezone ?? null }
+        : null
+      const tz = getUserTimezoneFromProfile(row)
+      const dActive = getUserDaysActiveCalendar(row?.created_at ?? null, tz)
+      setAccountDaysActive(dActive)
+
+      const dwe = await getDaysWithEntries(session.user.id, supabase)
+      const { count: evCount } = await supabase
+        .from('evening_reviews')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', session.user.id)
+      if (cancelled) return
+      const ev = evCount ?? 0
+      setInsightActivityGate({ dwe, ev })
+      const insightsUnlockedNow = isMorningInsightsUnlocked(dwe, ev)
+
       const features = getFeatureAccess({
         tier: session.user.tier,
         pro_features_enabled: session.user.pro_features_enabled,
@@ -689,8 +895,8 @@ export default function MorningPage() {
       if (tutorialParam === 'true' || tutorialParam === 'start') {
         return
       }
-      
-      if (features.dailyMorningPrompt && planDate) {
+
+      if (features.dailyMorningPrompt && planDate && insightsUnlockedNow) {
         // Fetch insights for THIS EXACT DATE ONLY (no cross-day fallback)
         try {
           console.log('[MORNING LOAD] Looking for morning prompt for date:', planDate, 'user:', session.user.id)
@@ -769,37 +975,75 @@ export default function MorningPage() {
           }
           
           console.log('[checkAuth] Setting insights - morning:', !!morningInsightToShow, 'postMorning:', !!postMorningInsightToShow)
+          if (cancelled) return
           setMorningInsight(morningInsightToShow)
           setPostMorningInsight(postMorningInsightToShow)
         } catch (error) {
           console.error('[MORNING LOAD] Exception:', error)
         }
+      } else if (features.dailyMorningPrompt && planDate && !insightsUnlockedNow) {
+        if (cancelled) return
+        setMorningInsight(null)
+        setPostMorningInsight(null)
+        setPostMorningInsightId(null)
       }
     }
-    checkAuth()
+    void checkAuth()
+    return () => {
+      cancelled = true
+    }
   }, [router, planDate, searchParams])
 
   useEffect(() => {
-    if (planDate) {
-      loadTodayPlan()
+    const onSync = () => {
+      void (async () => {
+        const session = await getUserSession()
+        if (!session) return
+        const dwe = await getDaysWithEntries(session.user.id, supabase)
+        const { count } = await supabase
+          .from('evening_reviews')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', session.user.id)
+        setInsightActivityGate({ dwe, ev: count ?? 0 })
+      })()
     }
+    window.addEventListener('data-sync-request', onSync)
+    return () => window.removeEventListener('data-sync-request', onSync)
+  }, [])
+
+  useEffect(() => {
+    if (!planDate) return
+    const ac = new AbortController()
+    void loadTodayPlan({ signal: ac.signal })
+    return () => ac.abort()
   }, [planDate, retryTrigger, loadTodayPlan])
 
-  const fetchMonthStatus = useCallback(async (month: Date) => {
+  const fetchMonthStatus = useCallback(async (month: Date, signal?: AbortSignal) => {
     const session = await getUserSession()
     if (!session) return
     const monthStr = format(month, 'yyyy-MM')
-    const res = await fetch(`/api/user/month-status?month=${monthStr}`, { credentials: 'include' })
-    if (res.ok) {
-      const data = (await res.json()) as Record<string, DayStatus>
-      setMonthStatus(data)
+    try {
+      const res = await fetch(`/api/user/month-status?month=${monthStr}`, {
+        credentials: 'include',
+        signal,
+      })
+      if (signal?.aborted) return
+      if (res.ok) {
+        const data = (await res.json()) as Record<string, DayStatus>
+        if (signal?.aborted) return
+        setMonthStatus(data)
+      }
+    } catch (e) {
+      if (signal?.aborted || (e instanceof Error && e.name === 'AbortError')) return
     }
   }, [])
 
   useEffect(() => {
     if (!planDate) return
     const month = startOfMonth(new Date(planDate + 'T12:00:00'))
-    fetchMonthStatus(month)
+    const ac = new AbortController()
+    void fetchMonthStatus(month, ac.signal)
+    return () => ac.abort()
   }, [planDate, fetchMonthStatus])
 
   // First-time flow: ensure exactly 3 tasks for simplified form
@@ -832,6 +1076,16 @@ export default function MorningPage() {
     },
     [fireFunnelStep, isTutorial, tasks, markSeenMorningTour]
   )
+
+  /** First-morning flow: at most one needle mover across tasks with text. */
+  const selectFirstMorningNeedleMover = useCallback((taskId: string) => {
+    setTasks((prev) =>
+      prev.map((t) => ({
+        ...t,
+        needleMover: t.id === taskId ? true : t.description.trim() ? false : null,
+      }))
+    )
+  }, [])
 
   const suggestedMaxTasks = planningMode === 'light' ? 2 : 3
   const maxTasksForDisplay = 20 // Allow up to 20 tasks; show Add Task until then
@@ -1009,6 +1263,15 @@ export default function MorningPage() {
 
     console.log('🔴 [SAVE] All checks passed, proceeding to Supabase...')
 
+    const writeAuth = await refreshSessionForWrite()
+    if (!writeAuth.ok) {
+      setSaving(false)
+      setError(writeAuth.message)
+      window.dispatchEvent(new CustomEvent('toast', { detail: { message: writeAuth.message, type: 'error' } }))
+      router.push('/auth/login')
+      return
+    }
+
     try {
       // Database allows unlimited tasks (migration 002)
       const tasksToSave = filteredTasks.map((t, i) => ({
@@ -1023,55 +1286,90 @@ export default function MorningPage() {
         completed: t.completed || false,
       }))
 
-      console.log('🔴 [SAVE] Calling Supabase: delete + insert tasks')
-      await supabase.from('morning_tasks').delete().eq('plan_date', planDate).eq('user_id', session.user.id)
-      if (tasksToSave.length > 0) {
-        const { data: insertedTasks, error: insertTasksError } = await supabase
+      const persistMorningTasks = async () => {
+        console.log('🔴 [SAVE] Calling Supabase: delete + insert tasks')
+        const { error: delErr } = await supabase
           .from('morning_tasks')
-          .insert(tasksToSave)
-          .select()
-        console.log('🔴 [SAVE] Supabase insert result:', { inserted: insertedTasks?.length, error: insertTasksError?.message })
-        if (insertTasksError) {
-          console.error('Error inserting tasks:', insertTasksError)
-          throw insertTasksError
+          .delete()
+          .eq('plan_date', planDate)
+          .eq('user_id', session.user.id)
+        if (delErr) return { data: null as { id: string }[] | null, error: delErr }
+        if (tasksToSave.length === 0) return { data: [] as { id: string }[], error: null }
+        return supabase.from('morning_tasks').insert(tasksToSave).select()
+      }
+
+      let { data: insertedTasks, error: insertTasksError } = await persistMorningTasks()
+      if (insertTasksError && isRlsOrAuthPermissionError(insertTasksError)) {
+        const again = await refreshSessionForWrite()
+        if (again.ok) {
+          ;({ data: insertedTasks, error: insertTasksError } = await persistMorningTasks())
         }
-        if (insertedTasks && insertedTasks.length > 0) {
-          setTasks((prev) =>
-            prev.map((t, i) => ({
-              ...t,
-              dbId: insertedTasks[i]?.id,
-            }))
-          )
-          if (!planCreatedAt) setPlanCreatedAt(new Date())
-          setPlanUpdatedAt(new Date())
-        }
+      }
+      console.log('🔴 [SAVE] Supabase insert result:', {
+        inserted: insertedTasks?.length,
+        errorMessage: insertTasksError?.message,
+        errorCode: (insertTasksError as { code?: string })?.code,
+      })
+      if (insertTasksError) {
+        const e = insertTasksError as { message?: string; code?: string; details?: string; hint?: string }
+        console.error('Error inserting tasks (detailed):', {
+          message: e?.message,
+          code: e?.code,
+          details: e?.details,
+          hint: e?.hint,
+          error: insertTasksError,
+        })
+        throw insertTasksError
+      }
+      if (insertedTasks && insertedTasks.length > 0) {
+        setTasks((prev) =>
+          prev.map((t, i) => ({
+            ...t,
+            dbId: insertedTasks![i]?.id,
+          }))
+        )
+        if (!planCreatedAt) setPlanCreatedAt(new Date())
+        setPlanUpdatedAt(new Date())
       }
 
       if (decision.decision.trim()) {
         if (decisionDbId) {
-          const { error: updateError } = await supabase
-            .from('morning_decisions')
-            .update({
-              decision: decision.decision.trim(),
-              decision_type: decision.decisionType,
-              why_this_decision: decision.whyThisDecision.trim() || null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', decisionDbId)
+          const runDecisionUpdate = () =>
+            supabase
+              .from('morning_decisions')
+              .update({
+                decision: decision.decision.trim(),
+                decision_type: decision.decisionType,
+                why_this_decision: decision.whyThisDecision.trim() || null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', decisionDbId)
+          let { error: updateError } = await runDecisionUpdate()
+          if (updateError && isRlsOrAuthPermissionError(updateError)) {
+            const again = await refreshSessionForWrite()
+            if (again.ok) ({ error: updateError } = await runDecisionUpdate())
+          }
           if (updateError) throw updateError
         } else {
-          await supabase.from('morning_decisions').delete().eq('plan_date', planDate).eq('user_id', session.user.id)
-          const { data: insertedDec, error: insertDecError } = await supabase
-            .from('morning_decisions')
-            .insert({
-              user_id: session.user.id,
-              plan_date: planDate,
-              decision: decision.decision.trim(),
-              decision_type: decision.decisionType,
-              why_this_decision: decision.whyThisDecision.trim() || null,
-            })
-            .select()
-            .single()
+          const persistDecision = async () => {
+            await supabase.from('morning_decisions').delete().eq('plan_date', planDate).eq('user_id', session.user.id)
+            return supabase
+              .from('morning_decisions')
+              .insert({
+                user_id: session.user.id,
+                plan_date: planDate,
+                decision: decision.decision.trim(),
+                decision_type: decision.decisionType,
+                why_this_decision: decision.whyThisDecision.trim() || null,
+              })
+              .select()
+              .single()
+          }
+          let { data: insertedDec, error: insertDecError } = await persistDecision()
+          if (insertDecError && isRlsOrAuthPermissionError(insertDecError)) {
+            const again = await refreshSessionForWrite()
+            if (again.ok) ({ data: insertedDec, error: insertDecError } = await persistDecision())
+          }
           if (insertDecError) throw insertDecError
           if (insertedDec) {
             setDecisionDbId(insertedDec.id)
@@ -1080,6 +1378,23 @@ export default function MorningPage() {
         }
         setPlanUpdatedAt(new Date())
       }
+
+      const runPlanCommit = () =>
+        supabase.from('morning_plan_commits').upsert(
+          {
+            user_id: session.user.id,
+            plan_date: planDate,
+            committed_at: new Date().toISOString(),
+            original_task_count: tasksToSave.length,
+          },
+          { onConflict: 'user_id,plan_date' }
+        )
+      let { error: planCommitError } = await runPlanCommit()
+      if (planCommitError && isRlsOrAuthPermissionError(planCommitError)) {
+        const again = await refreshSessionForWrite()
+        if (again.ok) ({ error: planCommitError } = await runPlanCommit())
+      }
+      if (planCommitError) throw planCommitError
 
       // For first-time flow, don't set hasPlan yet — stay in simplified view until insight/modal
       if (!isFirstTime) {
@@ -1090,6 +1405,9 @@ export default function MorningPage() {
 
       window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Plan saved!', type: 'success' } }))
       console.log('🔴 [SAVE] DB save complete, starting insight generation...')
+
+      // Calendar reminder nudge (first 3 times only) unless already set in profile
+      maybeShowCalendarReminder(session.user.id)
 
       // Tutorial mode: stay on morning page, show insight area step, then completion modal
       if (isTutorial) {
@@ -1104,7 +1422,7 @@ export default function MorningPage() {
           tier: session.user.tier,
           pro_features_enabled: session.user.pro_features_enabled,
         })
-        if (features.dailyPostMorningPrompt) {
+        if (features.dailyPostMorningPrompt && morningInsightsReady) {
           try {
             await startStream(
               {
@@ -1259,7 +1577,7 @@ export default function MorningPage() {
       trackJourneyStep('saved_morning', { task_count: tasksToSave.length })
 
       console.log('[MORNING PLAN SAVE] dailyPostMorningPrompt:', features.dailyPostMorningPrompt)
-      if (features.dailyPostMorningPrompt) {
+      if (features.dailyPostMorningPrompt && morningInsightsReady) {
         try {
           console.log('🚨 DIAGNOSTIC - Tasks just saved to DB (API will fetch these):', JSON.stringify(tasksToSave.map((t) => ({ description: t.description, needle_mover: t.needle_mover })), null, 2))
           console.log('🚨 DIAGNOSTIC - Decision just saved:', decision.decision ? { decision: decision.decision, decisionType: decision.decisionType, whyThisDecision: decision.whyThisDecision } : 'none')
@@ -1301,7 +1619,7 @@ export default function MorningPage() {
                 console.error('❌ [INSIGHT SAVE] No session - cannot save insight')
                 window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Session expired. Please refresh and try again.', type: 'error' } }))
                 loadTodayPlan({ silent: true })
-                if (isFirstTime) setShowFirstTimeModal(true)
+                if (isFirstTime) setFirstSparkCelebration(true)
                 return
               }
 
@@ -1384,7 +1702,7 @@ export default function MorningPage() {
               const handleRetry = async () => {
                 const { primaryFailed: pf, fallbackFailed: ff } = await performSave()
                 loadTodayPlan({ silent: true })
-                if (isFirstTime) setShowFirstTimeModal(true)
+                if (isFirstTime) setFirstSparkCelebration(true)
                 if (!pf) {
                   window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
                 } else if (pf && !ff) {
@@ -1398,7 +1716,7 @@ export default function MorningPage() {
 
               const { primaryFailed, fallbackFailed } = await performSave()
               loadTodayPlan({ silent: true })
-              if (isFirstTime) setShowFirstTimeModal(true)
+              if (isFirstTime) setFirstSparkCelebration(true)
 
               if (!primaryFailed) {
                 window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Insight saved', type: 'success' } }))
@@ -1419,15 +1737,18 @@ export default function MorningPage() {
             setPostMorningInsight(
               "You're focusing on what matters today. That's not random — it's where your energy wants to go."
             )
-            setShowFirstTimeModal(true)
+            setFirstSparkCelebration(true)
           }
         }
       } else if (isFirstTime) {
         setPostMorningInsight("You're focusing on what matters today. That's not random — it's where your energy wants to go.")
-        setShowFirstTimeModal(true)
+        setFirstSparkCelebration(true)
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to save. Please try again.'
+      const maybeMessage =
+        err && typeof err === 'object' && 'message' in err ? (err as { message?: string }).message : undefined
+      const errorMessage =
+        maybeMessage || (err instanceof Error ? err.message : 'Failed to save. Please try again.')
       console.error('🔴 [SAVE] ERROR in save:', {
         error: err,
         message: errorMessage,
@@ -1447,6 +1768,23 @@ export default function MorningPage() {
   useEffect(() => {
     savePlanRef.current = savePlan
   })
+
+  useEffect(() => {
+    if (!(isFirstTime && !hasPlan && showFirstTimeInsightCTA)) return
+    if (typeof window === 'undefined') return
+    window.scrollTo(0, 0)
+  }, [isFirstTime, hasPlan, showFirstTimeInsightCTA])
+
+  const showMicroLessonToast = useCallback(async (fallback: string) => {
+    try {
+      const res = await fetch('/api/micro-lesson?location=morning', { credentials: 'include' })
+      const json = await res.json()
+      const msg = (json?.lesson?.message as string | undefined) ?? fallback
+      window.dispatchEvent(new CustomEvent('toast', { detail: { message: msg, type: 'success' } }))
+    } catch {
+      window.dispatchEvent(new CustomEvent('toast', { detail: { message: fallback, type: 'success' } }))
+    }
+  }, [])
 
   const toggleTaskCompletion = async (taskId: string, currentCompleted: boolean) => {
     const task = tasks.find((t) => t.id === taskId)
@@ -1469,6 +1807,9 @@ export default function MorningPage() {
       setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, completed: currentCompleted } : t)))
     } else {
       setPlanUpdatedAt(new Date())
+      if (newCompleted) {
+        void showMicroLessonToast("Task done. That's one brick in the wall you're building.")
+      }
       fetch('/api/analytics/feature-usage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1485,11 +1826,11 @@ export default function MorningPage() {
   if (loading) {
     return (
       <div className="max-w-3xl mx-auto px-4 md:px-5 py-8 pt-24">
-        <LoadingSpinner
+        <LoadingWithMicroLesson
           message="Mrs. Deer, your AI companion is thinking..."
-          showMrsDeer={true}
           onRetry={() => setRetryTrigger((t) => t + 1)}
           timeoutMs={8000}
+          location="morning"
         />
       </div>
     )
@@ -1500,42 +1841,72 @@ export default function MorningPage() {
     // After save, show Mrs. Deer insight CTA while waiting for insight (or modal when ready)
     if (showFirstTimeInsightCTA) {
       return (
-        <div className="max-w-2xl mx-auto px-4 md:px-5 py-8" style={{ paddingTop: spacing['xl'] }}>
-          <div className="p-6 rounded-xl border-l-4 border-[#ef725c] bg-[#152b50]/5 dark:bg-[#152b50]/20">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-              🦌 Mrs. Deer is reading your tasks...
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              She&apos;s looking for:
-            </p>
-            <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1 mb-4 list-disc list-inside">
-              <li>What themes are emerging today</li>
-              <li>Where your energy naturally wants to go</li>
-              <li>One question to ask you tomorrow</li>
-            </ul>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              This takes just a moment.
-            </p>
-            {postMorningInsight ? (
-              <button
-                type="button"
-                onClick={() => setShowFirstTimeModal(true)}
-                className="px-4 py-2 rounded-lg font-medium text-white hover:opacity-90 transition"
-                style={{ backgroundColor: colors.coral.DEFAULT }}
-              >
-                See what she noticed →
-              </button>
-            ) : (
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <span className="inline-block w-4 h-4 rounded-full border-2 border-[#ef725c] border-t-transparent animate-spin" />
-                Generating your insight...
-              </div>
-            )}
+        <div className="min-h-[100svh] md:min-h-[100dvh] overflow-y-auto">
+          <div
+            className="mx-auto w-full max-w-2xl px-4 md:px-5 py-4 sm:py-6 flex items-start justify-center"
+            style={{ paddingTop: spacing['xl'] }}
+          >
+            <div className="w-full p-4 sm:p-6 rounded-xl border-l-4 border-[#ef725c] bg-[#152b50]/5 dark:bg-[#152b50]/20">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                🦌 Mrs. Deer is reading your tasks...
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                She&apos;s looking for:
+              </p>
+              <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1 mb-4 list-disc list-inside">
+                <li>What themes are emerging today</li>
+                <li>Where your energy naturally wants to go</li>
+                <li>One question to ask you tomorrow</li>
+              </ul>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                This takes just a moment.
+              </p>
+              {postMorningInsight ? (
+                <button
+                  type="button"
+                  onClick={() => setShowFirstDayBadgeModal(true)}
+                  className="px-4 py-2 rounded-lg font-medium text-white hover:opacity-90 transition"
+                  style={{ backgroundColor: colors.coral.DEFAULT }}
+                >
+                  See what she noticed →
+                </button>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <span className="inline-block w-4 h-4 rounded-full border-2 border-[#ef725c] border-t-transparent animate-spin" />
+                  Generating your insight...
+                </div>
+              )}
+            </div>
           </div>
-          <FirstTimeSuccessModal
-            isOpen={showFirstTimeModal}
-            onClose={() => setShowFirstTimeModal(false)}
+          {!isFirstTime && (
+            <FirstTimeSuccessModal
+              isOpen={showFirstTimeModal}
+              onClose={() => setShowFirstTimeModal(false)}
+              insight={postMorningInsight}
+            />
+          )}
+          <FirstDayBadgeModal
+            isOpen={showFirstDayBadgeModal}
+            onClose={() => setShowFirstDayBadgeModal(false)}
+            onContinue={() => {
+              setShowFirstDayBadgeModal(false)
+              setShowPostMorningReminderSetup(true)
+            }}
             insight={postMorningInsight}
+          />
+          <ReminderSetupScreen
+            isOpen={showPostMorningReminderSetup}
+            onComplete={() => {
+              setShowPostMorningReminderSetup(false)
+              setShowUpcomingUnlocksTeaser(true)
+            }}
+          />
+          <UpcomingUnlocksTeaser
+            isOpen={showUpcomingUnlocksTeaser}
+            onGotIt={() => {
+              setShowUpcomingUnlocksTeaser(false)
+              router.push('/dashboard')
+            }}
           />
         </div>
       )
@@ -1579,8 +1950,40 @@ export default function MorningPage() {
                   className="mt-2 w-full px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-[#152b50] focus:border-transparent text-sm"
                 />
               </details>
+              {tasks[i]?.description?.trim() ? (
+                <label className="flex items-start gap-2 mt-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="first-morning-needle"
+                    className="mt-1 border-gray-300 dark:border-gray-600"
+                    style={{ accentColor: colors.coral.DEFAULT }}
+                    checked={tasks[i]?.needleMover === true}
+                    onChange={() => tasks[i]?.id && selectFirstMorningNeedleMover(tasks[i].id)}
+                  />
+                  <span>This would make today feel like progress (my needle mover)</span>
+                </label>
+              ) : null}
             </div>
           ))}
+
+          {(() => {
+            const validFirst = tasks.filter((t) => t.description.trim())
+            const hasNeedle = validFirst.some((t) => t.needleMover === true)
+            const showNudge = validFirst.length > 0 && (validFirst.length < 2 || !hasNeedle)
+            if (!showNudge) return null
+            return (
+              <div
+                className="flex gap-3 p-4 border-2 bg-[#FFF0EC] dark:bg-[#EF725C]/10 border-[#EF725C]/50 dark:border-[#F28771]/40"
+                style={{ borderRadius: 0 }}
+              >
+                <MrsDeerAvatar expression="encouraging" size="small" className="shrink-0" />
+                <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed italic">
+                  Not sure what your needle mover is today? That&apos;s okay. Even naming one small thing counts.
+                  What&apos;s one thing that would make today feel like progress?
+                </p>
+              </div>
+            )
+          })()}
 
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -1632,74 +2035,97 @@ export default function MorningPage() {
           </button>
         </div>
 
-        <FirstTimeSuccessModal
-          isOpen={showFirstTimeModal}
-          onClose={() => setShowFirstTimeModal(false)}
-          insight={postMorningInsight}
-        />
+        {!isFirstTime && (
+          <FirstTimeSuccessModal
+            isOpen={showFirstTimeModal}
+            onClose={() => setShowFirstTimeModal(false)}
+            insight={postMorningInsight}
+          />
+        )}
       </div>
     )
   }
 
   const tasksCompleted = tasks.filter((t) => t.completed).length
 
+  const minMorningDateStr = format(subDays(new Date(), 30), 'yyyy-MM-dd')
+  const maxMorningDateStr = format(subDays(new Date(), -1), 'yyyy-MM-dd')
+  const todayStrNav = format(new Date(), 'yyyy-MM-dd')
+  const isDesktopSidebar = !isMobile && !!planDate
+
   return (
-    <div 
-      className="max-w-3xl mx-auto px-4 md:px-5 py-8 transition-all duration-200"
-      style={{ paddingTop: spacing['xl'] }}
-    >
-      <FirstTimeSuccessModal
-        isOpen={showFirstTimeModal}
-        onClose={() => setShowFirstTimeModal(false)}
-        insight={postMorningInsight}
-      />
+    <div className={isDesktopSidebar ? 'flex min-h-screen' : undefined}>
+      {isDesktopSidebar ? (
+        <aside
+          className="flex w-64 shrink-0 min-h-screen flex-col border-r border-white/10 bg-transparent"
+          aria-label="Morning date navigation"
+        >
+          <PageSidebar
+            variant="morning"
+            title="Morning Plan"
+            subtitle="Plan your day"
+            titleIcon={<Sun className="h-6 w-6 text-white" aria-hidden />}
+            selectedDate={planDate}
+            minDate={minMorningDateStr}
+            maxDate={maxMorningDateStr}
+            todayStr={todayStrNav}
+            onSelectDate={(date) => {
+              setPlanDate(date)
+              router.push(`/morning?date=${date}`)
+            }}
+            onPickDate={() => {
+              setDisplayedMonth(startOfMonth(new Date(planDate + 'T12:00:00')))
+              setCalendarOpen(true)
+            }}
+          />
+        </aside>
+      ) : null}
+      <div
+        className={
+          isDesktopSidebar
+            ? 'flex min-h-0 min-h-screen flex-1 flex-col overflow-y-auto bg-gray-50 dark:bg-gray-950'
+            : 'max-w-3xl mx-auto px-4 md:px-5 pb-8 transition-all duration-200 pt-0'
+        }
+      >
+        <div className={isDesktopSidebar ? 'mx-auto max-w-3xl px-4 pb-8 pt-4 md:px-5' : 'contents'}>
+      {!isFirstTime && (
+        <FirstTimeSuccessModal
+          isOpen={showFirstTimeModal}
+          onClose={() => setShowFirstTimeModal(false)}
+          insight={postMorningInsight}
+        />
+      )}
       {isTutorial && <TutorialProgress currentStep={2} />}
 
-      <MicroLesson page="morning" />
+      {planDate && isMobile ? (
+        <>
+          <PageHeader
+            variant="morning"
+            title="Morning Plan"
+            titleIcon={<Sun className="w-6 h-6 text-white" aria-hidden />}
+            subtitle={format(new Date(planDate + 'T12:00:00'), 'EEEE, MMMM d, yyyy')}
+            onCalendarClick={() => {
+              setDisplayedMonth(startOfMonth(new Date(planDate + 'T12:00:00')))
+              setCalendarOpen(true)
+            }}
+          />
+          <WeekNavigator
+            variant="morning"
+            selectedDate={planDate}
+            minDate={format(subDays(new Date(), 30), 'yyyy-MM-dd')}
+            maxDate={format(addYears(new Date(), 5), 'yyyy-MM-dd')}
+            monthStatus={monthStatus}
+            selectedPillClassName="bg-[#152b50]"
+            onSelectDate={(date) => {
+              setPlanDate(date)
+              router.push(`/morning?date=${date}`)
+            }}
+          />
+        </>
+      ) : null}
 
-      {/* Header with Mrs. Deer - responsive: avatar above on mobile, left on desktop */}
       <div className="mb-8" style={{ marginBottom: spacing['2xl'] }}>
-        <div className="flex flex-col md:flex-row md:items-start gap-4 mb-4">
-          <div className="flex justify-center md:justify-start">
-            <MrsDeerAvatar expression="thoughtful" size="mobile" className="md:hidden" />
-            <MrsDeerAvatar expression="thoughtful" size="large" className="hidden md:block" />
-          </div>
-          <div className="flex-1 text-center md:text-left">
-            <h1 
-              className="font-bold mb-2 text-[#152B50] dark:text-white"
-              style={{ 
-                fontSize: typography.pageTitle.fontSize, 
-                fontWeight: typography.pageTitle.fontWeight,
-                lineHeight: typography.pageTitle.lineHeight,
-              }}
-            >
-              Morning Plan
-            </h1>
-            <p className="mb-4 text-gray-600 dark:text-gray-300">
-              {hasPlan ? (isToday(new Date(planDate)) ? "Today's Plan" : `Plan for ${format(new Date(planDate), 'MMMM d, yyyy')}`) : 'Ready to own the day? Let\'s plan your focus.'}
-            </p>
-          </div>
-        </div>
-        <DateNavigator
-          currentDate={planDate}
-          onPrev={() => {
-            const prev = format(subDays(new Date(planDate + 'T12:00:00'), 1), 'yyyy-MM-dd')
-            if (prev >= format(subDays(new Date(), 30), 'yyyy-MM-dd')) setPlanDate(prev)
-          }}
-          onNext={() => {
-            const next = format(subDays(new Date(planDate + 'T12:00:00'), -1), 'yyyy-MM-dd')
-            const maxStr = format(subDays(new Date(), -1), 'yyyy-MM-dd')
-            if (next <= maxStr) setPlanDate(next)
-          }}
-          onDateClick={() => {
-            setDisplayedMonth(startOfMonth(new Date(planDate + 'T12:00:00')))
-            setCalendarOpen(true)
-          }}
-          status={monthStatus[planDate] ?? 'empty'}
-          canGoBack={planDate > format(subDays(new Date(), 30), 'yyyy-MM-dd')}
-          canGoForward={planDate < format(subDays(new Date(), -1), 'yyyy-MM-dd')}
-        />
-        <CalendarModal
+        <DatePickerModal
           isOpen={calendarOpen}
           onClose={() => setCalendarOpen(false)}
           currentMonth={displayedMonth}
@@ -1713,7 +2139,7 @@ export default function MorningPage() {
             router.push(`/morning?date=${date}`)
           }}
           monthStatus={monthStatus}
-          maxDate={subDays(new Date(), -1)}
+          selectedDate={planDate || undefined}
         />
         <ReflectionPopup
           isOpen={showReflectionPopup && !!reflectionPopupVariant}
@@ -1750,6 +2176,39 @@ export default function MorningPage() {
         )}
       </div>
 
+      {/* Morning AI: after first full day (activity + evening) — matches Founder DNA journey */}
+      {insightActivityGate !== null && !morningInsightsReady && (
+        <Card className="mb-6 border-amber-200/80 dark:border-amber-900/40 bg-amber-50/40 dark:bg-amber-950/20">
+          <CardContent className="pt-6 pb-6">
+            <div className="flex items-start gap-3">
+              <Lock className="w-5 h-5 text-[#ef725c] shrink-0 mt-0.5" aria-hidden />
+              <div>
+                <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {insightActivityGate.dwe < 1
+                    ? 'Morning insights after your first founder day'
+                    : 'Almost there — one evening to go'}
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mt-2 leading-relaxed">
+                  {insightActivityGate.dwe < 1 ? (
+                    <>
+                      Mrs. Deer&apos;s personalized morning and post-plan insights unlock after you have{' '}
+                      <strong>one day with a morning plan or evening reflection</strong>, then{' '}
+                      <strong>complete your first evening review</strong>. That first insight for tomorrow morning is
+                      generated when you finish the evening.
+                    </>
+                  ) : (
+                    <>
+                      You&apos;ve started your rhythm. Complete <strong>your first evening reflection</strong> to unlock
+                      Mrs. Deer&apos;s morning message and post-plan insight — including tomorrow&apos;s tailored opening.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Mrs. Deer AI Coach - Morning prompt: pre-generated from previous evening, shown at TOP before plan */}
       {morningInsight && (
         <AICoachPrompt
@@ -1785,9 +2244,7 @@ export default function MorningPage() {
           </CardHeader>
           <CardContent>
             {tasks.length === 0 ? (
-              <p className="text-sm italic text-gray-600 dark:text-gray-300">
-                No tasks planned for today.
-              </p>
+              <EmptyTasks onAddTask={handleAddTask} />
             ) : (
               <div className="space-y-4">
                 {tasks.map((task, index) => (
@@ -1878,7 +2335,14 @@ export default function MorningPage() {
           className="mb-8"
           style={{ marginBottom: spacing['2xl'], borderLeft: `3px solid ${colors.coral.DEFAULT}` }}
         >
-          <CardHeader style={{ padding: spacing['xl'], paddingBottom: spacing.lg }}>
+          <CardHeader
+            style={{
+              paddingTop: spacing['xl'],
+              paddingRight: spacing['xl'],
+              paddingLeft: spacing['xl'],
+              paddingBottom: spacing.lg,
+            }}
+          >
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="flex items-center gap-2">
                 <Target className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
@@ -1930,7 +2394,14 @@ export default function MorningPage() {
       {/* Decision Log */}
       {hasPlan && !editingDecision && decision.decision && decision.decision.trim() ? (
         <Card className="mb-8 bg-gray-50 dark:bg-gray-800" style={{ marginBottom: spacing['2xl'], borderLeft: `4px solid ${colors.navy.DEFAULT}` }}>
-          <CardHeader style={{ padding: spacing['xl'], paddingBottom: spacing.lg }}>
+          <CardHeader
+            style={{
+              paddingTop: spacing['xl'],
+              paddingRight: spacing['xl'],
+              paddingLeft: spacing['xl'],
+              paddingBottom: spacing.lg,
+            }}
+          >
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
                 <Zap className="w-5 h-5" style={{ color: colors.navy.DEFAULT }} />
@@ -2152,9 +2623,12 @@ export default function MorningPage() {
         </Card>
       )}
 
-      {/* Save/Cancel Buttons */}
+      {/* Save/Cancel Buttons — hidden when hasPlan && !editing* (read-only day); user edits via Edit on Power List / Decision */}
       {(editingTasks || editingDecision || !hasPlan) && (
-        <div className="flex gap-3 mb-6 transition-all duration-200">
+        <div
+          className="flex gap-3 mb-6 transition-all duration-200"
+          data-debug="morning-save-row"
+        >
           <Button
             type="button"
             data-debug="morning-save"
@@ -2203,7 +2677,9 @@ export default function MorningPage() {
       )}
 
       {/* Mrs. Deer AI Coach - Plan Review: post-morning insight at BOTTOM, after Power List and Decision Log */}
-      {hasPlan && (postMorningInsight || isStreamingPostMorning || streamingError) && (
+      {hasPlan &&
+        morningInsightsReady &&
+        (postMorningInsight || isStreamingPostMorning || streamingError) && (
         <div data-tutorial="mrs-deer-insight">
           {isStreamingPostMorning && <StreamingIndicator className="mb-4" />}
           <AICoachPrompt
@@ -2348,7 +2824,7 @@ export default function MorningPage() {
                 View Full History
               </Button>
             </Link>
-            <Link href="/evening">
+            <Link href={`/evening?date=${getEffectivePlanDate()}#evening-form`}>
               <Button variant="secondary" size="sm">
                 Evening Review →
               </Button>
@@ -2417,6 +2893,39 @@ export default function MorningPage() {
         </div>
       )}
 
+      <FirstBadgeCelebration
+        isOpen={isFirstTime && showFirstSparkCelebration}
+        onClose={() => {
+          setFirstSparkCelebration(false)
+        }}
+        insight={postMorningInsight}
+      />
+
+      <CalendarReminderModal
+        isOpen={showCalendarReminderModal}
+        reminderTime={calendarReminderTime}
+        onChangeTime={setCalendarReminderTime}
+        onClose={() => setShowCalendarReminderModal(false)}
+        onChooseCalendar={async (type) => {
+          setCalendarReminderType(type)
+          // Consider this "completed": don't nag again
+          if (typeof window !== 'undefined') localStorage.setItem('calendarModalShown', '3')
+          await handleCalendarAdd(type, calendarReminderTime)
+          setShowCalendarReminderModal(false)
+        }}
+        onDontShowAgain={() => {
+          if (typeof window !== 'undefined') localStorage.setItem('calendarModalShown', '3')
+          setShowCalendarReminderModal(false)
+        }}
+        onLater={() => {
+          const count = Number.parseInt(localStorage.getItem('calendarModalShown') || '0', 10) + 1
+          localStorage.setItem('calendarModalShown', String(count))
+          setShowCalendarReminderModal(false)
+        }}
+      />
+
+        </div>
+      </div>
     </div>
   )
 }

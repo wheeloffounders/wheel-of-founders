@@ -23,6 +23,7 @@ import { getFeatureAccess } from '@/lib/features'
 import { trackEvent } from '@/lib/analytics'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import Link from 'next/link'
 import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
 import { MrsDeerMessageBubble } from '@/components/MrsDeerMessageBubble'
 import { MarkdownText } from '@/components/MarkdownText'
@@ -45,7 +46,11 @@ import { CelebrationHeader } from '@/components/weekly/CelebrationHeader'
 import { InsightNavigation } from '@/components/InsightNavigation'
 import { useNewInsights } from '@/lib/hooks/useNewInsights'
 import { colors } from '@/lib/design-tokens'
-import { showRefreshButton, isProduction } from '@/lib/env'
+import { showRefreshButton } from '@/lib/env'
+import { LockedFeature } from '@/components/LockedFeature'
+import { InsightLetterClosing } from '@/components/insights/InsightLetterClosing'
+import { getWeeklyInsightProgress } from '@/lib/progress'
+import { resolveEmailDisplayName } from '@/lib/email/personalization'
 
 const MOOD_LABELS: Record<number, string> = {
   1: 'Tough',
@@ -78,7 +83,6 @@ interface WeeklyData {
   dayData: DayData[]
   eveningInsights: { date: string; text: string }[]
   weeklyPrompt: string | null
-  unseenWinsPattern: string | null
   primaryGoal: string | null
   canRegenerateInsights: boolean
 }
@@ -138,13 +142,22 @@ export default function WeeklyPage() {
   const [autoRepairFailed, setAutoRepairFailed] = useState(false)
   const autoRepairAttemptedRef = useRef(false)
   const { markAsViewed } = useNewInsights()
+  const [insightUnlock, setInsightUnlock] = useState<{ current: number; required: number; isUnlocked: boolean } | null>(
+    null,
+  )
+  const [insightGreetingName, setInsightGreetingName] = useState<string>('Founder')
 
   const lastCompletedWeekStart = format(subWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), 1), 'yyyy-MM-dd')
 
   useEffect(() => {
     const checkAuth = async () => {
       const session = await getUserSession()
-      if (!session) router.push('/auth/login')
+      if (!session) {
+        router.push('/auth/login')
+        return
+      }
+      const p = await getWeeklyInsightProgress(session.user.id)
+      setInsightUnlock(p)
     }
     checkAuth()
   }, [router])
@@ -152,6 +165,7 @@ export default function WeeklyPage() {
   const weekStartParam = searchParams?.get('weekStart')
   // When no weekStart in URL: fetch periods; if last completed week is missing, auto-generate it (root-cause repair), then redirect to latest
   useEffect(() => {
+    if (insightUnlock?.isUnlocked === false) return
     if (weekStartParam || initialRedirectDone) return
     const redirectToLatest = async () => {
       const session = await getUserSession()
@@ -167,16 +181,26 @@ export default function WeeklyPage() {
         if (json.periods) periodsList = json.periods
 
         const lastWeekMissing = periodsList.length === 0 || !periodsList.includes(lastCompletedWeekStart)
-        if (lastWeekMissing && !autoRepairAttemptedRef.current) {
+        // One client-side repair per completed week per tab session (avoids hammering API on every refresh).
+        const autoRepairStorageKey =
+          typeof sessionStorage !== 'undefined'
+            ? `wof_weekly_autorepair_${lastCompletedWeekStart}`
+            : null
+        const alreadyAttemptedThisWeek =
+          autoRepairStorageKey && sessionStorage.getItem(autoRepairStorageKey) === '1'
+
+        if (lastWeekMissing && !autoRepairAttemptedRef.current && !alreadyAttemptedThisWeek) {
           autoRepairAttemptedRef.current = true
+          if (autoRepairStorageKey) sessionStorage.setItem(autoRepairStorageKey, '1')
+
           const genRes = await fetch('/api/weekly-insight/generate-last-week', { method: 'POST', headers })
-          const genJson = await genRes.json()
           if (genRes.ok) {
             res = await fetch('/api/insights/periods?type=weekly', { headers })
             json = await res.json()
             if (json.periods) periodsList = json.periods
             setPeriods(periodsList)
           } else {
+            if (autoRepairStorageKey) sessionStorage.removeItem(autoRepairStorageKey)
             setAutoRepairFailed(true)
           }
         }
@@ -191,12 +215,13 @@ export default function WeeklyPage() {
       }
     }
     redirectToLatest()
-  }, [weekStartParam, initialRedirectDone, router, lastCompletedWeekStart])
+  }, [weekStartParam, initialRedirectDone, router, lastCompletedWeekStart, insightUnlock?.isUnlocked])
   const effectiveWeekStart = weekStartParam && /^\d{4}-\d{2}-\d{2}$/.test(weekStartParam)
     ? weekStartParam
     : format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
 
   useEffect(() => {
+    if (insightUnlock?.isUnlocked === false) return
     // Don't fetch until we've either redirected to latest week or confirmed no periods
     if (!weekStartParam && !initialRedirectDone) return
 
@@ -227,7 +252,7 @@ export default function WeeklyPage() {
         daysCompleted++
       }
 
-      const [tasksRes, emergenciesRes, reviewsRes, decisionsRes, promptsRes, weeklyInsightsRes, profileRes] = await Promise.all([
+      const [tasksRes, emergenciesRes, reviewsRes, decisionsRes, promptsRes, profileRes] = await Promise.all([
         supabase
           .from('morning_tasks')
           .select('plan_date, needle_mover, completed, is_proactive, action_plan')
@@ -264,12 +289,10 @@ export default function WeeklyPage() {
               .maybeSingle()
           : Promise.resolve({ data: null }),
         supabase
-          .from('weekly_insights')
-          .select('unseen_wins_pattern')
-          .eq('user_id', session.user.id)
-          .eq('week_start', startStr)
+          .from('user_profiles')
+          .select('primary_goal_text, is_admin, preferred_name, name, email_address')
+          .eq('id', session.user.id)
           .maybeSingle(),
-        supabase.from('user_profiles').select('primary_goal_text, is_admin').eq('id', session.user.id).maybeSingle(),
       ])
 
       const tasks = tasksRes.data ?? []
@@ -364,6 +387,16 @@ export default function WeeklyPage() {
 
       const primaryGoal = (profileRes.data as { primary_goal_text?: string } | null)?.primary_goal_text ?? null
       const isAdmin = (profileRes.data as { is_admin?: boolean } | null)?.is_admin === true
+      setInsightGreetingName(
+        resolveEmailDisplayName(
+          profileRes.data as {
+            preferred_name?: string | null
+            name?: string | null
+            email_address?: string | null
+          } | null,
+          session.user
+        )
+      )
       const canRegenerate = showRefreshButton
 
       setData({
@@ -389,7 +422,6 @@ export default function WeeklyPage() {
         dayData,
         eveningInsights,
         weeklyPrompt: (promptsRes.data as { prompt_text?: string } | null)?.prompt_text ?? null,
-        unseenWinsPattern: (weeklyInsightsRes.data as { unseen_wins_pattern?: string } | null)?.unseen_wins_pattern ?? null,
         primaryGoal,
         canRegenerateInsights: canRegenerate,
       })
@@ -400,9 +432,10 @@ export default function WeeklyPage() {
     }
 
     fetchWeekData()
-  }, [effectiveWeekStart, weekStartParam, initialRedirectDone, markAsViewed])
+  }, [effectiveWeekStart, weekStartParam, initialRedirectDone, markAsViewed, insightUnlock?.isUnlocked])
 
   useEffect(() => {
+    if (insightUnlock?.isUnlocked === false) return
     const fetchPeriods = async () => {
       const session = await getUserSession()
       if (!session) return
@@ -418,7 +451,7 @@ export default function WeeklyPage() {
       }
     }
     fetchPeriods()
-  }, [effectiveWeekStart])
+  }, [effectiveWeekStart, insightUnlock?.isUnlocked])
 
   useEffect(() => {
     if (!data?.dateRange?.start) return
@@ -628,6 +661,33 @@ export default function WeeklyPage() {
     }
   }
 
+  if (insightUnlock === null) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <div className="flex flex-col items-center justify-center gap-4 py-16">
+          <MrsDeerAvatar expression="thoughtful" size="large" />
+          <p className="text-sm text-gray-600 dark:text-white">Loading…</p>
+          <div className="flex gap-1">
+            <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: colors.coral.DEFAULT }} />
+            <span className="w-2 h-2 rounded-full animate-pulse delay-100" style={{ backgroundColor: colors.coral.DEFAULT }} />
+            <span className="w-2 h-2 rounded-full animate-pulse delay-200" style={{ backgroundColor: colors.coral.DEFAULT }} />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!insightUnlock.isUnlocked) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <LockedFeature
+          type="weekly"
+          progress={{ current: insightUnlock.current, required: insightUnlock.required }}
+        />
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -698,10 +758,6 @@ export default function WeeklyPage() {
                 : 'Week complete'}
             </p>
           </div>
-          <Button variant="outline" onClick={handleCopySummary} className="gap-2 shrink-0">
-            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            {copied ? 'Copied!' : 'Copy Summary'}
-          </Button>
         </div>
         <InsightNavigation
           type="weekly"
@@ -718,6 +774,12 @@ export default function WeeklyPage() {
               : undefined
           }
         />
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          Explore related views:{' '}
+          <Link href="/founder-dna/rhythm" className="text-[#ef725c] hover:underline">Rhythm</Link>,{' '}
+          <Link href="/founder-dna/patterns" className="text-[#ef725c] hover:underline">Patterns</Link>,{' '}
+          <Link href="/founder-dna/journey" className="text-[#ef725c] hover:underline">Journey</Link>.
+        </p>
       </div>
 
       {/* Only show fallback if auto-repair already ran and failed (e.g. cron down + API error) */}
@@ -768,6 +830,7 @@ export default function WeeklyPage() {
           <CelebrationHeader
             quote={generateCelebrationQuote(data.wins, data.lessons)}
             dateRange={`${format(new Date(data.dateRange.start), 'MMM d')} – ${format(new Date(data.dateRange.end), 'MMM d, yyyy')}`}
+            greetingName={insightGreetingName}
           />
 
           {/* 1. Mrs. Deer, your AI companion's insight FIRST (auto-generated or from cron) */}
@@ -901,14 +964,6 @@ export default function WeeklyPage() {
                     )}
                   </div>
                 )}
-                {!isProduction && data.unseenWinsPattern && (
-                  <div className="mt-6 p-4 bg-white/60 dark:bg-gray-800/80 rounded-lg border border-gray-200 dark:border-gray-700">
-                    <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-2">Unseen Wins Pattern</h3>
-                    <MarkdownText className="text-sm leading-relaxed text-gray-900 dark:text-white [&_strong]:font-semibold [&_em]:italic">
-                      {data.unseenWinsPattern}
-                    </MarkdownText>
-                  </div>
-                )}
               </CardContent>
             </Card>
           )}
@@ -1002,6 +1057,7 @@ export default function WeeklyPage() {
             </Card>
           )}
 
+          <InsightLetterClosing cadence="week" className="mt-2" />
         </div>
       )}
 
@@ -1015,6 +1071,12 @@ export default function WeeklyPage() {
             No data for this week yet. Start your Morning Plan and Evening Reviews to build your insights.
           </p>
         )}
+      <div className="pt-4 flex justify-end">
+        <Button variant="outline" onClick={handleCopySummary} className="gap-2">
+          {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+          {copied ? 'Copied!' : 'Copy Summary'}
+        </Button>
+      </div>
     </div>
   )
 }

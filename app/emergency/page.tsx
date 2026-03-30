@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { format, isToday } from 'date-fns'
+import { useState, useEffect, useCallback } from 'react'
+import { format, isToday, startOfMonth, subDays, addYears } from 'date-fns'
 import { Flame, AlertCircle, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -12,12 +12,16 @@ import SpeechToTextInput from '@/components/SpeechToTextInput'
 import { useStreamingInsight } from '@/lib/hooks/useStreamingInsight'
 import { getFeatureAccess } from '@/lib/features'
 import { trackEvent } from '@/lib/analytics'
-import { DateSelector } from '@/components/DateSelector'
+import { PageHeader } from '@/components/ui/PageHeader'
+import { WeekNavigator } from '@/components/ui/WeekNavigator'
+import { DatePickerModal } from '@/components/ui/DatePickerModal'
+import type { DayStatus } from '@/lib/date-utils'
 import { EmergencyCard } from '@/components/EmergencyCard'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
-import { colors, typography, spacing } from '@/lib/design-tokens'
+import { colors, spacing } from '@/lib/design-tokens'
+import { useMediaQuery } from '@/lib/hooks/useMediaQuery'
+import { PageSidebar } from '@/components/layout/PageSidebar'
 
 type Severity = 'hot' | 'warm' | 'contained'
 
@@ -29,6 +33,8 @@ interface Emergency {
   resolved: boolean
   created_at: string
 }
+
+const EMPTY_DAY_STATUS: Record<string, DayStatus> = {}
 
 const SEVERITY_OPTIONS: { value: Severity; label: string; emoji: string }[] = [
   { value: 'hot', label: 'Hot', emoji: '🔥' },
@@ -49,7 +55,27 @@ export default function EmergencyPage() {
   const [emergencyInsightId, setEmergencyInsightId] = useState<string | null>(null)
   const [userTier, setUserTier] = useState<string>('beta')
   const [fireDate, setFireDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const [calendarOpen, setCalendarOpen] = useState(false)
+  const [displayedMonth, setDisplayedMonth] = useState<Date>(() => startOfMonth(new Date()))
+  const [monthStatus, setMonthStatus] = useState<Record<string, DayStatus>>({})
   const { insight: streamingInsight, isStreaming, error: streamingError, startStream } = useStreamingInsight()
+  const isMobile = useMediaQuery('(max-width: 768px)')
+
+  const fetchMonthStatus = useCallback(async (month: Date) => {
+    const session = await getUserSession()
+    if (!session) return
+    const monthStr = format(month, 'yyyy-MM')
+    const res = await fetch(`/api/user/month-status?month=${monthStr}`, { credentials: 'include' })
+    if (res.ok) {
+      const data = (await res.json()) as Record<string, DayStatus>
+      setMonthStatus(data)
+    }
+  }, [])
+
+  useEffect(() => {
+    const month = startOfMonth(new Date(fireDate + 'T12:00:00'))
+    void fetchMonthStatus(month)
+  }, [fireDate, fetchMonthStatus])
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -237,32 +263,90 @@ export default function EmergencyPage() {
     }
   }
 
+  const minFire = format(subDays(new Date(), 30), 'yyyy-MM-dd')
+  const maxFire = format(addYears(new Date(), 5), 'yyyy-MM-dd')
+  const todayStrNav = format(new Date(), 'yyyy-MM-dd')
+  const isDesktopSidebar = !isMobile
+
   return (
-    <div className="max-w-3xl mx-auto px-4 md:px-5 py-8" style={{ paddingTop: spacing['3xl'], paddingBottom: spacing['2xl'] }}>
-      {/* Header with Mrs. Deer - responsive: avatar above on mobile, left on desktop */}
+    <div className={isDesktopSidebar ? 'flex min-h-screen' : undefined}>
+      {isDesktopSidebar ? (
+        <aside
+          className="flex w-64 shrink-0 min-h-screen flex-col border-r border-black/10 bg-transparent"
+          aria-label="Emergency date navigation"
+        >
+          <PageSidebar
+            variant="emergency"
+            title="Firefighter Mode"
+            subtitle="Log emergencies"
+            titleIcon={<Flame className="h-6 w-6 text-white" aria-hidden />}
+            selectedDate={fireDate}
+            minDate={minFire}
+            maxDate={maxFire}
+            todayStr={todayStrNav}
+            onSelectDate={(date) => setFireDate(date)}
+            onPickDate={() => {
+              setDisplayedMonth(startOfMonth(new Date(fireDate + 'T12:00:00')))
+              setCalendarOpen(true)
+            }}
+          />
+        </aside>
+      ) : null}
+      <div
+        className={
+          isDesktopSidebar
+            ? 'flex min-h-0 min-h-screen w-full min-w-0 flex-1 flex-col overflow-y-auto bg-gray-50 dark:bg-gray-950'
+            : 'mx-auto w-full max-w-3xl px-4 pb-8 pt-0 transition-all duration-200 md:px-5'
+        }
+        style={isDesktopSidebar ? undefined : { paddingBottom: spacing['2xl'] }}
+      >
+        <div
+          className={
+            isDesktopSidebar
+              ? 'mx-auto w-full max-w-3xl px-4 pb-8 pt-4 md:px-5'
+              : 'contents'
+          }
+        >
+      {isMobile ? (
+        <>
+          <PageHeader
+            variant="emergency"
+            title="Firefighter Mode"
+            titleIcon={<Flame className="w-6 h-6 text-white" aria-hidden />}
+            subtitle={format(new Date(fireDate + 'T12:00:00'), 'EEEE, MMMM d, yyyy')}
+            onCalendarClick={() => {
+              setDisplayedMonth(startOfMonth(new Date(fireDate + 'T12:00:00')))
+              setCalendarOpen(true)
+            }}
+          />
+          <WeekNavigator
+            variant="emergency"
+            selectedDate={fireDate}
+            minDate={minFire}
+            maxDate={maxFire}
+            monthStatus={monthStatus}
+            selectedPillClassName="bg-[#152b50]"
+            onSelectDate={(date) => setFireDate(date)}
+          />
+        </>
+      ) : null}
+
       <div className="mb-8" style={{ marginBottom: spacing['2xl'] }}>
-        <div className="flex flex-col md:flex-row md:items-start gap-4 mb-4">
-          <div className="flex justify-center md:justify-start">
-            <MrsDeerAvatar expression="empathetic" size="mobile" className="md:hidden" />
-            <MrsDeerAvatar expression="empathetic" size="large" className="hidden md:block" />
-          </div>
-          <div className="flex-1 text-center md:text-left">
-            <h1
-              className="font-bold mb-2 text-gray-900 dark:text-gray-100 dark:text-white"
-              style={{
-                fontSize: typography.pageTitle.fontSize,
-                fontWeight: typography.pageTitle.fontWeight,
-                lineHeight: typography.pageTitle.lineHeight,
-              }}
-            >
-              Firefighter Mode
-            </h1>
-            <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300">
-              {isToday(new Date(fireDate)) ? 'Log urgent tasks that pull you off your Power List' : `Viewing emergencies for ${format(new Date(fireDate), 'MMMM d, yyyy')}`}
-            </p>
-          </div>
-        </div>
-        <DateSelector selectedDate={fireDate} onDateChange={setFireDate} maxDaysBack={30} className="mb-6" />
+        <DatePickerModal
+          isOpen={calendarOpen}
+          onClose={() => setCalendarOpen(false)}
+          currentMonth={displayedMonth}
+          onMonthChange={(month) => {
+            setDisplayedMonth(month)
+            void fetchMonthStatus(month)
+          }}
+          onSelectDate={(date) => {
+            setFireDate(date)
+            setCalendarOpen(false)
+          }}
+          monthStatus={monthStatus}
+          selectedDate={fireDate}
+        />
       </div>
 
       {/* Log Emergency Form - Card with amber accent */}
@@ -396,6 +480,8 @@ export default function EmergencyPage() {
           />
         </>
       )}
+        </div>
+      </div>
     </div>
   )
 }

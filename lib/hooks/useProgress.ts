@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { getUserSession } from '@/lib/auth'
 import {
+  getWeeklyInsightProgress,
   getMonthlyProgress,
   getQuarterlyProgress,
   getNextUnlock,
@@ -11,6 +12,7 @@ import {
 } from '@/lib/progress'
 
 export function useProgress() {
+  const [weekly, setWeekly] = useState<ProgressData | null>(null)
   const [monthly, setMonthly] = useState<ProgressData | null>(null)
   const [quarterly, setQuarterly] = useState<ProgressData | null>(null)
   const [nextUnlock, setNextUnlock] = useState<NextUnlockResult | null>(null)
@@ -24,11 +26,13 @@ export function useProgress() {
         return
       }
       try {
-        const [m, q, n] = await Promise.all([
+        const [w, m, q, n] = await Promise.all([
+          getWeeklyInsightProgress(session.user.id),
           getMonthlyProgress(session.user.id),
           getQuarterlyProgress(session.user.id),
           getNextUnlock(session.user.id),
         ])
+        setWeekly(w)
         setMonthly(m)
         setQuarterly(q)
         setNextUnlock(n)
@@ -41,5 +45,5 @@ export function useProgress() {
     load()
   }, [])
 
-  return { monthly, quarterly, nextUnlock, loading }
+  return { weekly, monthly, quarterly, nextUnlock, loading }
 }

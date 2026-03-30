@@ -5,10 +5,18 @@ import { getServerSupabase } from '@/lib/server-supabase'
 
 export const dynamic = 'force-dynamic'
 
-export type ProgressStatus = 'full' | 'half' | 'empty' | 'future'
+export type ProgressStatus = 'full' | 'half' | 'partial' | 'empty' | 'future'
 
 /** GET /api/user/progress?dates=YYYY-MM-DD,YYYY-MM-DD,...
- * Returns status per date: full (morning+evening), half (morning only), empty, future
+ * Returns status per date:
+ * - full: morning complete + evening review
+ * - half: morning complete, evening not done
+ * - partial: morning started but not committed
+ * - empty: no morning activity
+ * - future: date after today
+ *
+ * Morning complete definition:
+ * - morning_plan_commits row exists for plan_date (committed_at is UTC; do not require same calendar day as plan_date)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -34,16 +42,16 @@ export async function GET(request: NextRequest) {
 
     const db = getServerSupabase()
 
-    const [tasksRes, decisionsRes, reviewsRes] = await Promise.all([
+    const [tasksRes, decisionsRes, reviewsRes, commitsRes] = await Promise.all([
       db
         .from('morning_tasks')
-        .select('plan_date')
+        .select('plan_date, completed')
         .eq('user_id', session.user.id)
         .gte('plan_date', minDate)
         .lte('plan_date', maxDate),
       db
         .from('morning_decisions')
-        .select('plan_date')
+        .select('plan_date, decision')
         .eq('user_id', session.user.id)
         .gte('plan_date', minDate)
         .lte('plan_date', maxDate),
@@ -53,27 +61,64 @@ export async function GET(request: NextRequest) {
         .eq('user_id', session.user.id)
         .gte('review_date', minDate)
         .lte('review_date', maxDate),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- morning_plan_commits projection includes generated-type lag columns
+      (db.from('morning_plan_commits') as any)
+        .select('plan_date, committed_at')
+        .eq('user_id', session.user.id)
+        .gte('plan_date', minDate)
+        .lte('plan_date', maxDate),
     ])
 
-    const morningDates = new Set<string>()
+    const tasksByDate = new Map<string, boolean[]>()
     for (const r of tasksRes.data ?? []) {
-      morningDates.add((r as { plan_date: string }).plan_date)
+      const row = r as { plan_date: string; completed?: boolean | null }
+      const d = row.plan_date
+      const list = tasksByDate.get(d) ?? []
+      list.push(row.completed === true)
+      tasksByDate.set(d, list)
     }
+
+    const decisionTextByDate = new Map<string, string>()
     for (const r of decisionsRes.data ?? []) {
-      morningDates.add((r as { plan_date: string }).plan_date)
+      const row = r as { plan_date: string; decision?: string | null }
+      const text = typeof row.decision === 'string' ? row.decision : ''
+      if (text.trim().length > 0) {
+        decisionTextByDate.set(row.plan_date, text)
+      }
     }
+
     const eveningDates = new Set(
       (reviewsRes.data ?? []).map((r: { review_date: string }) => r.review_date)
     )
+    const morningCommittedDates = new Set<string>()
+    for (const r of (commitsRes.data ?? []) as Array<{ plan_date?: string }>) {
+      const planDate = String(r.plan_date || '').slice(0, 10)
+      if (planDate && /^\d{4}-\d{2}-\d{2}$/.test(planDate)) {
+        morningCommittedDates.add(planDate)
+      }
+    }
+
+    const morningStarted = (dateStr: string): boolean => {
+      if (morningCommittedDates.has(dateStr)) return true
+      const tasks = tasksByDate.get(dateStr) ?? []
+      if (tasks.length > 0) return true
+      return (decisionTextByDate.get(dateStr) ?? '').trim().length > 0
+    }
+
+    const morningComplete = (dateStr: string): boolean => {
+      return morningCommittedDates.has(dateStr)
+    }
 
     const status: Record<string, ProgressStatus> = {}
     for (const dateStr of dateStrings) {
       if (dateStr > todayStr) {
         status[dateStr] = 'future'
-      } else if (morningDates.has(dateStr) && eveningDates.has(dateStr)) {
+      } else if (morningComplete(dateStr) && eveningDates.has(dateStr)) {
         status[dateStr] = 'full'
-      } else if (morningDates.has(dateStr)) {
+      } else if (morningComplete(dateStr)) {
         status[dateStr] = 'half'
+      } else if (morningStarted(dateStr)) {
+        status[dateStr] = 'partial'
       } else {
         status[dateStr] = 'empty'
       }

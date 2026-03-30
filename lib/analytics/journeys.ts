@@ -41,6 +41,56 @@ export async function recordPageView(
   }
 }
 
+export type BatchPageViewInput = {
+  path: string
+  /** Unix ms or ISO string */
+  timestamp?: number | string
+  sessionId?: string | null
+  referrer?: string | null
+  metadata?: Record<string, unknown>
+}
+
+/**
+ * Insert multiple page_views in one round-trip (same rules as recordPageView).
+ */
+export async function recordPageViewsBatch(items: BatchPageViewInput[], userId: string | null) {
+  if (items.length === 0) return { error: null }
+  const db = getServerSupabase()
+  const isUuid = (s: string) => /^[0-9a-f-]{36}$/i.test(s)
+
+  const rows = items.map((item) => {
+    const sessionId = item.sessionId && isUuid(item.sessionId) ? item.sessionId : null
+    const metadata: Record<string, unknown> = { ...(item.metadata ?? {}) }
+    if (item.referrer) metadata.referrer = item.referrer
+    if (item.sessionId && !sessionId) metadata.client_session_id = item.sessionId
+
+    let enteredAt: string
+    if (typeof item.timestamp === 'number' && Number.isFinite(item.timestamp)) {
+      enteredAt = new Date(item.timestamp).toISOString()
+    } else if (typeof item.timestamp === 'string' && item.timestamp) {
+      enteredAt = new Date(item.timestamp).toISOString()
+    } else {
+      enteredAt = new Date().toISOString()
+    }
+
+    return {
+      user_id: userId,
+      session_id: sessionId,
+      path: item.path,
+      entered_at: enteredAt,
+      metadata: Object.keys(metadata).length > 0 ? metadata : null,
+    }
+  })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit page_views
+  const { error } = await (db.from('page_views') as any).insert(rows as any)
+  if (error) {
+    console.error('[analytics/journeys] recordPageViewsBatch failed:', error)
+    return { error }
+  }
+  return { error: null }
+}
+
 /**
  * Analyze user journeys from page_views for the last N days
  * Aggregates paths and drop-off points

@@ -52,7 +52,7 @@ export function TodaysIntention() {
   if (loading) return null
 
   return (
-    <div className="bg-[#f8f4f0] dark:bg-gray-800 p-4 rounded-lg border-l-4 border-[#ef725c]">
+    <div className="bg-orange-50 dark:bg-orange-950/25 p-4 rounded-lg border-l-4 border-[#ef725c]">
       <div className="flex items-start gap-3">
         <Target className="w-5 h-5 text-[#ef725c] mt-0.5 shrink-0" />
         <div className="min-w-0">
