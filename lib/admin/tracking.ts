@@ -10,6 +10,7 @@ import { fetchRecentPathLabelsForUsers } from '@/lib/admin/recent-path-from-page
 import { parseDeviceType } from '@/lib/admin/parse-device-type'
 import { fetchLatestUserAgentsForUsers } from '@/lib/admin/latest-page-view-user-agents'
 import { formatUserLocalClock, formatUserLocalDateTime, getLocalHour } from '@/lib/admin/user-local-time'
+import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezoneFromProfile } from '@/lib/timezone'
 
 /** Internal / family accounts excluded from admin cohort analytics. */
@@ -258,6 +259,33 @@ export function buildShadowSummary(dist: ShadowDistribution): string {
   return `Labeled cohort: ${total} user(s). Mix: ${mix}. Dominant: ${dominant[0]} (${dominant[1]}).`
 }
 
+export type Outreach7dStage = 'pending' | 'sent' | 'opened'
+
+export type Outreach7dSummary = {
+  sentCount: number
+  anyOpened: boolean
+  lastLine: string | null
+  /** Latest send in the 7d window: none → pending; sent but latest not opened → sent; latest has open → opened. */
+  outreachStage: Outreach7dStage
+  latestSentAt: string | null
+  latestOpenedAt: string | null
+  /** User-local short label when opened (profile IANA timezone). */
+  openedAtLabel: string | null
+  /** Morning path + latest send unopened for ≥12h (retention nudge). */
+  retentionRisk: boolean
+}
+
+export const EMPTY_OUTREACH_7D: Outreach7dSummary = {
+  sentCount: 0,
+  anyOpened: false,
+  lastLine: null,
+  outreachStage: 'pending',
+  latestSentAt: null,
+  latestOpenedAt: null,
+  openedAtLabel: null,
+  retentionRisk: false,
+}
+
 export type FounderJourneyCommandCenterPayload = {
   generatedAt: string
   /** Inclusive cohort window by signup date (yyyy-MM-dd). */
@@ -306,11 +334,7 @@ export type FounderJourneyCommandCenterPayload = {
       /** Profile `created_at` ISO (for overnight velocity vs ghosting). */
       profileCreatedAt: string
       /** Resend / communication_logs: emails in last 7d and open signal (admin outreach). */
-      outreach7d: {
-        sentCount: number
-        anyOpened: boolean
-        lastLine: string | null
-      }
+      outreach7d: Outreach7dSummary
     }>
     shadowLegend: Array<{ shadow: ShadowArchetypeName; color: string }>
     /** Count of pulse-batch users per shadow (scatter subset; may differ from cohort shadowDistribution). */
@@ -435,6 +459,55 @@ function formatOutreachLastLine(row: {
       ? `Opened ${formatDistanceToNow(parseISO(row.opened_at), { addSuffix: true })}`
       : 'Not opened'
   return `${label} - Sent ${sentRel} - ${opened}`
+}
+
+function formatOpenedAtShort(iso: string, profileTimezone: string): string {
+  try {
+    const d = parseISO(iso)
+    if (Number.isNaN(d.getTime())) return iso.slice(0, 16)
+    return formatInTimeZone(d, profileTimezone || 'UTC', 'MMM d, h:mm a')
+  } catch {
+    return iso.slice(0, 16)
+  }
+}
+
+export function computeOutreach7dSummary(
+  list: Array<{
+    email_type: string
+    subject: string | null
+    sent_at: string
+    opened_at: string | null
+  }>,
+  recentPath: FlowPathStep[],
+  profileTimezone: string
+): Outreach7dSummary {
+  const inMorningPath = recentPath.some((s) => s.tag === 'Morning')
+  if (list.length === 0) {
+    return { ...EMPTY_OUTREACH_7D }
+  }
+  const last = [...list].sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime())[0]!
+  const anyOpened = list.some((r) => r.opened_at != null && String(r.opened_at).length > 0)
+  const hasOpenedOnLatest = last.opened_at != null && String(last.opened_at).length > 0
+  const outreachStage: Outreach7dStage = hasOpenedOnLatest ? 'opened' : 'sent'
+  const latestOpenedAt = hasOpenedOnLatest ? String(last.opened_at) : null
+  const sentMs = new Date(last.sent_at).getTime()
+  const hoursSinceSent = (Date.now() - sentMs) / 3600000
+  const retentionRisk =
+    inMorningPath && outreachStage === 'sent' && !Number.isNaN(sentMs) && hoursSinceSent >= 12
+
+  return {
+    sentCount: list.length,
+    anyOpened,
+    lastLine: formatOutreachLastLine(last),
+    outreachStage,
+    latestSentAt: last.sent_at,
+    latestOpenedAt,
+    openedAtLabel:
+      latestOpenedAt && profileTimezone
+        ? formatOpenedAtShort(latestOpenedAt, profileTimezone)
+        : null,
+    retentionRisk,
+  }
 }
 
 function firstThreeCalendarDaysFromSignup(signupIso: string): { d0: string; d1: string; d2: string } {
@@ -863,7 +936,7 @@ export async function buildFounderJourneyCommandCenter(
       signupLocalHour: null,
       firstMorningCommittedAt: null,
       profileCreatedAt: u.created_at,
-      outreach7d: { sentCount: 0, anyOpened: false, lastLine: null },
+      outreach7d: { ...EMPTY_OUTREACH_7D },
     })
   }
 
@@ -973,7 +1046,7 @@ export async function buildFounderJourneyCommandCenter(
     sent_at: string
     opened_at: string | null
   }
-  const outreachByUser = new Map<string, { sentCount: number; anyOpened: boolean; lastLine: string | null }>()
+  const commLogsByUser = new Map<string, CommRow[]>()
   const pulseIdsForOutreach = pulsePointsFinal.map((p) => p.userId)
   if (pulseIdsForOutreach.length > 0) {
     const allComm: CommRow[] = []
@@ -988,28 +1061,19 @@ export async function buildFounderJourneyCommandCenter(
       }
       allComm.push(...((data ?? []) as CommRow[]))
     }
-    const grouped = new Map<string, CommRow[]>()
     for (const r of allComm) {
-      if (!grouped.has(r.user_id)) grouped.set(r.user_id, [])
-      grouped.get(r.user_id)!.push(r)
-    }
-    for (const [uid, list] of grouped) {
-      const sentCount = list.length
-      const anyOpened = list.some((r) => r.opened_at != null && String(r.opened_at).length > 0)
-      const last = [...list].sort(
-        (a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
-      )[0]
-      outreachByUser.set(uid, {
-        sentCount,
-        anyOpened,
-        lastLine: last ? formatOutreachLastLine(last) : null,
-      })
+      if (!commLogsByUser.has(r.user_id)) commLogsByUser.set(r.user_id, [])
+      commLogsByUser.get(r.user_id)!.push(r)
     }
   }
 
   const pulsePointsWithOutreach = pulsePointsFinal.map((p) => ({
     ...p,
-    outreach7d: outreachByUser.get(p.userId) ?? { sentCount: 0, anyOpened: false, lastLine: null },
+    outreach7d: computeOutreach7dSummary(
+      commLogsByUser.get(p.userId) ?? [],
+      p.recentPath ?? [],
+      p.profileTimezone ?? 'UTC'
+    ),
   }))
 
   let handheldN = 0

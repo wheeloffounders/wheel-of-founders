@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { flowTagClass, formatDwellSeconds, formatMinutesToFirstMorning } from '@/lib/admin/flow-path-tags'
-import type { FounderJourneyCommandCenterPayload } from '@/lib/admin/tracking'
+import { EMPTY_OUTREACH_7D, type FounderJourneyCommandCenterPayload } from '@/lib/admin/tracking'
 import { formatFallbackDeerAdviceMarkdown } from '@/lib/admin/deer-strategic-advisor'
 import { CoachVerdictBox } from '@/components/admin/CoachVerdictBox'
 import { AdminDashboardHelpBlock } from '@/components/admin/AdminDashboardSectionHelp'
@@ -573,7 +573,7 @@ export default function AdminFounderJourneyCommandCenterPage() {
                           Outreach
                           <InfoTooltip
                             presentation="popover"
-                            text="Count of rows in communication_logs (last 7 days). 👁️ = at least one open tracked via Resend webhook. Hover tooltip = most recent send summary."
+                            text="Last 7 days of communication_logs + Resend webhooks. Pipeline: Pending ⏳ (no sends) → Sent ✅ → Opened 👁️ (open pixel). Amber row = Morning path + sent but unopened for 12+ hours (retention risk). Cell tooltip = latest send summary."
                             className="[&_svg]:h-3 [&_svg]:w-3"
                           />
                         </span>
@@ -632,7 +632,7 @@ export default function AdminFounderJourneyCommandCenterPage() {
                   </thead>
                   <tbody>
                     {data.pulse.points.slice(0, 40).map((p) => {
-                      const outreach = p.outreach7d ?? { sentCount: 0, anyOpened: false, lastLine: null }
+                      const outreach = p.outreach7d ?? EMPTY_OUTREACH_7D
                       const deerVerdict = generateUserStory({
                         userId: p.userId,
                         shadow: p.shadow,
@@ -644,7 +644,19 @@ export default function AdminFounderJourneyCommandCenterPage() {
                         daysSinceSignup: p.daysSinceSignup,
                       })
                       return (
-                      <tr key={p.userId} className="border-b border-gray-100 dark:border-gray-700/60">
+                      <tr
+                        key={p.userId}
+                        className={`border-b border-gray-100 dark:border-gray-700/60${
+                          outreach.retentionRisk
+                            ? ' bg-amber-50/90 dark:bg-amber-950/25'
+                            : ''
+                        }`}
+                        title={
+                          outreach.retentionRisk
+                            ? 'Retention risk: Morning path + latest outreach sent but not opened for 12+ hours.'
+                            : undefined
+                        }
+                      >
                         <td className="py-1 pr-3 truncate max-w-[200px]">{p.email ?? p.userId.slice(0, 8)}</td>
                         <td className="py-1 pr-3 capitalize">(Shadow) {p.shadow}</td>
                         <td className="py-1 pr-3 text-center text-base" title={p.lastDevice ?? 'Unknown'}>
@@ -714,17 +726,53 @@ export default function AdminFounderJourneyCommandCenterPage() {
                           )}
                         </td>
                         <td
-                          className="py-1 pr-3 text-center align-top whitespace-nowrap text-gray-800 dark:text-gray-200"
+                          className="py-1 pr-3 text-center align-top text-gray-800 dark:text-gray-200"
                           title={outreach.lastLine ?? 'No tracked emails in the last 7 days'}
                         >
-                          <span className="inline-flex items-center justify-center gap-1">
-                            <span className="tabular-nums font-medium">{outreach.sentCount}</span>
-                            {outreach.sentCount > 0 && outreach.anyOpened ? (
-                              <span aria-hidden title="At least one open (Resend)">
-                                👁️
+                          <div className="flex flex-col items-center gap-0.5 text-[10px] leading-tight">
+                            <span className="inline-flex flex-wrap items-center justify-center gap-x-0.5 gap-y-0.5">
+                              <span
+                                className={
+                                  outreach.outreachStage === 'pending'
+                                    ? 'font-semibold text-gray-900 dark:text-gray-100'
+                                    : 'opacity-40 text-gray-600 dark:text-gray-400'
+                                }
+                              >
+                                Pending ⏳
+                              </span>
+                              <span className="text-gray-400 dark:text-gray-500" aria-hidden>
+                                →
+                              </span>
+                              <span
+                                className={
+                                  outreach.outreachStage === 'sent'
+                                    ? 'font-semibold text-gray-900 dark:text-gray-100'
+                                    : outreach.outreachStage === 'opened'
+                                      ? 'opacity-40 text-gray-600 dark:text-gray-400'
+                                      : 'opacity-40 text-gray-600 dark:text-gray-400'
+                                }
+                              >
+                                Sent ✅
+                              </span>
+                              <span className="text-gray-400 dark:text-gray-500" aria-hidden>
+                                →
+                              </span>
+                              <span
+                                className={
+                                  outreach.outreachStage === 'opened'
+                                    ? 'font-semibold text-gray-900 dark:text-gray-100'
+                                    : 'opacity-40 text-gray-600 dark:text-gray-400'
+                                }
+                              >
+                                Opened 👁️
+                              </span>
+                            </span>
+                            {outreach.outreachStage === 'opened' && outreach.openedAtLabel ? (
+                              <span className="text-[9px] text-gray-500 dark:text-gray-400 tabular-nums">
+                                {outreach.openedAtLabel}
                               </span>
                             ) : null}
-                          </span>
+                          </div>
                         </td>
                         <td
                           className="py-1 pr-3 text-center align-top whitespace-nowrap"
