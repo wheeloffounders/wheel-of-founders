@@ -5,8 +5,7 @@ import { getServerSupabase } from '@/lib/server-supabase'
 import { addOrUpdateSubscriber } from '@/lib/mailerlite'
 import { sendTransactionalEmail } from '@/lib/email/transactional'
 import { syncRemindersToGoogleCalendar } from '@/lib/google-calendar'
-
-const FOUNDER_EMAIL = 'wttmotivation@gmail.com'
+import { isWhitelistAdminEmail } from '@/lib/admin-emails'
 
 /**
  * Handle OAuth callback from Google/Apple
@@ -76,8 +75,8 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Auto-grant super_admin for founder email
-      if (data.user.email === FOUNDER_EMAIL) {
+      // Auto-grant super_admin for allowlisted team emails (all environments)
+      if (data.user.email && isWhitelistAdminEmail(data.user.email)) {
         const founderPayload = {
           id: data.user.id,
           email: data.user.email,
@@ -89,7 +88,7 @@ export async function GET(request: NextRequest) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit user_profiles in this context
           await (db.from('user_profiles') as any).upsert(founderPayload, { onConflict: 'id' })
         } catch (err) {
-          console.error('Error upserting founder profile:', err)
+          console.error('Error upserting admin profile:', err)
         }
       }
 
@@ -126,8 +125,8 @@ export async function GET(request: NextRequest) {
           updated_at: nowIso,
           trial_starts_at: nowIso,
           trial_ends_at: trialEnds,
-          is_admin: data.user.email === FOUNDER_EMAIL ? true : false,
-          admin_role: data.user.email === FOUNDER_EMAIL ? 'super_admin' : null,
+          is_admin: data.user.email && isWhitelistAdminEmail(data.user.email) ? true : false,
+          admin_role: data.user.email && isWhitelistAdminEmail(data.user.email) ? 'super_admin' : null,
         }
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit user_profiles in this context
@@ -182,6 +181,21 @@ export async function GET(request: NextRequest) {
         await (db.from('user_profiles') as any)
           .update({ login_count: nextLoginCount, updated_at: new Date().toISOString() })
           .eq('id', data.user.id)
+      }
+
+      if (data.user.email && isWhitelistAdminEmail(data.user.email)) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (db.from('user_profiles') as any)
+            .update({
+              is_admin: true,
+              admin_role: 'super_admin',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', data.user.id)
+        } catch (err) {
+          console.error('[auth/callback] admin flag sync failed', err)
+        }
       }
 
       // Calendar OAuth connect should return to caller location immediately.

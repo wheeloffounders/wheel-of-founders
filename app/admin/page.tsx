@@ -11,8 +11,6 @@ import {
   HeartPulse,
 } from 'lucide-react'
 import { format } from 'date-fns'
-import { isDevelopment } from '@/lib/admin'
-
 export const dynamic = 'force-dynamic'
 
 export default async function AdminDashboardPage() {
@@ -28,12 +26,8 @@ export default async function AdminDashboardPage() {
   const newToday = (todayStats as { new_users?: number } | null)?.new_users ?? null
 
   const links = [
-    ...(isDevelopment()
-      ? [
-          { href: '/admin/list', label: 'Search User (dev only)', icon: List },
-          { href: '/admin/journey-funnel', label: 'User Journey Funnel (dev only)', icon: TrendingDown },
-        ]
-      : []),
+    { href: '/admin/list', label: 'Search User', icon: List },
+    { href: '/admin/journey-funnel', label: 'User Journey Funnel', icon: TrendingDown },
     { href: '/admin/errors', label: 'Code Scary – Error Logs', icon: AlertTriangle },
     { href: '/admin/cross-user-analytics', label: 'Cross-User Analytics', icon: BarChart3 },
     { href: '/admin/experiments', label: 'Experiments', icon: FlaskConical },

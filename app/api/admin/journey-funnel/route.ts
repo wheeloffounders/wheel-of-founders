@@ -3,13 +3,12 @@
  * Returns stage counts, drop-offs, and user-by-user breakdown.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { requireDevOnly } from '@/lib/admin'
+import { authorizeAdminApiRequest } from '@/lib/admin'
+import { isWhitelistAdminEmail } from '@/lib/admin-emails'
 import { adminSupabase } from '@/lib/supabase/admin'
 import { subDays } from 'date-fns'
 
 export const dynamic = 'force-dynamic'
-
-const ADMIN_EMAILS = ['wttmotivation@gmail.com']
 
 type FunnelStage = {
   stage: string
@@ -189,10 +188,8 @@ const STAGE_SOLUTIONS: Record<string, { problem: string; solution: string[] }> =
 }
 
 export async function GET(req: NextRequest) {
-  try {
-    requireDevOnly()
-  } catch {
-    return NextResponse.json({ error: 'Journey funnel is only available in development' }, { status: 403 })
+  if (!(await authorizeAdminApiRequest(req))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const db = adminSupabase
@@ -206,9 +203,7 @@ export async function GET(req: NextRequest) {
 
   // 1. Get all users (excluding admin)
   const { data: authUsers } = await db.auth.admin.listUsers({ perPage: 1000 })
-  const allUsers = (authUsers?.users ?? []).filter(
-    (u) => u.email && !ADMIN_EMAILS.includes(u.email)
-  )
+  const allUsers = (authUsers?.users ?? []).filter((u) => u.email && !isWhitelistAdminEmail(u.email))
   const userIds = allUsers.map((u) => u.id)
 
   if (userIds.length === 0) {

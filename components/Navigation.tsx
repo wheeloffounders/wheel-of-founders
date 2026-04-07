@@ -9,6 +9,7 @@ import { resetAnalytics } from '@/lib/analytics'
 import MobileSidebar from './MobileSidebar'
 import { useProgress } from '@/lib/hooks/useProgress'
 import { ProgressCircle } from './ProgressCircle'
+import { isWhitelistAdminEmail } from '@/lib/admin-emails'
 
 export type NavItem = {
   name: string
@@ -39,7 +40,9 @@ export default function Navigation() {
           .select('is_admin')
           .eq('id', session.user.id)
           .maybeSingle()
-        setIsAdmin(!!profile?.is_admin)
+        setIsAdmin(
+          !!profile?.is_admin || isWhitelistAdminEmail(session.user.email ?? undefined)
+        )
       } else {
         setIsAdmin(false)
       }
@@ -49,8 +52,16 @@ export default function Navigation() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsLoggedIn(!!session)
       if (session?.user?.id) {
-        supabase.from('user_profiles').select('is_admin').eq('id', session.user.id).maybeSingle()
-          .then(({ data }) => setIsAdmin(!!data?.is_admin))
+        supabase
+          .from('user_profiles')
+          .select('is_admin')
+          .eq('id', session.user.id)
+          .maybeSingle()
+          .then(({ data }) =>
+            setIsAdmin(
+              !!data?.is_admin || isWhitelistAdminEmail(session.user.email ?? undefined)
+            )
+          )
       } else {
         setIsAdmin(false)
       }
@@ -122,9 +133,7 @@ export default function Navigation() {
   ]
 
   const adminItems: NavItem[] = [
-    ...(typeof window !== 'undefined' && (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_APP_ENV === 'development')
-      ? [{ name: 'Search User', href: '/admin/list', icon: List } as NavItem]
-      : []),
+    { name: 'Search User', href: '/admin/list', icon: List },
     { name: 'Cross-User Analytics', href: '/admin/cross-user-analytics', icon: BarChart3 },
     { name: 'Experiments', href: '/admin/experiments', icon: FlaskConical },
   ]

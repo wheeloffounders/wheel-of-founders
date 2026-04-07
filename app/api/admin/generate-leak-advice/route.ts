@@ -1,45 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
-import { getServerSupabase } from '@/lib/server-supabase'
 import { generateAIPrompt } from '@/lib/ai-client'
 import type { FounderJourneyCommandCenterPayload } from '@/lib/admin/tracking'
+import { authorizeAdminApiRequest } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
-
-const FOUNDER_EMAIL = 'wttmotivation@gmail.com'
-
-async function isAuthorizedAdmin(req: NextRequest): Promise<boolean> {
-  const authHeader = req.headers.get('authorization')
-  const adminSecret = process.env.ADMIN_SECRET
-  if (adminSecret && authHeader === `Bearer ${adminSecret}`) return true
-
-  const cookieStore = await cookies()
-  const authClient = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll(),
-        setAll: (c: { name: string; value: string; options?: object }[]) =>
-          c.forEach(({ name, value, options }) => cookieStore.set(name, value, options as object)),
-      },
-    }
-  )
-  const {
-    data: { user },
-  } = await authClient.auth.getUser()
-  if (!user?.id) return false
-
-  const db = getServerSupabase()
-  const { data: profile } = await db.from('user_profiles').select('is_admin').eq('id', user.id).maybeSingle()
-
-  const row = profile as { is_admin?: boolean | null } | null
-  if (row?.is_admin) return true
-
-  return user.email === FOUNDER_EMAIL
-}
 
 const MRS_DEER_SYSTEM = `You are Mrs. Deer, a strategic advisor for founders. Analyze the user drop-off data you receive. Identify if a specific archetype is leaking (for example, "Hustlers are leaving at the Evening stage"). Provide a two-sentence tactical fix for the UI to retain them: sentence one = diagnosis; sentence two = what to change in product or copy.
 
@@ -57,7 +22,7 @@ When providing advice, look at shadowDistribution and shadowSummary: if the coho
  */
 export async function POST(req: NextRequest) {
   try {
-    if (!(await isAuthorizedAdmin(req))) {
+    if (!(await authorizeAdminApiRequest(req))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

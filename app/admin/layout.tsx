@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { isWhitelistAdminEmail } from '@/lib/admin-emails'
 
 /**
- * Protect all /admin routes - only allow users with is_admin = true.
+ * Protect /admin: `user_profiles.is_admin` or team email allowlist (`lib/admin-emails`).
  * Uses client-side auth checks so the session (cookies) is available and
  * avoids "Auth session missing!" server-side errors.
  */
@@ -40,7 +41,9 @@ export default function AdminLayout({
           return
         }
 
-        if (!profile?.is_admin) {
+        const allow =
+          !!profile?.is_admin || isWhitelistAdminEmail(session.user.email ?? undefined)
+        if (!allow) {
           router.replace('/')
           return
         }

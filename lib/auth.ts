@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import type { Session } from '@supabase/supabase-js'
+import { isWhitelistAdminEmail } from '@/lib/admin-emails'
 
 export interface SessionWithProfile extends Session {
   user: Session['user'] & {
@@ -104,7 +105,8 @@ export async function getUserSession(): Promise<SessionWithProfile | null> {
         ...verifiedUser,
         tier: newProfile?.tier || 'beta',
         pro_features_enabled: newProfile?.pro_features_enabled ?? true,
-        is_admin: newProfile?.is_admin ?? false,
+        is_admin:
+          Boolean(newProfile?.is_admin) || isWhitelistAdminEmail(verifiedUser.email),
         admin_role: newProfile?.admin_role ?? null,
       },
     } as SessionWithProfile
@@ -122,7 +124,8 @@ export async function getUserSession(): Promise<SessionWithProfile | null> {
       ...verifiedUser,
       tier: profile.tier || 'beta',
       pro_features_enabled: profile.pro_features_enabled ?? true,
-      is_admin: profile.is_admin ?? false,
+      is_admin:
+        Boolean(profile.is_admin) || isWhitelistAdminEmail(verifiedUser.email),
       admin_role: profile.admin_role ?? null,
     },
   } as SessionWithProfile
