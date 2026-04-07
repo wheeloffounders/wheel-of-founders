@@ -120,7 +120,7 @@ Read my weekly insight: ${appUrlWithUtm('/weekly', 'weekly_insight_first')}
 
 After this, a fresh read lands every Monday, capturing the week that just closed.
 
-— Mrs. Deer${renderTextFooter()}`
+— Mrs. Deer${renderTextFooter(user)}`
     }
 
     const greeting = emailSubjectGreetingFromUser(user)
@@ -142,6 +142,6 @@ ${statsLinePlain(data, tasksLabel, decisionsLabel)}
 
 What stands out to me isn't the numbers. It's that you're starting to move from scattered days to a rhythm that holds you.
 
-Read your full weekly insight: ${appUrlWithUtm('/weekly', 'weekly_insight')}${renderTextFooter()}`
+Read your full weekly insight: ${appUrlWithUtm('/weekly', 'weekly_insight')}${renderTextFooter(user)}`
   },
 }

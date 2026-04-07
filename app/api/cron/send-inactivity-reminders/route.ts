@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     // Users inactive for >= 7 days who haven't opted out of inactivity_reminders.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- table has JSONB field missing in generated types
     const { data: users, error } = await (db.from('user_profiles') as any)
-      .select('id, email_address, preferred_name, name, last_active_at, email_preferences')
+      .select('id, email_address, preferred_name, name, last_active_at, email_preferences, login_count')
       .lte('last_active_at', sevenDaysAgo.toISOString())
 
     if (error) {
@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
       preferred_name?: string | null
       name?: string | null
       last_active_at?: string | null
+      login_count?: number | null
       email_preferences?: {
         inactivity_reminders?: boolean
       } | null
@@ -80,6 +81,7 @@ export async function GET(req: NextRequest) {
         const rendered = renderEmailTemplate('inactivity_reminder', {
           name,
           email,
+          login_count: Math.max(0, Number(u.login_count ?? 0) || 0),
         })
         const sendResult = await sendEmailWithTracking({
           userId: u.id,

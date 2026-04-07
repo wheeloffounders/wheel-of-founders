@@ -1,4 +1,4 @@
-type CalendarEventInput = {
+export type CalendarEventInput = {
   uid: string
   title: string
   description: string
@@ -6,6 +6,8 @@ type CalendarEventInput = {
   localHour: number
   localMinute: number
   rrule: string
+  /** DTSTART date anchor in user TZ (e.g. upcoming Monday for FREQ=WEEKLY;BYDAY=MO). Defaults to “now”. */
+  anchorDate?: Date
 }
 
 function escapeIcs(text: string): string {
@@ -98,7 +100,8 @@ function buildVtimezoneBlock(timeZone: string): string {
 }
 
 function buildEventBlock(timeZone: string, baseDate: Date, event: CalendarEventInput): string {
-  const datePart = yyyymmdd(baseDate, timeZone)
+  const anchor = event.anchorDate ?? baseDate
+  const datePart = yyyymmdd(anchor, timeZone)
   const hh = String(event.localHour).padStart(2, '0')
   const mm = String(event.localMinute).padStart(2, '0')
   const endMinute = (event.localMinute + 10) % 60
@@ -123,6 +126,8 @@ function buildEventBlock(timeZone: string, baseDate: Date, event: CalendarEventI
 export function buildCalendarIcs(params: {
   timeZone: string
   calendarName: string
+  /** Shown in some clients as subtitle (optional) */
+  calendarDescription?: string
   events: CalendarEventInput[]
   /** Embed VTIMEZONE for fixed-offset zones so Google/Apple show local wall times correctly */
   includeVtimezone?: boolean
@@ -132,15 +137,22 @@ export function buildCalendarIcs(params: {
   const vtz = params.includeVtimezone ? buildVtimezoneBlock(tz) : ''
   const events = params.events.map((e) => buildEventBlock(tz, now, e)).join('\r\n')
 
+  const calName = escapeIcs(params.calendarName.trim())
+  // Calendar title properties before METHOD/REFRESH/VTIMEZONE so clients see them early.
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Wheel of Founders//Calendar Subscription//EN',
+    'PRODID:-//Wheel of Founders//Calendar Reminders//EN',
     'CALSCALE:GREGORIAN',
+    `X-WR-CALNAME:${calName}`,
+    `NAME:${calName}`,
+    'METHOD:PUBLISH',
     'REFRESH-INTERVAL;VALUE=DURATION:PT6H',
-    `X-WR-CALNAME:${escapeIcs(params.calendarName)}`,
     `X-WR-TIMEZONE:${escapeIcs(tz)}`,
   ]
+  if (params.calendarDescription?.trim()) {
+    lines.push(`X-WR-CALDESC:${escapeIcs(params.calendarDescription.trim())}`)
+  }
   if (vtz) lines.push(vtz)
   lines.push(events, 'END:VCALENDAR', '')
 

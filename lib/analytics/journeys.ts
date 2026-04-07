@@ -18,6 +18,8 @@ export async function recordPageView(
     sessionId?: string | null
     referrer?: string | null
     metadata?: Record<string, unknown>
+    /** HTTP User-Agent for admin device mix (optional). */
+    userAgent?: string | null
   }
 ) {
   const db = getServerSupabase()
@@ -27,7 +29,10 @@ export async function recordPageView(
   const metadata: Record<string, unknown> = { ...(options?.metadata ?? {}) }
   if (options?.referrer) metadata.referrer = options.referrer
   if (options?.sessionId && !sessionId) metadata.client_session_id = options.sessionId
+  const ua = typeof options?.userAgent === 'string' && options.userAgent.trim() ? options.userAgent.trim() : null
+  if (ua) metadata.user_agent = ua
 
+  // User-Agent lives in metadata until optional `page_views.user_agent` migration is applied (avoids PGRST204).
   const payload = {
     user_id: options?.userId ?? null,
     session_id: sessionId,
@@ -52,17 +57,30 @@ export type BatchPageViewInput = {
 
 /**
  * Insert multiple page_views in one round-trip (same rules as recordPageView).
+ * @param requestUserAgent - Request `User-Agent` header; applied to each row unless `metadata.user_agent` is set per item.
  */
-export async function recordPageViewsBatch(items: BatchPageViewInput[], userId: string | null) {
+export async function recordPageViewsBatch(
+  items: BatchPageViewInput[],
+  userId: string | null,
+  requestUserAgent?: string | null
+) {
   if (items.length === 0) return { error: null }
   const db = getServerSupabase()
   const isUuid = (s: string) => /^[0-9a-f-]{36}$/i.test(s)
+  const headerUa =
+    typeof requestUserAgent === 'string' && requestUserAgent.trim() ? requestUserAgent.trim() : null
 
   const rows = items.map((item) => {
     const sessionId = item.sessionId && isUuid(item.sessionId) ? item.sessionId : null
     const metadata: Record<string, unknown> = { ...(item.metadata ?? {}) }
     if (item.referrer) metadata.referrer = item.referrer
     if (item.sessionId && !sessionId) metadata.client_session_id = item.sessionId
+    const metaUa =
+      typeof metadata.user_agent === 'string' && String(metadata.user_agent).trim()
+        ? String(metadata.user_agent).trim()
+        : null
+    const rowUa = metaUa ?? headerUa
+    if (rowUa) metadata.user_agent = rowUa
 
     let enteredAt: string
     if (typeof item.timestamp === 'number' && Number.isFinite(item.timestamp)) {

@@ -4,6 +4,12 @@ import { Sparkles } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
 import { MarkdownText } from '@/components/MarkdownText'
+import {
+  filterInsightLabels,
+  scrubBannedQuarterlyTemplatePhrases,
+  scrubGenericSynthesisTransitions,
+  stripRedundantLeadingHeadings,
+} from '@/lib/insight-utils'
 import { colors } from '@/lib/design-tokens'
 
 interface TrajectoryWisdomProps {
@@ -27,7 +33,16 @@ export function TrajectoryWisdom({
   generating,
   generateError,
 }: TrajectoryWisdomProps) {
-  if (!insight) {
+  const hasInsight = Boolean(insight?.trim())
+  const displayInsight = hasInsight
+    ? scrubGenericSynthesisTransitions(
+        scrubBannedQuarterlyTemplatePhrases(
+          stripRedundantLeadingHeadings(filterInsightLabels(insight!))
+        )
+      )
+    : ''
+
+  if (!hasInsight) {
     return (
       <Card>
         <CardContent className="py-12 text-center">
@@ -116,7 +131,7 @@ export function TrajectoryWisdom({
             <MrsDeerAvatar expression="thoughtful" size="large" />
           </div>
           <MarkdownText className="leading-relaxed text-gray-900 dark:text-gray-100 dark:text-gray-100">
-            {insight}
+            {displayInsight}
           </MarkdownText>
         </div>
       </CardContent>

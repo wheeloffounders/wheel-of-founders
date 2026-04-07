@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { format, subDays, parseISO } from 'date-fns'
 import { getEffectivePlanDate } from './effective-plan-date'
+import { isMissingEveningIsDraftColumnError } from '@/lib/supabase/evening-is-draft-column'
 
 export interface StreakData {
   currentStreak: number
@@ -84,11 +85,16 @@ export async function calculateStreakForUser(db: SupabaseClient, userId: string)
       console.warn('[streak] profile fetch failed:', err)
     }
 
-    const [reviewsRes, commitsRes] = await Promise.all([
-      db.from('evening_reviews').select('review_date').eq('user_id', userId),
+    const [reviewsResFirst, commitsRes] = await Promise.all([
+      db.from('evening_reviews').select('review_date').eq('user_id', userId).eq('is_draft', false),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generated schema may lag custom commit columns
       (db.from('morning_plan_commits') as any).select('plan_date, committed_at').eq('user_id', userId),
     ])
+
+    let reviewsRes = reviewsResFirst
+    if (reviewsRes.error && isMissingEveningIsDraftColumnError(reviewsRes.error)) {
+      reviewsRes = await db.from('evening_reviews').select('review_date').eq('user_id', userId)
+    }
 
     if (commitsRes.error) {
       console.warn('[streak] morning_plan_commits:', commitsRes.error.message)

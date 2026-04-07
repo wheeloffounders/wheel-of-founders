@@ -2,7 +2,6 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { Bell, BarChart2, Check, ChevronRight } from 'lucide-react'
 import { useInAppNotifications } from '@/lib/contexts/InAppNotificationContext'
 import { useNewInsights } from '@/lib/hooks/useNewInsights'
@@ -100,10 +99,13 @@ export function NotificationCenter({ triggerClassName }: NotificationCenterProps
             </div>
             <div className="overflow-y-auto flex-1">
               {totalNew > 0 && (
-                <Link
-                  href="/insights"
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition border-b border-gray-100 dark:border-gray-700"
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition border-b border-gray-100 dark:border-gray-700 text-left cursor-pointer"
+                  onClick={() => {
+                    setOpen(false)
+                    router.push('/insights')
+                  }}
                 >
                   <BarChart2 className="w-5 h-5 text-[#ef725c] shrink-0" />
                   <div className="flex-1 min-w-0 text-left">
@@ -113,7 +115,7 @@ export function NotificationCenter({ triggerClassName }: NotificationCenterProps
                     <p className="text-sm text-gray-500 dark:text-gray-400">View in Insights</p>
                   </div>
                   <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
-                </Link>
+                </button>
               )}
               {notifications.length === 0 && totalNew === 0 ? (
                 <p className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center">

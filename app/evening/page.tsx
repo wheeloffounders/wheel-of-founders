@@ -1,15 +1,29 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, type MutableRefObject } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { format, subDays, startOfMonth, addYears } from 'date-fns'
-import { Moon, Heart, Award, Lightbulb, AlertCircle, Check, Mountain, Plus, X, Trash2 } from 'lucide-react'
+import { format, subDays, startOfMonth, addYears, addDays, parseISO } from 'date-fns'
+import {
+  Moon,
+  Heart,
+  Target,
+  Award,
+  Lightbulb,
+  AlertCircle,
+  Loader2,
+  Plus,
+  X,
+  Trash2,
+} from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import {
+  isMissingEveningBrainDumpColumnError,
+  isMissingEveningIsDayCompleteColumnError,
+  isMissingEveningIsDraftColumnError,
+} from '@/lib/supabase/evening-is-draft-column'
 import { getUserSession, refreshSessionForWrite, isRlsOrAuthPermissionError } from '@/lib/auth'
-import { CelebrationModal } from '@/components/CelebrationModal'
 import { calculateStreak, isStreakMilestone } from '@/lib/streak'
-import { StreakCelebrationModal } from '@/components/StreakCelebrationModal'
 import { AICoachPrompt } from '@/components/AICoachPrompt'
 import SpeechToTextInput from '@/components/SpeechToTextInput'
 import { MrsDeerAdaptivePrompt } from '@/components/MrsDeerAdaptivePrompt'
@@ -18,7 +32,6 @@ import { PageHeader } from '@/components/ui/PageHeader'
 import { WeekNavigator } from '@/components/ui/WeekNavigator'
 import { DatePickerModal } from '@/components/ui/DatePickerModal'
 import type { DayStatus } from '@/lib/date-utils'
-import { useUserLanguage } from '@/lib/use-user-language'
 import { trackEvent } from '@/lib/analytics'
 import { trackFunnelStep } from '@/lib/analytics/track-funnel'
 import { trackJourneyStep } from '@/lib/analytics/journey-tracking'
@@ -31,21 +44,34 @@ import { useStreamingInsight } from '@/lib/hooks/useStreamingInsight'
 import { StreamingIndicator } from '@/components/StreamingIndicator'
 import { TutorialProgress } from '@/components/TutorialProgress'
 import { EveningFirstTimeCTA } from '@/components/EveningFirstTimeCTA'
-import { EmptyEvening } from '@/components/evening/EmptyEvening'
+import { EveningPlanVsReality } from '@/components/evening/EveningPlanVsReality'
+import type { EveningEmergencyRow } from '@/components/evening/EveningPlanVsReality'
+import { EveningTaskRows } from '@/components/evening/EveningTaskRows'
+import { BrainDumpCard } from '@/components/BrainDumpCard'
+import { processEveningBrainDump } from '@/lib/evening/process-evening-brain-dump'
+import { EVENING_STACK_SCROLL_FADE } from '@/lib/evening/evening-card-scroll'
+import type { PostEveningLoopCloseContext } from '@/lib/personal-coaching'
 import { InfoTooltip } from '@/components/InfoTooltip'
 import { ReflectionPopup } from '@/components/ReflectionPopup'
 import { getTimeAwareness } from '@/lib/time-utils'
 import { getEffectivePlanDate } from '@/lib/effective-plan-date'
+import { morningTasksOrFilterForPlanDate, isTaskShowingAsMovedToTomorrow } from '@/lib/morning-tasks-plan-date-query'
+import { getUserTimezoneFromProfile } from '@/lib/timezone'
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery'
+import { useProAccessBadgeLine } from '@/lib/hooks/useProAccessBadgeLine'
+import { cn } from '@/components/ui/utils'
 import { PageSidebar } from '@/components/layout/PageSidebar'
+import { getClientAuthHeaders } from '@/lib/api/fetch-json'
 import { trackErrorSync } from '@/lib/error-tracker'
-import { FirstGlimpseModal } from '@/components/evening/FirstGlimpseModal'
-import { EveningMicroCelebrationModal } from '@/components/evening/EveningMicroCelebrationModal'
 import {
   eveningMicroCelebrationStorageKey,
   getEveningMicroCelebrationMessage,
 } from '@/lib/micro-lessons/evening-micro-celebrations'
-import Link from 'next/link'
+import { useDebouncedAutoSave, type DraftSaveStatus } from '@/lib/hooks/useDebouncedAutoSave'
+import { getPendingTasksForSnoozePrompt } from '@/lib/evening/task-snooze-eligibility'
+import { EveningDayClosedSealCard } from '@/components/evening/EveningDayClosedSealCard'
+import { EveningInsightCompletionModal } from '@/components/evening/EveningInsightCompletionModal'
+import { EveningMrsDeerReadingOverlay } from '@/components/evening/EveningMrsDeerReadingOverlay'
 
 const MOOD_OPTIONS = [
   { value: 5, label: 'Great', emoji: '😊' },
@@ -63,6 +89,25 @@ const ENERGY_OPTIONS = [
   { value: 1, label: 'Very Low', emoji: '🔋' },
 ]
 
+/** Append-only: new suggested lines are pushed after existing rows; dedupe by full line (case-insensitive). */
+function mergeAppendWinsLessons(
+  prev: string[],
+  suggested: string[]
+): { final: string[]; highlight: number[] } {
+  const base = prev.map((w) => w.trim()).filter(Boolean)
+  const merged: string[] = [...base]
+  const highlight: number[] = []
+  for (const s of suggested) {
+    const t = s.trim()
+    if (!t) continue
+    if (!merged.some((m) => m.toLowerCase() === t.toLowerCase())) {
+      highlight.push(merged.length)
+      merged.push(t)
+    }
+  }
+  return { final: merged.length > 0 ? merged : [''], highlight }
+}
+
 interface Task {
   id: string
   description: string
@@ -71,18 +116,163 @@ interface Task {
   movedToTomorrow?: boolean
 }
 
+function buildEveningLoopCloseContext(tasks: Task[], emergencies: EveningEmergencyRow[]): PostEveningLoopCloseContext {
+  return {
+    totalFiresToday: emergencies.length,
+    hotUnresolvedCount: emergencies.filter((e) => e.severity === 'hot' && !e.resolved).length,
+    tasksPlanned: tasks.length,
+    tasksCompleted: tasks.filter((t) => t.completed).length,
+  }
+}
+
+type EveningDraftSnapshot = {
+  journal: string
+  brainDump: string
+  wins: string[]
+  lessons: string[]
+  mood: number | null
+  energy: number | null
+}
+
+function EveningAutosaveController({
+  reviewDate,
+  rowWasSubmittedRef,
+  snapshotRef,
+  hadEmergencyRef,
+  onScheduleReady,
+  onFlushReady,
+  onStatus,
+  onDraftId,
+}: {
+  reviewDate: string
+  rowWasSubmittedRef: MutableRefObject<boolean>
+  snapshotRef: MutableRefObject<EveningDraftSnapshot>
+  hadEmergencyRef: MutableRefObject<boolean>
+  onScheduleReady: (schedule: () => void) => void
+  onFlushReady: (flush: () => Promise<void>) => void
+  onStatus: (s: DraftSaveStatus) => void
+  onDraftId: (id: string) => void
+}) {
+  const save = useCallback(async () => {
+    const session = await getUserSession()
+    if (!session?.user?.id) return
+    const snap = snapshotRef.current
+    const winsFiltered =
+      snap.wins.filter((w) => w.trim()).length > 0 ? JSON.stringify(snap.wins.filter((w) => w.trim())) : null
+    const lessonsFiltered =
+      snap.lessons.filter((l) => l.trim()).length > 0
+        ? JSON.stringify(snap.lessons.filter((l) => l.trim()))
+        : null
+    const meaningful =
+      snap.journal.trim().length > 0 ||
+      snap.brainDump.trim().length > 0 ||
+      snap.mood != null ||
+      snap.energy != null ||
+      winsFiltered != null ||
+      lessonsFiltered != null
+    if (!meaningful) return
+
+    const persistDraft = !rowWasSubmittedRef.current
+    const runUpsert = (includeDraftCol: boolean, includeBrainDumpCol: boolean) =>
+      supabase
+        .from('evening_reviews')
+        .upsert(
+          {
+            user_id: session.user.id,
+            review_date: reviewDate,
+            journal: snap.journal.trim() || null,
+            ...(includeBrainDumpCol ? { brain_dump: snap.brainDump.trim() || null } : {}),
+            mood: snap.mood,
+            energy: snap.energy,
+            wins: winsFiltered,
+            lessons: lessonsFiltered,
+            had_emergency: hadEmergencyRef.current,
+            ...(includeDraftCol ? { is_draft: persistDraft } : {}),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,review_date' }
+        )
+        .select('id')
+        .maybeSingle()
+
+    let includeBrainDumpCol = true
+    let includeDraftCol = true
+    let { data, error } = await runUpsert(includeDraftCol, includeBrainDumpCol)
+    if (error && isMissingEveningBrainDumpColumnError(error)) {
+      includeBrainDumpCol = false
+      ;({ data, error } = await runUpsert(includeDraftCol, includeBrainDumpCol))
+    }
+    if (error && isMissingEveningIsDraftColumnError(error)) {
+      includeDraftCol = false
+      ;({ data, error } = await runUpsert(includeDraftCol, includeBrainDumpCol))
+    }
+    if (error && isRlsOrAuthPermissionError(error)) {
+      const again = await refreshSessionForWrite()
+      if (again.ok) {
+        ;({ data, error } = await runUpsert(includeDraftCol, includeBrainDumpCol))
+        if (error && isMissingEveningBrainDumpColumnError(error)) {
+          includeBrainDumpCol = false
+          ;({ data, error } = await runUpsert(includeDraftCol, includeBrainDumpCol))
+        }
+        if (error && isMissingEveningIsDraftColumnError(error)) {
+          includeDraftCol = false
+          ;({ data, error } = await runUpsert(includeDraftCol, includeBrainDumpCol))
+        }
+      }
+    }
+    if (error) {
+      const e = error as unknown as Record<string, unknown>
+      console.error('[evening/draft-autosave] evening_reviews upsert failed', {
+        code: e?.code,
+        message: e?.message,
+        details: e?.details,
+        hint: e?.hint,
+        raw: typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error),
+      })
+      throw error
+    }
+    const id = (data as { id?: string } | null)?.id
+    if (id) onDraftId(id)
+  }, [reviewDate, snapshotRef, rowWasSubmittedRef, hadEmergencyRef, onDraftId])
+
+  const { schedule, flush, status } = useDebouncedAutoSave({
+    debounceMs: 2000,
+    save,
+    enabled: !!reviewDate,
+  })
+
+  useEffect(() => {
+    onScheduleReady(() => schedule())
+  }, [schedule, onScheduleReady])
+
+  useEffect(() => {
+    onFlushReady(flush)
+  }, [flush, onFlushReady])
+
+  useEffect(() => {
+    onStatus(status)
+  }, [status, onStatus])
+
+  useEffect(() => {
+    return () => {
+      void flush()
+    }
+  }, [flush])
+
+  return null
+}
+
 export default function EveningPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const isTutorial = searchParams?.get('tutorial') === 'true'
-  const lang = useUserLanguage() // Personalized language
-  
   // All hooks must be at the top level - no conditional calls
   const [userTier, setUserTier] = useState<string>('beta')
   const [aiCoachMessage, setAiCoachMessage] = useState<string | null>(null)
   const [aiCoachTrigger, setAiCoachTrigger] = useState<'evening_after' | null>(null)
   const [eveningInsightId, setEveningInsightId] = useState<string | null>(null)
   const [journal, setJournal] = useState('')
+  const [brainDump, setBrainDump] = useState('')
   const [mood, setMood] = useState<number | null>(null)
   const [energy, setEnergy] = useState<number | null>(null)
   const [wins, setWins] = useState<string[]>([''])
@@ -91,11 +281,8 @@ export default function EveningPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [morningTasks, setMorningTasks] = useState<Task[]>([])
+  const [todayEmergencies, setTodayEmergencies] = useState<EveningEmergencyRow[]>([])
   const [justCompletedId, setJustCompletedId] = useState<string | null>(null)
-  const [showCelebration, setShowCelebration] = useState(false)
-  const [hasCelebratedToday, setHasCelebratedToday] = useState(false)
-  const [showStreakCelebration, setShowStreakCelebration] = useState(false)
-  const [currentStreak, setCurrentStreak] = useState(0)
   const [retryTrigger, setRetryTrigger] = useState(0)
   // Fix hydration: initialize with empty string, set in useEffect
   const [reviewDate, setReviewDate] = useState<string>('')
@@ -118,13 +305,93 @@ export default function EveningPage() {
   const [calendarOpen, setCalendarOpen] = useState(false)
   const [displayedMonth, setDisplayedMonth] = useState<Date>(() => startOfMonth(new Date()))
   const isMobile = useMediaQuery('(max-width: 768px)')
+  const { label: proAccessLineLabel } = useProAccessBadgeLine()
   const [monthStatus, setMonthStatus] = useState<Record<string, DayStatus>>({})
+
+  const eveningRowWasSubmittedRef = useRef(false)
+  const eveningSnapshotRef = useRef<EveningDraftSnapshot>({
+    journal: '',
+    brainDump: '',
+    wins: [''],
+    lessons: [''],
+    mood: null,
+    energy: null,
+  })
+  /** Set from GET /api/evening/context — tags evening_reviews.had_emergency for analytics. */
+  const hadEmergencyRef = useRef(false)
+  const [eveningCrisisContext, setEveningCrisisContext] = useState<{ resolvedCount: number; tomorrowDebt: number }>({
+    resolvedCount: 0,
+    tomorrowDebt: 0,
+  })
+  const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>('idle')
+  const scheduleEveningDraftRef = useRef<() => void>(() => {})
+  const onEveningScheduleReady = useCallback((fn: () => void) => {
+    scheduleEveningDraftRef.current = fn
+  }, [])
+  const flushEveningDraftRef = useRef<() => Promise<void>>(async () => {})
+  const onEveningFlushReady = useCallback((fn: () => Promise<void>) => {
+    flushEveningDraftRef.current = fn
+  }, [])
 
   const { insight: streamingInsight, isStreaming, error: streamingError, startStream } = useStreamingInsight()
   const [isRetrying, setIsRetrying] = useState(false)
-  const [firstGlimpsePending, setFirstGlimpsePending] = useState(false)
-  const [eveningMicroCelebration, setEveningMicroCelebration] = useState<{ day: number; message: string } | null>(null)
-  const [showFirstGlimpseModal, setShowFirstGlimpseModal] = useState(false)
+  const [isDayComplete, setIsDayComplete] = useState(false)
+  const [eveningDumpSorting, setEveningDumpSorting] = useState(false)
+  const [eveningBrainDumpListening, setEveningBrainDumpListening] = useState(false)
+  const [dumpSortHighlight, setDumpSortHighlight] = useState<{
+    journal: boolean
+    wins: number[]
+    lessons: number[]
+  } | null>(null)
+  /** Brief coral/sage glow on cards after brain dump → cards sort succeeds. */
+  const [sortLandingGlow, setSortLandingGlow] = useState(false)
+  const [snoozeTaskQueue, setSnoozeTaskQueue] = useState<Task[]>([])
+  const [snoozeModalOpen, setSnoozeModalOpen] = useState(false)
+  const postEveningStreamStartedRef = useRef(false)
+  /** Pro post-evening: Morning-aligned reading overlay → badge modal (null = inline insight or idle). */
+  const [eveningInsightFlow, setEveningInsightFlow] = useState<null | 'reading' | 'modal'>(null)
+  const [eveningFirstGlimpseBadge, setEveningFirstGlimpseBadge] = useState(false)
+  const eveningInsightPostSaveActiveRef = useRef(false)
+
+  /** Hot fires still open (for Mrs. Deer goodnight emphasis + plan strip) */
+  const eveningHotUnresolvedCount = useMemo(
+    () => todayEmergencies.filter((e) => e.severity === 'hot' && !e.resolved).length,
+    [todayEmergencies]
+  )
+
+  /** Red strip: hot fires still open, or any incomplete task vs plan size */
+  const loopStrainTip = useMemo(() => {
+    const total = morningTasks.length
+    const done = morningTasks.filter((t) => t.completed).length
+    return eveningHotUnresolvedCount > 0 || (total > 0 && done < total)
+  }, [eveningHotUnresolvedCount, morningTasks])
+
+  /** Morning task lines for this review date — powers “Strategist loop” evening nudge. */
+  const morningCommitmentSummary = useMemo(() => {
+    const lines = morningTasks.map((t) => (t.description ?? '').trim()).filter(Boolean)
+    if (lines.length === 0) return null
+    return lines.join(' · ')
+  }, [morningTasks])
+
+  const journalOpeningSuggestion = useMemo(() => {
+    if (!morningCommitmentSummary) return ''
+    return `Regarding my goal to ${morningCommitmentSummary}, I noticed that `
+  }, [morningCommitmentSummary])
+
+  const journalPlaceholder = useMemo(() => {
+    if (!morningCommitmentSummary) {
+      return 'How did today go? What stood out? What would you do differently?'
+    }
+    const short =
+      morningCommitmentSummary.length > 120
+        ? `${morningCommitmentSummary.slice(0, 117)}…`
+        : morningCommitmentSummary
+    return `Regarding my goal to ${short}, I noticed that…`
+  }, [morningCommitmentSummary])
+
+  const sortLandingGlowClass = sortLandingGlow
+    ? 'ring-2 ring-[#ef725c]/45 shadow-[0_0_32px_rgba(239,114,92,0.28)] transition-shadow duration-500 dark:ring-[#f0886c]/45 dark:shadow-[0_0_32px_rgba(240,136,108,0.2)]'
+    : 'transition-shadow duration-500'
 
   const fireFunnelStep = useCallback((step: number, name: string) => {
     if (funnelStepRef.current.has(step)) return
@@ -144,6 +411,106 @@ export default function EveningPage() {
     }
   }, [])
 
+  const handleEveningSortDump = useCallback(async (dumpText?: string) => {
+    const raw = (dumpText ?? brainDump).trim()
+    if (raw.length < 8) return
+    fireFunnelStep(2, 'journal_engaged')
+    try {
+      const result = await processEveningBrainDump(raw, {
+        reviewDate,
+        existingWins: wins.map((w) => w.trim()).filter(Boolean),
+        existingLessons: lessons.map((l) => l.trim()).filter(Boolean),
+        morningTasks: morningTasks.map((t) => ({
+          description: t.description,
+          completed: t.completed,
+          needle_mover: t.needle_mover ?? false,
+        })),
+        todayEmergencies: todayEmergencies.map((e) => ({
+          description: e.description,
+          severity: e.severity,
+          resolved: e.resolved,
+        })),
+      })
+
+      const suggestedWins = result.suggestedWins.slice(0, 8).filter((s) => s.trim())
+      const suggestedLessons = result.suggestedLessons.slice(0, 8).filter((s) => s.trim())
+
+      let winHighlight: number[] = []
+      let lessonHighlight: number[] = []
+      let finalWins: string[] = []
+      let finalLessons: string[] = []
+
+      setWins((prev) => {
+        const r = mergeAppendWinsLessons(prev, suggestedWins)
+        winHighlight = r.highlight
+        finalWins = r.final
+        return r.final
+      })
+      setLessons((prev) => {
+        const r = mergeAppendWinsLessons(prev, suggestedLessons)
+        lessonHighlight = r.highlight
+        finalLessons = r.final
+        return r.final
+      })
+
+      const highlightWins = winHighlight.filter((i) => (finalWins[i] ?? '').trim().length > 0)
+      const highlightLessons = lessonHighlight.filter((i) => (finalLessons[i] ?? '').trim().length > 0)
+
+      const refl = result.suggestedReflection.trim()
+      // Empty reflection: do not touch Daily synthesis (preserve prior dumps / manual edits).
+      if (refl) {
+        setJournal((prev) => (prev.trim() ? `${prev.trim()}\n\n${refl}` : refl))
+      }
+
+      const journalHighlight = Boolean(refl)
+      const hadNewContent =
+        journalHighlight || highlightWins.length > 0 || highlightLessons.length > 0
+      if (hadNewContent) {
+        setDumpSortHighlight({
+          journal: journalHighlight,
+          wins: highlightWins,
+          lessons: highlightLessons,
+        })
+      } else {
+        setDumpSortHighlight(null)
+      }
+
+      setBrainDump('')
+
+      window.dispatchEvent(
+        new CustomEvent('toast', {
+          detail: {
+            type: 'success',
+            message: hadNewContent
+              ? 'Sorted into your reflection and cards — review and edit below.'
+              : 'Nothing new to add from this dump — your cards are unchanged.',
+          },
+        })
+      )
+      if (hadNewContent) {
+        setSortLandingGlow(true)
+        window.setTimeout(() => setSortLandingGlow(false), 2000)
+        window.setTimeout(() => {
+          const el = document.getElementById('evening-daily-synthesis')
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 50)
+      }
+    } catch (e) {
+      console.error('[evening/sort-dump]', e)
+      window.dispatchEvent(
+        new CustomEvent('toast', {
+          detail: {
+            type: 'error',
+            message:
+              'Sorting failed. Your thoughts are still here—try the button again.',
+          },
+        })
+      )
+    } finally {
+      setEveningDumpSorting(false)
+    }
+  }, [brainDump, fireFunnelStep, lessons, morningTasks, reviewDate, todayEmergencies, wins])
+
   // Show streaming errors in the coach message (only when not showing retry UI)
   useEffect(() => {
     if (streamingError && aiCoachTrigger === 'evening_after') {
@@ -158,13 +525,24 @@ export default function EveningPage() {
     }
   }, [isRetrying, isStreaming])
 
-  /** After first evening save, open First Glimpse once celebration / streak modals are dismissed. */
+  /** Reading overlay → badge modal when post-evening stream completes (Pro completion flow). */
   useEffect(() => {
-    if (!firstGlimpsePending) return
-    if (showCelebration || showStreakCelebration || eveningMicroCelebration) return
-    setShowFirstGlimpseModal(true)
-    setFirstGlimpsePending(false)
-  }, [firstGlimpsePending, showCelebration, showStreakCelebration, eveningMicroCelebration])
+    if (eveningInsightFlow !== 'reading') return
+    if (isStreaming) return
+    if (streamingError && !isRetrying) {
+      setEveningInsightFlow(null)
+      eveningInsightPostSaveActiveRef.current = false
+      return
+    }
+    if (!aiCoachMessage?.trim()) return
+    if (aiCoachMessage.startsWith('[AI ERROR]') && !isRetrying) {
+      setEveningInsightFlow(null)
+      eveningInsightPostSaveActiveRef.current = false
+      return
+    }
+    if (aiCoachMessage.startsWith('[AI ERROR]')) return
+    setEveningInsightFlow('modal')
+  }, [eveningInsightFlow, isStreaming, aiCoachMessage, streamingError, isRetrying])
 
   const handleRetryInsight = useCallback(async () => {
     const session = await getUserSession()
@@ -172,6 +550,9 @@ export default function EveningPage() {
     const features = getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
     if (!features.dailyPostEveningPrompt) return
 
+    eveningInsightPostSaveActiveRef.current = true
+    setEveningInsightFlow('reading')
+    setAiCoachMessage(null)
     setIsRetrying(true)
     const winsForApi = wins.filter((w) => w.trim()).length > 0 ? JSON.stringify(wins.filter((w) => w.trim())) : null
     const lessonsForApi = lessons.filter((l) => l.trim()).length > 0 ? JSON.stringify(lessons.filter((l) => l.trim())) : null
@@ -195,6 +576,7 @@ export default function EveningPage() {
               completed: t.completed,
               needle_mover: t.needle_mover ?? false,
             })),
+            loopCloseContext: buildEveningLoopCloseContext(morningTasks, todayEmergencies),
           },
         },
         async (fullPrompt) => {
@@ -269,7 +651,7 @@ export default function EveningPage() {
     } catch (err) {
       console.error('[Evening] Retry insight failed:', err)
     }
-  }, [wins, lessons, journal, mood, energy, morningTasks, reviewDate, startStream])
+  }, [wins, lessons, journal, mood, energy, morningTasks, todayEmergencies, reviewDate, startStream])
 
   // Sync reviewDate from ?date= or founder-day default (before 4am local = previous calendar day)
   const dateQuery = searchParams?.get('date') ?? ''
@@ -280,6 +662,11 @@ export default function EveningPage() {
         : getEffectivePlanDate()
     setReviewDate(next)
   }, [dateQuery])
+
+  useEffect(() => {
+    setEveningInsightFlow(null)
+    eveningInsightPostSaveActiveRef.current = false
+  }, [reviewDate])
 
   // Auth check useEffect
   useEffect(() => {
@@ -294,14 +681,8 @@ export default function EveningPage() {
     checkAuth()
   }, [router])
 
-  // Check if celebration has already been shown for today (per-device)
   useEffect(() => {
-    if (typeof window === 'undefined' || !reviewDate) return
-    const key = `evening_celebration_shown_${reviewDate}`
-    const value = window.localStorage.getItem(key)
-    if (value === 'true') {
-      setHasCelebratedToday(true)
-    }
+    postEveningStreamStartedRef.current = false
   }, [reviewDate])
 
   useEffect(() => {
@@ -317,12 +698,55 @@ export default function EveningPage() {
       const features = getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
 
       // Fetch Evening Review
-      const { data: reviewData, error: reviewError } = await supabase
+      let { data: reviewData, error: reviewError } = await supabase
         .from('evening_reviews')
-        .select('id, journal, mood, energy, wins, lessons')
+        .select('id, journal, brain_dump, mood, energy, wins, lessons, is_draft, is_day_complete')
         .eq('review_date', reviewDate)
         .eq('user_id', session.user.id) // Filter by user_id
         .maybeSingle()
+
+      if (reviewError && isMissingEveningIsDayCompleteColumnError(reviewError)) {
+        const retry = await supabase
+          .from('evening_reviews')
+          .select('id, journal, brain_dump, mood, energy, wins, lessons, is_draft')
+          .eq('review_date', reviewDate)
+          .eq('user_id', session.user.id)
+          .maybeSingle()
+        reviewData = retry.data as typeof reviewData
+        reviewError = retry.error
+      }
+
+      if (reviewError && isMissingEveningBrainDumpColumnError(reviewError)) {
+        const retry = await supabase
+          .from('evening_reviews')
+          .select('id, journal, mood, energy, wins, lessons, is_draft')
+          .eq('review_date', reviewDate)
+          .eq('user_id', session.user.id)
+          .maybeSingle()
+        reviewData = retry.data as typeof reviewData
+        reviewError = retry.error
+      }
+      if (reviewError && isMissingEveningIsDraftColumnError(reviewError)) {
+        const retry = await supabase
+          .from('evening_reviews')
+          .select('id, journal, brain_dump, mood, energy, wins, lessons')
+          .eq('review_date', reviewDate)
+          .eq('user_id', session.user.id)
+          .maybeSingle()
+        // Legacy DB without is_draft column — treat missing is_draft as submitted
+        reviewData = retry.data as (typeof reviewData & { is_draft?: boolean }) | null
+        reviewError = retry.error
+      }
+      if (reviewError && isMissingEveningBrainDumpColumnError(reviewError)) {
+        const retry = await supabase
+          .from('evening_reviews')
+          .select('id, journal, mood, energy, wins, lessons')
+          .eq('review_date', reviewDate)
+          .eq('user_id', session.user.id)
+          .maybeSingle()
+        reviewData = retry.data as typeof reviewData
+        reviewError = retry.error
+      }
       
       // Fetch post_evening insight (Mrs. Deer)
       const [postEveningInsightRes] = await Promise.all([
@@ -363,10 +787,12 @@ export default function EveningPage() {
       ])
       
       // Show evening insight ONLY when:
-      // 1. User has saved a review for this exact date
+      // 1. User has submitted (non-draft) a review for this exact date
       // 2. An evening insight exists for this exact date
       // NO FALLBACKS - if no review or no insight for this date, show nothing
       const hasEveningReview = !!reviewData
+      const hasSubmittedEveningReview =
+        !!reviewData && (reviewData as { is_draft?: boolean }).is_draft !== true
       console.log(`[Evening Page Load] Has evening review for ${reviewDate}:`, hasEveningReview)
       
       let insightToShow = null
@@ -374,12 +800,12 @@ export default function EveningPage() {
         console.error(`[Evening Page Load] Error loading post_evening insight:`, postEveningInsightRes.error)
       }
       
-      // STRICT: Only show if BOTH review exists AND insight exists for this exact date
-      if (hasEveningReview && postEveningInsightRes.data?.prompt_text) {
+      // STRICT: Only show if BOTH submitted review exists AND insight exists for this exact date
+      if (hasSubmittedEveningReview && postEveningInsightRes.data?.prompt_text) {
         insightToShow = postEveningInsightRes.data.prompt_text
         console.log(`[Evening Page Load] Final insight displayed for ${reviewDate}`)
       } else {
-        console.log(`[Evening Page Load] No insight displayed - review: ${hasEveningReview}, insight: ${!!postEveningInsightRes.data?.prompt_text}`)
+        console.log(`[Evening Page Load] No insight displayed - review: ${hasSubmittedEveningReview}, insight: ${!!postEveningInsightRes.data?.prompt_text}`)
       }
       
       if (insightToShow) {
@@ -402,9 +828,18 @@ export default function EveningPage() {
 
       if (reviewError) {
         setError(reviewError.message) // Display error
+        eveningRowWasSubmittedRef.current = false
+        setIsDayComplete(false)
       } else if (reviewData) {
         setCurrentReviewId((reviewData as { id?: string }).id ?? null)
+        eveningRowWasSubmittedRef.current = (reviewData as { is_draft?: boolean }).is_draft !== true
+        setIsDayComplete(Boolean((reviewData as { is_day_complete?: boolean }).is_day_complete))
         setJournal(reviewData.journal ?? '')
+        setBrainDump(
+          typeof (reviewData as { brain_dump?: unknown }).brain_dump === 'string'
+            ? (reviewData as { brain_dump: string }).brain_dump
+            : ''
+        )
         setMood(reviewData.mood ?? null)
         setEnergy(reviewData.energy ?? null)
         
@@ -439,14 +874,31 @@ export default function EveningPage() {
         } else {
           setLessons([''])
         }
+      } else {
+        setCurrentReviewId(null)
+        eveningRowWasSubmittedRef.current = false
+        setIsDayComplete(false)
+        setJournal('')
+        setBrainDump('')
+        setMood(null)
+        setEnergy(null)
+        setWins([''])
+        setLessons([''])
       }
 
-      // Fetch Morning Tasks for today (select * - completed column may not exist yet)
+      const { data: profileForEveningTasks } = await supabase
+        .from('user_profiles')
+        .select('timezone')
+        .eq('id', session.user.id)
+        .maybeSingle()
+      const eveningTz = getUserTimezoneFromProfile(profileForEveningTasks as { timezone?: string | null } | null)
+      const eveningTaskFilter = morningTasksOrFilterForPlanDate(reviewDate, eveningTz)
+
       const { data: tasksData, error: tasksError } = await supabase
         .from('morning_tasks')
         .select('*')
-        .eq('plan_date', reviewDate)
         .eq('user_id', session.user.id)
+        .or(eveningTaskFilter)
         .order('task_order', { ascending: true })
 
       if (tasksError) {
@@ -454,15 +906,76 @@ export default function EveningPage() {
         setMorningTasks([])
       } else if (tasksData) {
         setMorningTasks(
-          tasksData.map((t) => ({
-            id: (t as { id: string }).id,
-            description: (t as { description?: string }).description ?? '',
-            completed: (t as { completed?: boolean }).completed ?? false,
-            needle_mover: (t as { needle_mover?: boolean }).needle_mover ?? false,
-          }))
+          tasksData.map((t) => {
+            const row = t as {
+              id: string
+              description?: string
+              completed?: boolean
+              needle_mover?: boolean
+              plan_date: string
+              postponed_from_plan_date?: string | null
+            }
+            return {
+              id: row.id,
+              description: row.description ?? '',
+              completed: row.completed ?? false,
+              needle_mover: row.needle_mover ?? false,
+              movedToTomorrow: isTaskShowingAsMovedToTomorrow(reviewDate, eveningTz, row),
+            }
+          })
         )
       } else {
         setMorningTasks([])
+      }
+
+      const { data: emRows, error: emErr } = await supabase
+        .from('emergencies')
+        .select('id, description, severity, resolved')
+        .eq('user_id', session.user.id)
+        .eq('fire_date', reviewDate)
+        .order('created_at', { ascending: false })
+
+      if (emErr) {
+        console.error('[evening] emergencies fetch', emErr)
+        setTodayEmergencies([])
+        hadEmergencyRef.current = false
+      } else {
+        const mapped = (emRows ?? []).map((row) => {
+          const r = row as {
+            id: string
+            description?: string | null
+            severity?: string | null
+            resolved?: boolean | null
+          }
+          const sev = r.severity === 'hot' || r.severity === 'warm' || r.severity === 'contained' ? r.severity : 'warm'
+          return {
+            id: r.id,
+            description: typeof r.description === 'string' ? r.description : '',
+            severity: sev,
+            resolved: !!r.resolved,
+          } as EveningEmergencyRow
+        })
+        setTodayEmergencies(mapped)
+        hadEmergencyRef.current = mapped.length > 0
+      }
+
+      try {
+        const ctxRes = await fetch(
+          `/api/evening/context?date=${encodeURIComponent(reviewDate)}`,
+          { credentials: 'include' }
+        )
+        if (ctxRes.ok) {
+          const ctx = (await ctxRes.json()) as {
+            resolvedToday?: unknown[]
+            tomorrowTaskDebtCount?: number
+          }
+          setEveningCrisisContext({
+            resolvedCount: Array.isArray(ctx.resolvedToday) ? ctx.resolvedToday.length : 0,
+            tomorrowDebt: typeof ctx.tomorrowTaskDebtCount === 'number' ? ctx.tomorrowTaskDebtCount : 0,
+          })
+        }
+      } catch {
+        // best-effort
       }
 
       setLoading(false)
@@ -490,7 +1003,8 @@ export default function EveningPage() {
 
   const showMicroLessonToast = useCallback(async (fallback: string, type: 'success' | 'info' = 'success') => {
     try {
-      const res = await fetch('/api/micro-lesson?location=evening', { credentials: 'include' })
+      const headers = await getClientAuthHeaders()
+      const res = await fetch('/api/micro-lesson?location=evening', { credentials: 'include', headers })
       const json = await res.json()
       const msg = (json?.lesson?.message as string | undefined) ?? fallback
       window.dispatchEvent(new CustomEvent('toast', { detail: { message: msg, type } }))
@@ -544,7 +1058,7 @@ export default function EveningPage() {
     }
   }
 
-  const handleMoveTaskToTomorrow = async (task: Task) => {
+  const handleMoveTaskToTomorrow = async (task: Task): Promise<boolean> => {
     const originalTasks = morningTasks
     const updated = morningTasks.map((t) =>
       t.id === task.id ? { ...t, movedToTomorrow: true } : t
@@ -562,6 +1076,9 @@ export default function EveningPage() {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || 'Failed to move task')
       }
+      setRetryTrigger((x) => x + 1)
+      void flushEveningDraftRef.current()
+      return true
     } catch (err) {
       console.error('[Evening] move-to-tomorrow error', err)
       setMorningTasks(originalTasks)
@@ -575,6 +1092,7 @@ export default function EveningPage() {
           })
         )
       }
+      return false
     }
   }
 
@@ -596,6 +1114,8 @@ export default function EveningPage() {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || 'Failed to undo move')
       }
+      setRetryTrigger((x) => x + 1)
+      void flushEveningDraftRef.current()
     } catch (err) {
       console.error('[Evening] undo-move error', err)
       setMorningTasks(originalTasks)
@@ -610,6 +1130,29 @@ export default function EveningPage() {
         )
       }
     }
+  }
+
+  const handleSnoozeModalConfirm = async () => {
+    const t = snoozeTaskQueue[0]
+    if (!t) {
+      setSnoozeModalOpen(false)
+      return
+    }
+    const ok = await handleMoveTaskToTomorrow(t)
+    if (!ok) return
+    setSnoozeTaskQueue((prev) => {
+      const next = prev.slice(1)
+      if (next.length === 0) setSnoozeModalOpen(false)
+      return next
+    })
+  }
+
+  const handleSnoozeModalSkip = () => {
+    setSnoozeTaskQueue((prev) => {
+      const next = prev.slice(1)
+      if (next.length === 0) setSnoozeModalOpen(false)
+      return next
+    })
   }
 
   const handleDeleteWinConfirm = async () => {
@@ -682,7 +1225,7 @@ export default function EveningPage() {
     }
   }
 
-  const handleSave = async () => {
+  const handleSave = async (opts?: { targetReviewDate?: string }) => {
     setSaving(true)
     setError(null)
 
@@ -703,16 +1246,20 @@ export default function EveningPage() {
       return
     }
 
+    let didSaveSucceed = false
     try {
       let suppressGenericEveningCelebration = false
       const awareness = getTimeAwareness()
       const now = new Date()
-      const todayStr = format(now, 'yyyy-MM-dd')
-      const yesterdayStr = format(new Date(now.getTime() - 24 * 60 * 60 * 1000), 'yyyy-MM-dd')
+      const calendarTodayStr = format(now, 'yyyy-MM-dd')
+      const saveReviewDate = opts?.targetReviewDate ?? reviewDate
+      const yesterdayStr = format(subDays(parseISO(`${calendarTodayStr}T12:00:00`), 1), 'yyyy-MM-dd')
 
-      // Late night or morning catchup: offer day choice when reviewDate is "today"
+      // Late night / morning catchup: only on the calendar-"today" page (not when URL/state is already yesterday).
+      // Skip when saving to an explicit target (e.g. user chose "Yesterday" in the popup — avoids stale state + double popup).
       if (
-        reviewDate === todayStr &&
+        !opts?.targetReviewDate &&
+        saveReviewDate === calendarTodayStr &&
         (awareness.phase === 'late_night' || awareness.phase === 'morning_catchup')
       ) {
         let variantType: 'late_night_choice' | 'late_night_yesterday_exists' | 'morning_catchup' =
@@ -732,10 +1279,18 @@ export default function EveningPage() {
         return
       }
 
-      const { data: beforeEveningRows } = await supabase
+      let beforeEveningRes = await supabase
         .from('evening_reviews')
         .select('review_date')
         .eq('user_id', session.user.id)
+        .eq('is_draft', false)
+      if (beforeEveningRes.error && isMissingEveningIsDraftColumnError(beforeEveningRes.error)) {
+        beforeEveningRes = await supabase
+          .from('evening_reviews')
+          .select('review_date')
+          .eq('user_id', session.user.id)
+      }
+      const beforeEveningRows = beforeEveningRes.data
 
       const eveningDatesBefore = new Set(
         (beforeEveningRows ?? [])
@@ -743,7 +1298,7 @@ export default function EveningPage() {
           .filter((d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
       )
       const isFirstEverEvening = eveningDatesBefore.size === 0
-      const hadReviewForThisDate = eveningDatesBefore.has(reviewDate)
+      const hadReviewForThisDate = eveningDatesBefore.has(saveReviewDate)
 
       const winsFiltered = wins.filter((w) => w.trim()).length > 0
         ? JSON.stringify(wins.filter((w) => w.trim()))
@@ -752,32 +1307,112 @@ export default function EveningPage() {
         ? JSON.stringify(lessons.filter((l) => l.trim()))
         : null
 
-      const persistEveningReview = async () => {
-        const { error: deleteError } = await supabase
+      const persistEveningReview = async (
+        includeDraftCol: boolean,
+        includeBrainDumpCol: boolean,
+        includeDayCompleteCol: boolean
+      ) =>
+        supabase
           .from('evening_reviews')
-          .delete()
-          .eq('review_date', reviewDate)
-          .eq('user_id', session.user.id)
-        if (deleteError) return { error: deleteError }
+          .upsert(
+            {
+              user_id: session.user.id,
+              review_date: saveReviewDate,
+              journal: journal.trim() || null,
+              ...(includeBrainDumpCol ? { brain_dump: brainDump.trim() || null } : {}),
+              mood: mood ?? null,
+              energy: energy ?? null,
+              wins: winsFiltered,
+              lessons: lessonsFiltered,
+              had_emergency: hadEmergencyRef.current,
+              ...(includeDraftCol ? { is_draft: false } : {}),
+              ...(includeDayCompleteCol ? { is_day_complete: true } : {}),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'user_id,review_date' }
+          )
+          .select('id')
+          .maybeSingle()
 
-        return supabase.from('evening_reviews').insert({
-          user_id: session.user.id,
-          review_date: reviewDate,
-          journal: journal.trim() || null,
-          mood: mood ?? null,
-          energy: energy ?? null,
-          wins: winsFiltered,
-          lessons: lessonsFiltered,
-        })
+      let includeBrainUpsert = true
+      let includeDraftUpsert = true
+      let includeDayCompleteUpsert = true
+      let { error: insertError, data: eveningUpsertRow } = await persistEveningReview(
+        includeDraftUpsert,
+        includeBrainUpsert,
+        includeDayCompleteUpsert
+      )
+      if (insertError && isMissingEveningBrainDumpColumnError(insertError)) {
+        includeBrainUpsert = false
+        ;({ error: insertError, data: eveningUpsertRow } = await persistEveningReview(
+          includeDraftUpsert,
+          includeBrainUpsert,
+          includeDayCompleteUpsert
+        ))
       }
-
-      let { error: insertError } = await persistEveningReview()
+      if (insertError && isMissingEveningIsDraftColumnError(insertError)) {
+        includeDraftUpsert = false
+        ;({ error: insertError, data: eveningUpsertRow } = await persistEveningReview(
+          includeDraftUpsert,
+          includeBrainUpsert,
+          includeDayCompleteUpsert
+        ))
+      }
+      if (insertError && isMissingEveningIsDayCompleteColumnError(insertError)) {
+        includeDayCompleteUpsert = false
+        ;({ error: insertError, data: eveningUpsertRow } = await persistEveningReview(
+          includeDraftUpsert,
+          includeBrainUpsert,
+          includeDayCompleteUpsert
+        ))
+      }
       if (insertError && isRlsOrAuthPermissionError(insertError)) {
         const again = await refreshSessionForWrite()
-        if (again.ok) ({ error: insertError } = await persistEveningReview())
+        if (again.ok) {
+          ;({ error: insertError, data: eveningUpsertRow } = await persistEveningReview(
+            includeDraftUpsert,
+            includeBrainUpsert,
+            includeDayCompleteUpsert
+          ))
+          if (insertError && isMissingEveningBrainDumpColumnError(insertError)) {
+            includeBrainUpsert = false
+            ;({ error: insertError, data: eveningUpsertRow } = await persistEveningReview(
+              includeDraftUpsert,
+              includeBrainUpsert,
+              includeDayCompleteUpsert
+            ))
+          }
+          if (insertError && isMissingEveningIsDraftColumnError(insertError)) {
+            includeDraftUpsert = false
+            ;({ error: insertError, data: eveningUpsertRow } = await persistEveningReview(
+              includeDraftUpsert,
+              includeBrainUpsert,
+              includeDayCompleteUpsert
+            ))
+          }
+          if (insertError && isMissingEveningIsDayCompleteColumnError(insertError)) {
+            includeDayCompleteUpsert = false
+            ;({ error: insertError, data: eveningUpsertRow } = await persistEveningReview(
+              includeDraftUpsert,
+              includeBrainUpsert,
+              includeDayCompleteUpsert
+            ))
+          }
+        }
       }
 
       if (insertError) throw insertError
+
+      eveningRowWasSubmittedRef.current = true
+      setIsDayComplete(includeDayCompleteUpsert)
+      didSaveSucceed = true
+      const newId = (eveningUpsertRow as { id?: string } | null)?.id
+      if (newId) setCurrentReviewId(newId)
+
+      if (opts?.targetReviewDate) {
+        setReviewDate(opts.targetReviewDate)
+        router.replace(`/evening?date=${encodeURIComponent(opts.targetReviewDate)}`, { scroll: false })
+      }
 
       const eveningDistinctAfterSave = hadReviewForThisDate ? eveningDatesBefore.size : eveningDatesBefore.size + 1
       if (
@@ -789,7 +1424,7 @@ export default function EveningPage() {
         const storageKey = eveningMicroCelebrationStorageKey(session.user.id, eveningDistinctAfterSave)
         if (msg && !window.localStorage.getItem(storageKey)) {
           window.localStorage.setItem(storageKey, '1')
-          setEveningMicroCelebration({ day: eveningDistinctAfterSave, message: msg })
+          window.dispatchEvent(new CustomEvent('toast', { detail: { message: msg, type: 'success' } }))
           suppressGenericEveningCelebration = true
         }
       }
@@ -799,14 +1434,33 @@ export default function EveningPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ reviewDate }),
+        body: JSON.stringify({ reviewDate: saveReviewDate }),
       }).catch(() => {})
 
       // Best-effort: force founder journey evaluation immediately after evening save
       // so unlocks/badges persist without waiting for a later dashboard/journey fetch.
-      fetch('/api/founder-dna/journey', {
-        method: 'GET',
+      void getClientAuthHeaders().then((auth) =>
+        fetch('/api/founder-dna/journey', {
+          method: 'GET',
+          credentials: 'include',
+          headers: auth,
+        }).catch(() => {})
+      )
+
+      const tomorrowPlanDate = format(addDays(parseISO(`${saveReviewDate}T12:00:00`), 1), 'yyyy-MM-dd')
+      fetch('/api/user/morning-plan-autosave/prebake-decision-strategies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
+        body: JSON.stringify({
+          planDate: tomorrowPlanDate,
+          eveningReviewDate: saveReviewDate,
+          mood: mood ?? null,
+          energy: energy ?? null,
+          wins: wins.map((w) => w.trim()).filter(Boolean),
+          lessons: lessons.map((l) => l.trim()).filter(Boolean),
+          journal: journal.trim() || null,
+        }),
       }).catch(() => {})
 
       fireFunnelStep(3, 'review_complete')
@@ -820,16 +1474,31 @@ export default function EveningPage() {
         }
       }
       if (!suppressGenericEveningCelebration) {
-        void showMicroLessonToast('Reflection complete. Your consistency is shaping your story.', 'info')
+        window.dispatchEvent(
+          new CustomEvent('toast', {
+            detail: { message: 'Reflection complete. Your consistency is shaping your story.', type: 'info' },
+          })
+        )
+      }
+
+      const snoozeCandidates = getPendingTasksForSnoozePrompt(
+        morningTasks,
+        wins.map((w) => w.trim()).filter(Boolean),
+        lessons.map((l) => l.trim()).filter(Boolean)
+      )
+      if (snoozeCandidates.length > 0) {
+        setSnoozeTaskQueue(snoozeCandidates)
+        setSnoozeModalOpen(true)
       }
 
       trackEvent('evening_review_saved', {
-        review_date: reviewDate,
+        review_date: saveReviewDate,
         mood: mood ?? undefined,
         energy: energy ?? undefined,
         has_wins: wins.some((w) => w.trim()),
         has_lessons: lessons.some((l) => l.trim()),
         has_journal: !!journal.trim(),
+        had_emergency: hadEmergencyRef.current,
       })
       // Founder analytics: enqueue pattern extraction from journal + wins + lessons
       const reflectionText = [journal.trim(), ...wins.filter((w) => w.trim()), ...lessons.filter((l) => l.trim())].filter(Boolean).join('\n')
@@ -839,7 +1508,7 @@ export default function EveningPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             source_table: 'evening_reviews',
-            source_id: reviewDate,
+            source_id: saveReviewDate,
             content: reflectionText,
           }),
         }).catch(() => {})
@@ -859,44 +1528,50 @@ export default function EveningPage() {
 
       // Trigger post-evening reflection insight AND next day's morning prompt (Pro only)
       const features = getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
-      let insightGenerated = false
-      
+
       if (features.dailyPostEveningPrompt) {
+        eveningInsightPostSaveActiveRef.current = true
+        setEveningFirstGlimpseBadge(isFirstEverEvening)
+        setEveningInsightFlow('reading')
         setAiCoachTrigger('evening_after')
-        try {
-          const winsForApi = wins.filter((w) => w.trim()).length > 0 ? JSON.stringify(wins.filter((w) => w.trim())) : null
-          const lessonsForApi = lessons.filter((l) => l.trim()).length > 0 ? JSON.stringify(lessons.filter((l) => l.trim())) : null
-          console.log('🔵 STEP 1: Evening review saved, starting post_evening stream...')
-          await startStream(
-            {
-              promptType: 'post_evening',
-              userId: session.user.id,
-              promptDate: reviewDate,
-              accessToken: session?.access_token,
-              postEveningOverride: {
-                todayReview: {
-                  wins: winsForApi,
-                  lessons: lessonsForApi,
-                  journal: journal.trim() || null,
-                  mood: mood ?? null,
-                  energy: energy ?? null,
+        setAiCoachMessage(null)
+        setTimeout(() => {
+          void (async () => {
+            try {
+              postEveningStreamStartedRef.current = true
+              const winsForApi = wins.filter((w) => w.trim()).length > 0 ? JSON.stringify(wins.filter((w) => w.trim())) : null
+              const lessonsForApi = lessons.filter((l) => l.trim()).length > 0 ? JSON.stringify(lessons.filter((l) => l.trim())) : null
+              console.log('🔵 STEP 1: Evening review saved, starting post_evening stream...')
+              await startStream(
+                {
+                  promptType: 'post_evening',
+                  userId: session.user.id,
+                  promptDate: saveReviewDate,
+                  accessToken: session?.access_token,
+                  postEveningOverride: {
+                    todayReview: {
+                      wins: winsForApi,
+                      lessons: lessonsForApi,
+                      journal: journal.trim() || null,
+                      mood: mood ?? null,
+                      energy: energy ?? null,
+                    },
+                    todayPlan: morningTasks.map((t) => ({
+                      description: t.description,
+                      completed: t.completed,
+                      needle_mover: t.needle_mover ?? false,
+                    })),
+                    loopCloseContext: buildEveningLoopCloseContext(morningTasks, todayEmergencies),
+                  },
                 },
-                todayPlan: morningTasks.map((t) => ({
-                  description: t.description,
-                  completed: t.completed,
-                  needle_mover: t.needle_mover ?? false,
-                })),
-              },
-            },
-            async (fullPrompt) => {
-              insightGenerated = true
+                async (fullPrompt) => {
               setAiCoachMessage(fullPrompt)
               const { data: existing } = await supabase
                 .from('personal_prompts')
                 .select('id, generation_count')
                 .eq('user_id', session.user.id)
                 .eq('prompt_type', 'post_evening')
-                .eq('prompt_date', reviewDate)
+                .eq('prompt_date', saveReviewDate)
                 .maybeSingle()
 
               const genCount = existing ? ((existing as { generation_count?: number }).generation_count ?? 1) + 1 : 1
@@ -907,7 +1582,7 @@ export default function EveningPage() {
                   {
                     user_id: session.user.id,
                     prompt_type: 'post_evening',
-                    prompt_date: reviewDate,
+                    prompt_date: saveReviewDate,
                     prompt_text: fullPrompt,
                     stage_context: null,
                     generation_count: genCount,
@@ -930,7 +1605,7 @@ export default function EveningPage() {
                     component: 'evening',
                     action: 'save_insight',
                     severity: 'medium',
-                    metadata: { code: (upsertErr as { code?: string }).code, reviewDate, promptType: 'post_evening' },
+                    metadata: { code: (upsertErr as { code?: string }).code, reviewDate: saveReviewDate, promptType: 'post_evening' },
                     userId: session.user.id,
                   })
                 }
@@ -949,7 +1624,7 @@ export default function EveningPage() {
                     credentials: 'include',
                     body: JSON.stringify({
                       prompt_type: 'post_evening',
-                      prompt_date: reviewDate,
+                      prompt_date: saveReviewDate,
                       prompt_text: fullPrompt,
                       generation_count: genCount,
                     }),
@@ -981,15 +1656,12 @@ export default function EveningPage() {
               }
             }
           )
-        } catch (error) {
-          console.error('🔵 STEP FAIL: Exception streaming post-evening insight:', error)
-        }
-        
-        // Generate next day's morning prompt (invitation to plan — shown before user saves morning plan)
-        try {
-          const tomorrow = new Date(reviewDate)
-          tomorrow.setDate(tomorrow.getDate() + 1)
-          const nextDay = format(tomorrow, 'yyyy-MM-dd')
+            } catch (error) {
+              console.error('🔵 STEP FAIL: Exception streaming post-evening insight:', error)
+            }
+            // Generate next day's morning prompt (invitation to plan — shown before user saves morning plan)
+            try {
+          const nextDay = tomorrowPlanDate
           console.log('🔵 STEP 6: Calling morning insight API for next day:', nextDay)
           const signedHeaders = await import('@/lib/api-client').then((m) => m.getSignedHeadersCached(session?.access_token))
           const morningRes = await fetch('/api/personal-coaching', {
@@ -1111,15 +1783,24 @@ export default function EveningPage() {
           } else {
             console.error('🔵 STEP 9 FAIL: Morning prompt failed:', morningRes.status, morningData?.error || morningData)
           }
-        } catch (error) {
-          console.error('🔵 STEP FAIL: Exception generating morning prompt:', error)
-        }
+            } catch (error) {
+              console.error('🔵 STEP FAIL: Exception generating morning prompt:', error)
+            }
+          })()
+        }, 0)
       } else {
         console.log('🔵 SKIP: dailyPostEveningPrompt not enabled for user tier:', session.user.tier)
       }
 
-      if (isFirstEverEvening) {
-        setFirstGlimpsePending(true)
+      if (isFirstEverEvening && typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('toast', {
+            detail: {
+              message: 'First evening reflection saved — see you in the morning.',
+              type: 'success',
+            },
+          })
+        )
       }
 
       // Fire-and-forget: generate tomorrow's decision suggestions from patterns + profile
@@ -1132,65 +1813,75 @@ export default function EveningPage() {
       // Check for Mrs. Deer pattern feedback after saving (new reflection may trigger pattern)
       checkPatternDetection()
 
-      // Celebrations for the current founder-day target, not arbitrary calendar isToday
-      if (reviewDate === getEffectivePlanDate()) {
-        // Calculate streak after saving review
+      if (saveReviewDate === getEffectivePlanDate()) {
         const streakData = await calculateStreak(session.user.id)
-        setCurrentStreak(streakData.currentStreak)
-
-        // Check if this is a streak milestone
         if (isStreakMilestone(streakData.currentStreak)) {
-          const milestoneKey = `streak_milestone_shown_${streakData.currentStreak}_${reviewDate}`
+          const milestoneKey = `streak_milestone_shown_${streakData.currentStreak}_${saveReviewDate}`
           if (typeof window !== 'undefined' && window.localStorage.getItem(milestoneKey) !== 'true') {
             window.localStorage.setItem(milestoneKey, 'true')
-            setShowStreakCelebration(true)
-            return // Don't show regular celebration if showing streak celebration
+            window.dispatchEvent(
+              new CustomEvent('toast', {
+                detail: {
+                  message: `${streakData.currentStreak}-day streak. Keep the rhythm going.`,
+                  type: 'success',
+                },
+              })
+            )
           }
         }
-
-        if (suppressGenericEveningCelebration) {
-          if (typeof window !== 'undefined') {
-            const key = `evening_celebration_shown_${reviewDate}`
-            window.localStorage.setItem(key, 'true')
-          }
-          setHasCelebratedToday(true)
-          setError(null)
-          return
-        }
-
-        // Celebration: only on first successful save per day (per device)
-        if (typeof window !== 'undefined') {
-          const key = `evening_celebration_shown_${reviewDate}`
-          const alreadyCelebrated = hasCelebratedToday || window.localStorage.getItem(key) === 'true'
-          if (!alreadyCelebrated) {
-            window.localStorage.setItem(key, 'true')
-            setHasCelebratedToday(true)
-            setShowCelebration(true)
-            return // Celebration will show, insight will appear after
-          }
-        }
-
-        // If we've already celebrated today AND insight was generated, stay on page to show insight
-        // Only redirect if no insight was generated
-        if (!insightGenerated) {
-          console.log('⚠️ No insight generated, redirecting to dashboard')
-          router.push('/dashboard')
-        } else {
-          console.log('✅ Insight generated, staying on page to display it')
-          setError(null)
-        }
+        setError(null)
       } else {
-        // For past dates, just clear error (insight already shown above)
         setError(null)
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to save. Please try again.'
-      )
+      const e = err as { code?: string; message?: string; details?: string; hint?: string }
+      if (e?.code || e?.details) {
+        console.error('[evening/save] evening_reviews upsert failed', {
+          code: e.code,
+          message: e.message,
+          details: e.details,
+          hint: e.hint,
+        })
+      } else {
+        console.error('[evening/save]', err)
+      }
+      setError(err instanceof Error ? err.message : 'Failed to save. Please try again.')
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('toast', {
+            detail: {
+              message: "Couldn't close the loop. Check your connection.",
+              type: 'error',
+            },
+          })
+        )
+      }
     } finally {
       setSaving(false)
+      if (
+        didSaveSucceed &&
+        typeof window !== 'undefined' &&
+        !eveningInsightPostSaveActiveRef.current
+      ) {
+        window.setTimeout(() => {
+          document.getElementById('evening-daily-synthesis')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 80)
+      }
     }
   }
+
+  eveningSnapshotRef.current = { journal, brainDump, wins, lessons, mood, energy }
+
+  useEffect(() => {
+    if (loading || !reviewDate) return
+    scheduleEveningDraftRef.current()
+  }, [journal, brainDump, mood, energy, wins, lessons, loading, reviewDate])
+
+  useEffect(() => {
+    if (draftSaveStatus !== 'saved') return
+    const t = window.setTimeout(() => setDraftSaveStatus('idle'), 2200)
+    return () => window.clearTimeout(t)
+  }, [draftSaveStatus])
 
   if (loading) {
     return (
@@ -1212,6 +1903,19 @@ export default function EveningPage() {
 
   return (
     <div className={isDesktopSidebar ? 'flex min-h-screen' : undefined}>
+      {reviewDate ? (
+        <EveningAutosaveController
+          key={reviewDate}
+          reviewDate={reviewDate}
+          rowWasSubmittedRef={eveningRowWasSubmittedRef}
+          snapshotRef={eveningSnapshotRef}
+          hadEmergencyRef={hadEmergencyRef}
+          onScheduleReady={onEveningScheduleReady}
+          onFlushReady={onEveningFlushReady}
+          onStatus={setDraftSaveStatus}
+          onDraftId={(id) => setCurrentReviewId(id)}
+        />
+      ) : null}
       {isDesktopSidebar ? (
         <aside
           className="flex w-64 shrink-0 min-h-screen flex-col border-r border-white/10 bg-transparent"
@@ -1241,11 +1945,22 @@ export default function EveningPage() {
         className={
           isDesktopSidebar
             ? 'flex min-h-0 min-h-screen flex-1 flex-col overflow-y-auto bg-gray-50 dark:bg-gray-950'
-            : 'max-w-3xl mx-auto px-4 md:px-5 pb-8 transition-all duration-200 pt-0'
+            : 'max-w-3xl mx-auto px-4 pb-40 pt-0 transition-all duration-200 md:pb-40'
         }
-        style={isDesktopSidebar ? undefined : { paddingBottom: spacing['2xl'] }}
       >
-        <div className={isDesktopSidebar ? 'mx-auto max-w-3xl px-4 pb-8 pt-4 md:px-5' : 'contents'}>
+        {eveningBrainDumpListening ? (
+          <div
+            className="pointer-events-none fixed inset-0 z-[35] bg-black/20 transition-opacity duration-300 dark:bg-black/35"
+            aria-hidden
+          />
+        ) : null}
+        <div
+          className={
+            isDesktopSidebar
+              ? 'mx-auto max-w-3xl px-4 pt-2 md:pt-3 md:px-5 pb-40'
+              : 'contents'
+          }
+        >
       {isTutorial && <TutorialProgress currentStep={3} />}
 
       {reviewDate && isMobile ? (
@@ -1279,7 +1994,7 @@ export default function EveningPage() {
         </>
       ) : null}
 
-      <div className="mb-8" style={{ marginBottom: spacing['2xl'] }}>
+      <div className="mb-3 md:mb-4">
         <DatePickerModal
           isOpen={calendarOpen}
           onClose={() => setCalendarOpen(false)}
@@ -1303,117 +2018,62 @@ export default function EveningPage() {
         <EveningFirstTimeCTA />
       )}
 
-      {/* Today's History: What You Accomplished */}
-      <Card id="evening-form" highlighted className="mb-8" style={{ marginBottom: spacing['2xl'], borderLeft: `3px solid ${colors.emerald.DEFAULT}` }}>
-        <CardHeader style={{ padding: spacing['xl'] }}>
-          <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
-            <Mountain className="w-5 h-5" style={{ color: colors.emerald.DEFAULT }} />
-            {reviewDate === getEffectivePlanDate() ? lang.eveningTitle : `History for ${format(new Date(reviewDate), 'MMMM d')}: ${lang.eveningTitle.split(': ')[1] || 'What You Accomplished'}`}
-          </CardTitle>
-          <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
-            Celebrate what you moved forward today—every step counts.
-          </p>
-          <p className="text-xs mt-2 text-gray-500 dark:text-gray-400">
-            Want a bigger-picture view? Visit{' '}
-            <Link href="/founder-dna/journey" className="text-[#ef725c] hover:underline">Journey</Link>{' '}
-            or{' '}
-            <Link href="/founder-dna/rhythm" className="text-[#ef725c] hover:underline">Rhythm</Link>.
-          </p>
-        </CardHeader>
-        <CardContent style={{ padding: spacing['xl'] }}>
+      {/* Plan vs. reality: tasks + emergencies */}
+      <EveningPlanVsReality
+        isMobile={isMobile}
+        reviewDate={reviewDate}
+        draftSaveStatus={draftSaveStatus}
+        eveningCrisisContext={eveningCrisisContext}
+        loopStrainTip={loopStrainTip}
+        hasPlanRealityData={morningTasks.length > 0 || todayEmergencies.length > 0}
+        taskRows={
+          <EveningTaskRows
+            tasks={morningTasks}
+            justCompletedId={justCompletedId}
+            prefersReducedMotion={prefersReducedMotion}
+            onToggleComplete={toggleTaskCompleted}
+            onMoveToTomorrow={handleMoveTaskToTomorrow}
+            onUndoMove={handleUndoMoveTask}
+          />
+        }
+        emergencies={todayEmergencies}
+      />
 
-        {morningTasks.length === 0 ? (
-          <EmptyEvening />
-        ) : (
-          <ul className="space-y-5">
-            {morningTasks.map((task, index) => (
-                <motion.li
-                  key={task.id}
-                  initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.1 }}
-                  className={`flex items-start gap-4 rounded-xl p-4 transition-all duration-300 ${
-                    justCompletedId === task.id ? 'animate-pulse' : ''
-                  } ${
-                    (task as any).movedToTomorrow
-                      ? 'bg-blue-50 dark:bg-blue-900/20'
-                      : task.completed
-                        ? 'bg-emerald-50 dark:bg-emerald-900/30'
-                        : 'bg-gray-50 dark:bg-gray-700'
-                  }`}
-                >
-                  <motion.button
-                    type="button"
-                    onClick={() => toggleTaskCompleted(task.id, task.completed)}
-                    className="flex-shrink-0 mt-0.5 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300"
-                    style={{
-                      backgroundColor: task.completed ? colors.emerald.DEFAULT : 'transparent',
-                      borderWidth: task.completed ? '0' : '2px',
-                      borderColor: colors.neutral.border,
-                      color: task.completed ? '#FFFFFF' : 'transparent',
-                    }}
-                    whileHover={prefersReducedMotion ? undefined : { scale: 1.1 }}
-                    whileTap={prefersReducedMotion ? undefined : { scale: 0.9 }}
-                    aria-label={task.completed ? 'Mark as incomplete' : 'Mark as complete'}
-                  >
-                    {task.completed && (
-                      <motion.div
-                        initial={prefersReducedMotion ? false : { scale: 0, rotate: -180 }}
-                        animate={{ scale: 1, rotate: 0 }}
-                        transition={{ type: 'spring', stiffness: 300 }}
-                      >
-                        <Check className="w-4 h-4 stroke-[2.5]" />
-                      </motion.div>
-                    )}
-                  </motion.button>
-                <div className="flex-1 min-w-0">
-                  <span
-                    className={`text-lg ${task.completed ? 'text-emerald-600' : 'text-gray-900 dark:text-white'}`}
-                  >
-                    {task.description}
-                  </span>
-                  {task.completed && (
-                    <p className="mt-1 text-sm font-medium" style={{ color: colors.emerald.DEFAULT }}>
-                      ✓ Priority completed with intention
-                    </p>
-                  )}
-                </div>
-                <div className="flex flex-col items-end gap-2 pl-2">
-                  {!task.completed && !(task as any).movedToTomorrow && (
-                    <button
-                      type="button"
-                      onClick={() => handleMoveTaskToTomorrow(task)}
-                      className="text-xs text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 underline-offset-2 hover:underline px-2 py-1 rounded"
-                    >
-                      Move to tomorrow
-                    </button>
-                  )}
-                  {!task.completed && (task as any).movedToTomorrow && (
-                    <div className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300">
-                      <span>Task moved to tomorrow</span>
-                      <button
-                        type="button"
-                        onClick={() => handleUndoMoveTask(task)}
-                        className="text-blue-600 dark:text-blue-400 hover:underline underline-offset-2"
-                      >
-                        Undo
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </motion.li>
-            ))}
-          </ul>
-        )}
-        </CardContent>
-      </Card>
+      {morningCommitmentSummary ? (
+        <Card
+          className="mb-6 border border-[#152b50]/20 bg-white/95 shadow-sm dark:border-sky-900/40 dark:bg-gray-900/85"
+          style={{ borderLeft: `4px solid ${colors.navy.DEFAULT}` }}
+        >
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base text-gray-900 dark:text-white">
+              <Target className="h-5 w-5 shrink-0" style={{ color: colors.navy.DEFAULT }} aria-hidden />
+              Strategic context
+            </CardTitle>
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Connect tonight&apos;s synthesis to what you set this morning.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm leading-relaxed text-gray-900 dark:text-gray-100">
+              <span className="font-medium text-gray-600 dark:text-gray-400">
+                This morning, you committed to:{' '}
+              </span>
+              {morningCommitmentSummary}
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Emotional Check-in */}
       <div data-tutorial="evening-form">
-      <Card highlighted className="mb-8" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
+      <Card
+        highlighted
+        className="mb-8"
+        style={{ borderLeft: `3px solid ${colors.amber.DEFAULT}` }}
+      >
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
-            <Heart className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
+            <Heart className="w-5 h-5" style={{ color: colors.navy.DEFAULT }} />
             How You&apos;re Feeling
           </CardTitle>
           <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
@@ -1422,12 +2082,12 @@ export default function EveningPage() {
         </CardHeader>
         <CardContent>
 
-        <div className="space-y-6">
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 md:gap-10">
           <div>
-            <label className="block text-sm font-medium mb-4 text-gray-900 dark:text-white">
-              Mood (How are you feeling?)
+            <label className="block text-sm font-medium mb-3 text-gray-900 dark:text-white">
+              Mood (Great → Rough)
             </label>
-            <div className="flex flex-wrap gap-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {MOOD_OPTIONS.map((opt) => {
                 const isSelected = mood === opt.value
                 return (
@@ -1438,16 +2098,20 @@ export default function EveningPage() {
                       fireFunnelStep(2, 'journal_engaged')
                       setMood(opt.value)
                     }}
-                    className={`min-h-[48px] px-4 rounded-xl flex items-center gap-2 text-sm font-medium transition-all ${isSelected ? 'text-[#EF725C] bg-[#FFF0EC] dark:bg-[#2D1F1C]' : 'text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-700'} border-2`}
-                    style={{
-                      borderColor: isSelected ? colors.coral.DEFAULT : 'transparent',
-                    }}
+                    className={`min-h-[52px] min-w-[44px] rounded-xl px-3 py-3 flex flex-col items-center justify-center gap-1 text-sm font-medium transition-all sm:min-h-[56px] ${
+                      isSelected
+                        ? 'text-[#152B50] bg-[#DCE8DD] ring-4 ring-[#5A7D66] ring-offset-2 ring-offset-white shadow-sm dark:bg-emerald-950/55 dark:text-emerald-50 dark:ring-emerald-500/80 dark:ring-offset-gray-900'
+                        : 'text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600'
+                    }`}
+                    aria-pressed={isSelected}
                     whileHover={prefersReducedMotion ? undefined : { scale: 1.02 }}
                     whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <span className="text-lg">{opt.emoji}</span>
-                    {opt.label}
+                    <span className="text-xl leading-none" aria-hidden>
+                      {opt.emoji}
+                    </span>
+                    <span className="text-xs sm:text-sm">{opt.label}</span>
                   </motion.button>
                 )
               })}
@@ -1455,10 +2119,10 @@ export default function EveningPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-4 text-gray-900 dark:text-white">
-              Energy (How&apos;s your energy?)
+            <label className="block text-sm font-medium mb-3 text-gray-900 dark:text-white">
+              Energy battery
             </label>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-3 justify-center sm:justify-start">
               {ENERGY_OPTIONS.map((opt) => {
                 const isSelected = energy === opt.value
                 return (
@@ -1469,16 +2133,30 @@ export default function EveningPage() {
                       fireFunnelStep(2, 'journal_engaged')
                       setEnergy(opt.value)
                     }}
-                    className={`min-h-[48px] px-4 rounded-xl flex items-center gap-2 text-sm font-medium transition-all border-2 ${isSelected ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/30' : 'text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-700'}`}
-                    style={{
-                      borderColor: isSelected ? colors.amber.DEFAULT : 'transparent',
-                    }}
+                    className={`flex min-h-[52px] min-w-[44px] flex-col items-center justify-end gap-2 rounded-xl px-3 py-2 transition-all sm:min-h-[56px] ${
+                      isSelected
+                        ? 'border-[3px] border-amber-500 bg-amber-50 shadow-md ring-2 ring-amber-300/50 dark:bg-amber-900/40 dark:ring-amber-500/40'
+                        : 'border-2 border-gray-200 bg-gray-50 dark:border-gray-600 dark:bg-gray-700'
+                    }`}
                     whileHover={prefersReducedMotion ? undefined : { scale: 1.02 }}
                     whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
-                    transition={{ duration: 0.2 }}
+                    aria-pressed={isSelected}
+                    aria-label={`${opt.label} energy`}
                   >
-                    <span className="text-lg">{opt.emoji}</span>
-                    {opt.label}
+                    <div className="flex h-11 items-end gap-0.5 sm:h-12" aria-hidden>
+                      {[1, 2, 3, 4, 5].map((seg) => (
+                        <div
+                          key={seg}
+                          className={`w-2 rounded-sm transition-colors ${
+                            opt.value >= seg ? 'bg-amber-500' : 'bg-gray-200 dark:bg-gray-600'
+                          }`}
+                          style={{ height: `${20 + seg * 16}%` }}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-center text-[11px] font-medium leading-tight text-gray-700 dark:text-gray-200 sm:text-xs">
+                      {opt.label}
+                    </span>
                   </motion.button>
                 )
               })}
@@ -1488,55 +2166,144 @@ export default function EveningPage() {
         </CardContent>
       </Card>
 
-      {/* Journal */}
-      <Card className="mb-8 bg-gray-50 dark:bg-gray-800" style={{ marginBottom: spacing['2xl'], borderLeft: `4px solid ${colors.navy.DEFAULT}` }}>
-        <CardHeader style={{ padding: spacing['xl'] }}>
-          <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
-            <Lightbulb className="w-5 h-5" style={{ color: colors.navy.DEFAULT }} />
-            Today&apos;s Reflection
-            <InfoTooltip text="Free-form thoughts about your day. Capture anything that feels important." position="right" />
-          </CardTitle>
-          <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
-            What matters most from today? What would you carry forward?
-          </p>
-        </CardHeader>
-        <CardContent style={{ padding: spacing['xl'] }}>
-        <SpeechToTextInput
-          as="textarea"
-          value={journal}
-          onChange={(e) => {
-            fireFunnelStep(2, 'journal_engaged')
-            setJournal(e.target.value)
-          }}
-          placeholder="How did today go? What stood out? What would you do differently?"
-          rows={5}
-          className="w-full px-6 py-4 rounded-lg border text-sm md:text-base leading-relaxed focus:ring-2 focus:ring-offset-2 resize-none transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 placeholder:text-gray-400"
-        />
-        </CardContent>
-      </Card>
+      <div className="space-y-4 transition-all duration-300 ease-out md:space-y-6">
+        <div className="relative z-[45]">
+          <BrainDumpCard
+            className={cn(isMobile && proAccessLineLabel ? 'mb-12' : 'mb-0')}
+            context="evening"
+            title="Final Brain Dump: Clear the cache."
+            subtitle="Clear the mental cache. Mention what went well, what drained you, and your reflections—I&apos;ll handle the sorting."
+            value={brainDump}
+            onChange={setBrainDump}
+            accent="navy"
+            id="evening-brain-dump"
+            enableSortIntoReview
+            sortLoading={eveningDumpSorting}
+            onSortBegin={() => setEveningDumpSorting(true)}
+            onSortCancel={() => setEveningDumpSorting(false)}
+            onSortIntoReview={(text) => void handleEveningSortDump(text)}
+            onListeningChange={setEveningBrainDumpListening}
+          />
+        </div>
+
+        {/* Journal — blockquote-style synthesis */}
+        <Card
+          id="evening-daily-synthesis"
+          className={`mb-8 bg-[#F8FAF8] dark:bg-gray-900/80 ${sortLandingGlowClass}`}
+          style={{ marginBottom: spacing['2xl'], borderLeft: `4px solid ${colors.navy.DEFAULT}` }}
+        >
+          <CardHeader
+            style={{
+              paddingLeft: spacing.xl,
+              paddingRight: spacing.xl,
+              paddingTop: spacing.md,
+              paddingBottom: spacing.sm,
+            }}
+          >
+            <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
+              <Lightbulb className="w-5 h-5" style={{ color: colors.amber.DEFAULT }} />
+              Harvest your momentum
+              <InfoTooltip
+                text="Synthesize the day against your morning intent — this is the Strategist's closing loop."
+                position="right"
+              />
+            </CardTitle>
+            <blockquote className="mt-1.5 border-l-0 pl-0 text-base italic leading-relaxed text-gray-700 dark:text-gray-200 md:text-lg">
+              The Strategist&apos;s verdict — what held, what shifted, and what you&apos;ll carry forward.
+            </blockquote>
+          </CardHeader>
+          <CardContent
+            style={{
+              paddingLeft: spacing.xl,
+              paddingRight: spacing.xl,
+              paddingBottom: spacing.xl,
+              paddingTop: spacing.sm,
+            }}
+          >
+            <div
+              className={`rounded-r-xl border-l-4 border-[#152B50] bg-white/90 py-1 pl-4 pr-2 shadow-sm transition-shadow duration-500 dark:border-sky-200/30 dark:bg-gray-800/90 ${
+                dumpSortHighlight?.journal
+                  ? 'ring-2 ring-[#5A7D66]/40 shadow-[0_0_24px_rgba(90,125,102,0.22)] dark:ring-emerald-400/35'
+                  : ''
+              }`}
+            >
+              {journalOpeningSuggestion && !journal.trim() ? (
+                <div className="mb-2 flex flex-wrap items-center gap-2 px-2 pt-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => {
+                      fireFunnelStep(2, 'journal_engaged')
+                      setJournal(journalOpeningSuggestion)
+                    }}
+                  >
+                    Use suggested opening
+                  </Button>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">Starts from your morning plan</span>
+                </div>
+              ) : null}
+              <SpeechToTextInput
+                as="textarea"
+                value={journal}
+                onChange={(e) => {
+                  fireFunnelStep(2, 'journal_engaged')
+                  setJournal(e.target.value)
+                  setDumpSortHighlight((h) => (h?.journal ? { ...h, journal: false } : h))
+                }}
+                placeholder={journalPlaceholder}
+                rows={6}
+                className="w-full border-0 bg-transparent px-2 py-4 text-base leading-relaxed text-gray-900 placeholder:text-gray-400 focus:ring-0 dark:text-white md:text-lg"
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Wins & Lessons */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8" style={{ marginBottom: spacing['2xl'] }}>
         {/* Wins Card */}
-        <Card className="mb-0" style={{ borderLeft: `4px solid ${colors.emerald.DEFAULT}` }}>
-          <CardHeader style={{ padding: spacing['xl'] }}>
+        <Card className={`mb-0 ${sortLandingGlowClass}`} style={{ borderLeft: `4px solid ${colors.emerald.DEFAULT}` }}>
+          <CardHeader
+            style={{
+              paddingLeft: spacing.xl,
+              paddingRight: spacing.xl,
+              paddingTop: spacing.md,
+              paddingBottom: spacing.sm,
+            }}
+          >
             <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
               <Award className="w-5 h-5" style={{ color: colors.emerald.DEFAULT }} />
               Wins
               <InfoTooltip text="What went well today? Big or small, celebrate your wins." position="right" />
             </CardTitle>
-            <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
+            <p className="text-sm mt-1.5 text-gray-600 dark:text-gray-300">
               Celebrate what worked today
             </p>
           </CardHeader>
-          <CardContent style={{ padding: spacing['xl'] }}>
+          <CardContent
+            style={{
+              paddingLeft: spacing.xl,
+              paddingRight: spacing.xl,
+              paddingBottom: spacing.xl,
+              paddingTop: spacing.sm,
+            }}
+          >
           <div>
             <label className="block text-sm font-medium mb-3 text-gray-900 dark:text-white">
               What went well?
             </label>
-            <div className="space-y-3">
+            <div className={`space-y-3 ${EVENING_STACK_SCROLL_FADE}`}>
               {wins.map((win, index) => (
-                <div key={index} className="flex items-start gap-3">
+                <div
+                  key={index}
+                  className={`flex items-start gap-3 rounded-lg transition-shadow duration-500 ${
+                    dumpSortHighlight?.wins.includes(index)
+                      ? 'ring-2 ring-emerald-400/50 shadow-[0_0_16px_rgba(52,211,153,0.18)] dark:ring-emerald-400/40'
+                      : ''
+                  }`}
+                >
                   <SpeechToTextInput
                     as="textarea"
                     value={win}
@@ -1546,6 +2313,9 @@ export default function EveningPage() {
                       newWins[index] = e.target.value
                       fireFunnelStep(2, 'journal_engaged')
                       setWins(newWins)
+                      setDumpSortHighlight((h) =>
+                        h?.wins.includes(index) ? { ...h, wins: h.wins.filter((i) => i !== index) } : h
+                      )
                     }}
                     placeholder="Celebrate your wins—big or small..."
                     rows={2}
@@ -1561,42 +2331,63 @@ export default function EveningPage() {
                   </button>
                 </div>
               ))}
-              <button
-                type="button"
-                onClick={() => setWins([...wins, ''])}
-                className="flex items-center gap-2 text-sm transition-colors"
-                style={{ color: colors.navy.DEFAULT }}
-                onMouseEnter={(e) => e.currentTarget.style.color = colors.coral.DEFAULT}
-                onMouseLeave={(e) => e.currentTarget.style.color = colors.navy.DEFAULT}
-              >
-                <Plus className="w-4 h-4" />
-                Add more wins
-              </button>
             </div>
+            <button
+              type="button"
+              onClick={() => setWins([...wins, ''])}
+              className="mt-3 flex items-center gap-2 text-sm transition-colors"
+              style={{ color: colors.navy.DEFAULT }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = colors.coral.DEFAULT)}
+              onMouseLeave={(e) => (e.currentTarget.style.color = colors.navy.DEFAULT)}
+            >
+              <Plus className="w-4 h-4" />
+              Add more wins
+            </button>
           </div>
         </CardContent>
       </Card>
 
         {/* Lessons Card */}
-        <Card className="mb-0" style={{ borderLeft: `4px solid ${colors.amber.DEFAULT}` }}>
-          <CardHeader style={{ padding: spacing['xl'] }}>
+        <Card className={`mb-0 ${sortLandingGlowClass}`} style={{ borderLeft: `4px solid ${colors.amber.DEFAULT}` }}>
+          <CardHeader
+            style={{
+              paddingLeft: spacing.xl,
+              paddingRight: spacing.xl,
+              paddingTop: spacing.md,
+              paddingBottom: spacing.sm,
+            }}
+          >
             <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
               <Lightbulb className="w-5 h-5" style={{ color: colors.amber.DEFAULT }} />
               Lessons
               <InfoTooltip text="What would you do differently? Every lesson is growth." position="right" />
             </CardTitle>
-            <p className="text-sm mt-2 text-gray-600 dark:text-gray-300">
+            <p className="text-sm mt-1.5 text-gray-600 dark:text-gray-300">
               What you&apos;d carry forward
             </p>
           </CardHeader>
-          <CardContent style={{ padding: spacing['xl'] }}>
+          <CardContent
+            style={{
+              paddingLeft: spacing.xl,
+              paddingRight: spacing.xl,
+              paddingBottom: spacing.xl,
+              paddingTop: spacing.sm,
+            }}
+          >
           <div>
             <label className="block text-sm font-medium mb-3 text-gray-900 dark:text-white">
               What would you do differently?
             </label>
-            <div className="space-y-3">
+            <div className={`space-y-3 ${EVENING_STACK_SCROLL_FADE}`}>
               {lessons.map((lesson, index) => (
-                <div key={index} className="flex items-start gap-3">
+                <div
+                  key={index}
+                  className={`flex items-start gap-3 rounded-lg transition-shadow duration-500 ${
+                    dumpSortHighlight?.lessons.includes(index)
+                      ? 'ring-2 ring-amber-400/50 shadow-[0_0_16px_rgba(251,191,36,0.2)] dark:ring-amber-400/40'
+                      : ''
+                  }`}
+                >
                   <SpeechToTextInput
                     as="textarea"
                     value={lesson}
@@ -1606,6 +2397,9 @@ export default function EveningPage() {
                       newLessons[index] = e.target.value
                       fireFunnelStep(2, 'journal_engaged')
                       setLessons(newLessons)
+                      setDumpSortHighlight((h) =>
+                        h?.lessons.includes(index) ? { ...h, lessons: h.lessons.filter((i) => i !== index) } : h
+                      )
                     }}
                     placeholder="Gentle lessons to carry forward..."
                     rows={2}
@@ -1621,18 +2415,18 @@ export default function EveningPage() {
                   </button>
                 </div>
               ))}
-              <button
-                type="button"
-                onClick={() => setLessons([...lessons, ''])}
-                className="flex items-center gap-2 text-sm transition-colors"
-                style={{ color: colors.navy.DEFAULT }}
-                onMouseEnter={(e) => e.currentTarget.style.color = colors.coral.DEFAULT}
-                onMouseLeave={(e) => e.currentTarget.style.color = colors.navy.DEFAULT}
-              >
-                <Plus className="w-4 h-4" />
-                Add more lessons
-              </button>
             </div>
+            <button
+              type="button"
+              onClick={() => setLessons([...lessons, ''])}
+              className="mt-3 flex items-center gap-2 text-sm transition-colors"
+              style={{ color: colors.navy.DEFAULT }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = colors.coral.DEFAULT)}
+              onMouseLeave={(e) => (e.currentTarget.style.color = colors.navy.DEFAULT)}
+            >
+              <Plus className="w-4 h-4" />
+              Add more lessons
+            </button>
           </div>
         </CardContent>
       </Card>
@@ -1664,13 +2458,20 @@ export default function EveningPage() {
 
       <Button
         type="button"
-        onClick={handleSave}
+        onClick={() => void handleSave()}
         disabled={saving}
         variant="primary"
         size="lg"
-        className="w-full"
+        className="w-full inline-flex items-center justify-center gap-2"
       >
-        {saving ? 'Mrs. Deer is writing...' : 'Save & Complete My Day'}
+        {saving ? (
+          <>
+            <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
+            <span>Saving & closing the loop…</span>
+          </>
+        ) : (
+          'Save & Complete My Day'
+        )}
       </Button>
 
       <ReflectionPopup
@@ -1715,15 +2516,11 @@ export default function EveningPage() {
           }
         }}
         onOverwriteYesterday={async () => {
-          const now = new Date()
-          const yesterdayStr = format(
-            new Date(now.getTime() - 24 * 60 * 60 * 1000),
-            'yyyy-MM-dd'
-          )
-          setReviewDate(yesterdayStr)
+          const calendarTodayStr = format(new Date(), 'yyyy-MM-dd')
+          const yesterdayStr = format(subDays(parseISO(`${calendarTodayStr}T12:00:00`), 1), 'yyyy-MM-dd')
           setShowReflectionPopup(false)
           setReflectionPopupVariant(null)
-          await handleSave()
+          await handleSave({ targetReviewDate: yesterdayStr })
         }}
         onSaveToToday={async () => {
           setShowReflectionPopup(false)
@@ -1731,15 +2528,11 @@ export default function EveningPage() {
           await handleSave()
         }}
         onSelectYesterday={async () => {
-          const now = new Date()
-          const yesterdayStr = format(
-            new Date(now.getTime() - 24 * 60 * 60 * 1000),
-            'yyyy-MM-dd'
-          )
-          setReviewDate(yesterdayStr)
+          const calendarTodayStr = format(new Date(), 'yyyy-MM-dd')
+          const yesterdayStr = format(subDays(parseISO(`${calendarTodayStr}T12:00:00`), 1), 'yyyy-MM-dd')
           setShowReflectionPopup(false)
           setReflectionPopupVariant(null)
-          await handleSave()
+          await handleSave({ targetReviewDate: yesterdayStr })
         }}
         onSelectToday={async () => {
           setShowReflectionPopup(false)
@@ -1748,8 +2541,29 @@ export default function EveningPage() {
         }}
       />
 
+      {/* Pro save: “badge logic” transition (hook → modal). Container is this page; there is no separate EveningReview.tsx. */}
+      {eveningInsightFlow === 'reading' ? <EveningMrsDeerReadingOverlay /> : null}
+      <EveningInsightCompletionModal
+        isOpen={eveningInsightFlow === 'modal'}
+        onClose={() => {
+          setEveningInsightFlow(null)
+          eveningInsightPostSaveActiveRef.current = false
+        }}
+        onContinue={() => {
+          setEveningInsightFlow(null)
+          eveningInsightPostSaveActiveRef.current = false
+          router.push('/dashboard')
+        }}
+        insight={aiCoachMessage}
+        insightId={eveningInsightId}
+        eveningHotUnresolvedCount={eveningHotUnresolvedCount}
+        firstGlimpseBadge={eveningFirstGlimpseBadge}
+      />
+
       {/* Mrs. Deer AI Coach - Evening Reflection Insight (permanent, always shown if exists) */}
-      {aiCoachTrigger === 'evening_after' && (aiCoachMessage || isStreaming || streamingError || isRetrying) && (
+      {aiCoachTrigger === 'evening_after' &&
+        eveningInsightFlow === null &&
+        (aiCoachMessage || isStreaming || streamingError || isRetrying) && (
         <>
           {streamingError && !isRetrying ? (
             <div className="mt-4 p-6 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-center">
@@ -1782,6 +2596,8 @@ export default function EveningPage() {
                 trigger={aiCoachTrigger}
                 onClose={() => {}}
                 insightId={eveningInsightId ?? undefined}
+                eveningHotUnresolvedCount={eveningHotUnresolvedCount}
+                eveningCoachStreaming={isStreaming}
               />
             </>
           )}
@@ -1802,6 +2618,27 @@ export default function EveningPage() {
           }}
         />
       )}
+
+      {isDayComplete ? (
+        <div className="mt-16">
+          <EveningDayClosedSealCard />
+        </div>
+      ) : null}
+
+      <ConfirmModal
+        isOpen={snoozeModalOpen && snoozeTaskQueue.length > 0}
+        title="Move to tomorrow?"
+        message={
+          snoozeTaskQueue[0]
+            ? `Should we move "${snoozeTaskQueue[0].description.length > 280 ? `${snoozeTaskQueue[0].description.slice(0, 280)}…` : snoozeTaskQueue[0].description}" to tomorrow's plan?`
+            : ''
+        }
+        confirmLabel="Yes, move it"
+        cancelLabel="Not now"
+        variant="default"
+        onConfirm={() => void handleSnoozeModalConfirm()}
+        onCancel={handleSnoozeModalSkip}
+      />
 
       {/* Delete Win Confirmation */}
       <ConfirmModal
@@ -1827,33 +2664,6 @@ export default function EveningPage() {
         onCancel={() => setConfirmDeleteLesson(null)}
       />
 
-      {eveningMicroCelebration ? (
-        <EveningMicroCelebrationModal
-          isOpen
-          day={eveningMicroCelebration.day}
-          message={eveningMicroCelebration.message}
-          onClose={() => setEveningMicroCelebration(null)}
-        />
-      ) : null}
-
-      <CelebrationModal
-        isOpen={showCelebration}
-        onClose={() => {
-          setShowCelebration(false)
-        }}
-        tasksCompleted={morningTasks.filter((t) => t.completed).length}
-        totalTasks={morningTasks.length}
-      />
-
-      <StreakCelebrationModal
-        isOpen={showStreakCelebration}
-        onClose={() => {
-          setShowStreakCelebration(false)
-        }}
-        streak={currentStreak}
-      />
-
-      <FirstGlimpseModal open={showFirstGlimpseModal} onClose={() => setShowFirstGlimpseModal(false)} />
         </div>
       </div>
     </div>

@@ -12,6 +12,6 @@ export const firstFullLoopTemplate: EmailTemplate = {
       ctaLabel: 'View Your Journey',
       ctaUrl: appUrlWithUtm('/founder-dna/journey', 'first_full_loop'),
     }),
-  getText: () => `You completed your first full loop.` + renderTextFooter(),
+  getText: (user) => `You completed your first full loop.` + renderTextFooter(user),
 }
 

@@ -1,5 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Editor local history (some extensions write these under the repo; built-in Timeline usually stores outside the project)
+.history/
+
 # dependencies
 /node_modules
 /.pnp

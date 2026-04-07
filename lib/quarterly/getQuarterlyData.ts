@@ -24,6 +24,7 @@ export type QuarterlyUserProfile = {
   name: string | null
   email_address: string | null
   primary_goal_text: string | null
+  quarterly_intention: string | null
   founder_stage: string | null
 }
 
@@ -66,7 +67,7 @@ export async function fetchQuarterlyData(
       .eq('user_id', userId),
     supabase
       .from('user_profiles')
-      .select('preferred_name, name, primary_goal_text, founder_stage')
+      .select('preferred_name, name, primary_goal_text, quarterly_intention, founder_stage')
       .eq('id', userId)
       .maybeSingle(),
   ])
@@ -109,6 +110,7 @@ export async function fetchQuarterlyData(
     name?: string | null
     email_address?: string | null
     primary_goal_text?: string | null
+    quarterly_intention?: string | null
     founder_stage?: string | null
   } | null
 
@@ -128,6 +130,7 @@ export async function fetchQuarterlyData(
       name: profile?.name ?? null,
       email_address: profile?.email_address ?? null,
       primary_goal_text: profile?.primary_goal_text ?? null,
+      quarterly_intention: profile?.quarterly_intention ?? null,
       founder_stage: profile?.founder_stage ?? null,
     },
     quarterStart,

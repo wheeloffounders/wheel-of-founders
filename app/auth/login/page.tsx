@@ -18,7 +18,10 @@ export default function LoginPage() {
   const [checkingSession, setCheckingSession] = useState(true)
   const router = useRouter()
   const searchParams = useSearchParams()
-  const returnTo = searchParams?.get('returnTo') || '/dashboard'
+  /** Internal paths only — avoids open redirects */
+  const rawReturnTo = searchParams?.get('returnTo') || '/dashboard'
+  const returnTo =
+    rawReturnTo.startsWith('/') && !rawReturnTo.startsWith('//') ? rawReturnTo : '/dashboard'
   const errorParam = searchParams?.get('error')
   const messageParam = searchParams?.get('message')
 
@@ -52,11 +55,24 @@ export default function LoginPage() {
 
       if (authError) throw authError
 
-      router.push(returnTo)
-      router.refresh()
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+      if (sessionError) throw sessionError
+      if (!session) {
+        throw new Error('Login succeeded but no session was established. Please try again.')
+      }
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[auth/login] Login successful, redirecting to', returnTo)
+      }
+
+      // Full-page navigation is most reliable after password login: cookies + middleware run
+      // before the next document load, avoiding RSC "Failed to fetch" limbo on slow dev builds.
+      window.location.assign(returnTo)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to log in')
-    } finally {
       setLoading(false)
     }
   }

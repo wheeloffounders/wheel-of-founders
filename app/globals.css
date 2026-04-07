@@ -41,15 +41,22 @@ body {
 :root {
   --z-index-base: 1;
   --z-index-content: 5;
-  --z-index-bottom-nav: 10;
+  --z-index-bottom-nav: 50; /* Above page content and in-page overlays (e.g. voice dim z-35); below modals/toasts */
   --z-index-header: 25; /* Top nav above bottom nav */
   --z-index-dropdown: 30;
   --z-index-tooltip: 40;
   --z-index-modal-overlay: 45;
   --z-index-modal: 50;
   --z-index-toast: 60;
-  --z-index-install-prompt: 70; /* Highest - above everything */
+  --z-index-install-prompt: 70; /* Above toasts / modals */
   --z-index-version-banner: 65; /* Reserved, version now in Settings only */
+  --z-index-dev-mode-badge: 999999; /* Must exceed bottom nav (50), menus, voice dim — dev tools stay tappable */
+}
+
+[data-dev-mode-badge] {
+  z-index: 999999 !important;
+  position: fixed !important;
+  pointer-events: auto !important;
 }
 
 /* Top nav - always visible above bottom nav */
@@ -154,4 +161,148 @@ nav:not(.bottom-nav):not(.page-sidebar-nav) {
 [data-tutorial="power-list"],
 [data-tutorial="decision-card"] {
   position: relative;
+}
+
+/* Hot emergency: subtle viewport glow (Circuit Breaker / triage mode) */
+@keyframes emergency-amber-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 12px rgba(255, 191, 0, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(255, 191, 0, 0.45);
+  }
+}
+
+.emergency-mode-amber-shell {
+  animation: emergency-amber-pulse 3s ease-in-out infinite;
+}
+
+/* Deep link from Insights: brief highlight on the target fire card */
+@keyframes emergency-deep-link-flash {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Evening ghost capture — minimal voice waveform (listening) */
+@keyframes evening-wave-bar {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+    opacity: 0.65;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.evening-voice-wave-bar {
+  width: 4px;
+  border-radius: 2px;
+  transform-origin: center bottom;
+  background: linear-gradient(to top, #5a7d66, #8fb39a);
+  animation: evening-wave-bar 0.95s ease-in-out infinite;
+}
+
+.dark .evening-voice-wave-bar {
+  background: linear-gradient(to top, #4a6b55, #86b89a);
+}
+
+.evening-voice-wave-bar:nth-child(1) {
+  animation-delay: 0s;
+}
+.evening-voice-wave-bar:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.evening-voice-wave-bar:nth-child(3) {
+  animation-delay: 0.24s;
+}
+.evening-voice-wave-bar:nth-child(4) {
+  animation-delay: 0.36s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .evening-voice-wave-bar {
+    animation: none;
+    opacity: 0.85;
+    transform: scaleY(0.65);
+  }
+}
+
+/* Morning cockpit — vibrant recording bars (violet → emerald) */
+@keyframes cockpit-wave-bar {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+    opacity: 0.65;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.cockpit-voice-wave-bar {
+  width: 4px;
+  border-radius: 2px;
+  transform-origin: center bottom;
+  background: linear-gradient(to top, #7c3aed, #34d399);
+  animation: cockpit-wave-bar 0.85s ease-in-out infinite;
+}
+
+.dark .cockpit-voice-wave-bar {
+  background: linear-gradient(to top, #a78bfa, #6ee7b7);
+}
+
+.cockpit-voice-wave-bar:nth-child(1) {
+  animation-delay: 0s;
+}
+.cockpit-voice-wave-bar:nth-child(2) {
+  animation-delay: 0.1s;
+}
+.cockpit-voice-wave-bar:nth-child(3) {
+  animation-delay: 0.2s;
+}
+.cockpit-voice-wave-bar:nth-child(4) {
+  animation-delay: 0.3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cockpit-voice-wave-bar {
+    animation: none;
+    opacity: 0.88;
+    transform: scaleY(0.65);
+  }
+}
+
+/* Evening brain dump — sorting status: slow opacity pulse (not frantic) */
+@keyframes evening-sort-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+.evening-sort-status-pulse {
+  animation: evening-sort-status-pulse 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .evening-sort-status-pulse {
+    animation: none;
+  }
+}
+
+@layer utilities {
+  .text-muted-foreground {
+    @apply text-gray-500 dark:text-gray-400;
+  }
 }

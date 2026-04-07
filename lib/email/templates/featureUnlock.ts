@@ -14,6 +14,6 @@ export const featureUnlockTemplate: EmailTemplate = {
       ctaUrl: appUrlWithUtm('/founder-dna/journey', 'feature_unlock'),
     })
   },
-  getText: (_user, data) => `Feature unlocked: ${String(data?.featureName || 'a new feature')}.` + renderTextFooter(),
+  getText: (user, data) => `Feature unlocked: ${String(data?.featureName || 'a new feature')}.` + renderTextFooter(user),
 }
 

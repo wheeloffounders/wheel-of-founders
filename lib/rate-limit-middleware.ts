@@ -72,13 +72,29 @@ export async function withRateLimit(
     }
 
     const response = await handler(req)
+    if (!(response instanceof Response)) {
+      console.error('[RateLimit] Handler did not return a Response')
+      return NextResponse.json({ error: 'Invalid handler response' }, { status: 500 })
+    }
+
     const headers = getRateLimitHeaders(result)
-    headers['X-RateLimit-Limit'] && response.headers.set('X-RateLimit-Limit', headers['X-RateLimit-Limit'])
-    headers['X-RateLimit-Remaining'] && response.headers.set('X-RateLimit-Remaining', headers['X-RateLimit-Remaining'])
-    headers['X-RateLimit-Reset'] && response.headers.set('X-RateLimit-Reset', headers['X-RateLimit-Reset'])
+    try {
+      const hr = response.headers
+      if (headers['X-RateLimit-Limit']) hr.set('X-RateLimit-Limit', headers['X-RateLimit-Limit'])
+      if (headers['X-RateLimit-Remaining']) hr.set('X-RateLimit-Remaining', headers['X-RateLimit-Remaining'])
+      if (headers['X-RateLimit-Reset']) hr.set('X-RateLimit-Reset', headers['X-RateLimit-Reset'])
+    } catch (headerErr) {
+      console.warn('[RateLimit] Could not attach rate-limit headers', headerErr)
+    }
     return response
   } catch (error) {
     console.error('[RateLimit] Error:', error)
-    return handler(req)
+    return NextResponse.json(
+      {
+        error: 'Request could not be processed',
+        message: error instanceof Error ? error.message : 'Rate limit middleware failed',
+      },
+      { status: 500 }
+    )
   }
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { trackErrorSync } from '@/lib/error-tracker'
+import { toTrackedError, trackErrorSync } from '@/lib/error-tracker'
 
 /**
  * Registers global error handlers for uncaught errors and unhandled rejections.
@@ -19,14 +19,14 @@ export function GlobalErrorHandlers() {
     }
 
     const onUnhandledRejection = (event: PromiseRejectionEvent) => {
-      const error =
-        event.reason instanceof Error
-          ? event.reason
-          : new Error(String(event.reason))
+      const error = toTrackedError(event.reason)
       trackErrorSync(error, {
         component: 'window.onunhandledrejection',
         action: 'unhandled',
         severity: 'high',
+        metadata: {
+          reasonType: event.reason === null ? 'null' : typeof event.reason,
+        },
       })
     }
 

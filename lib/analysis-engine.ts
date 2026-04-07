@@ -1,6 +1,14 @@
 import { getServerSupabase } from './server-supabase'
 import { format, subDays, startOfWeek, endOfWeek, getDay } from 'date-fns'
 import { getFeatureAccess, UserProfile } from './features'
+import {
+  buildSmartContextSystemBlock,
+  computeDaysSinceSignup,
+  getIsoWeekId,
+  northStarAlreadyQuotedThisWeek,
+  textContainsVerbatimNorthStar,
+  type CoachingMaturityProfileRow,
+} from '@/lib/coaching-maturity-context'
 
 export interface UserPatterns {
   userId: string
@@ -151,9 +159,7 @@ export async function analyzeUserPatterns(
     const dayName = format(new Date(d.plan_date), 'EEEE')
     byDecisionDay[dayName] = (byDecisionDay[dayName] || 0) + 1
     if (d.decision_type) {
-    if (d.decision_type) {
       byDecisionType[d.decision_type] = (byDecisionType[d.decision_type] || 0) + 1
-    }
     }
   })
 
@@ -409,8 +415,18 @@ export async function analyzeUser(userId: string, userProfile: UserProfile | nul
 
   const insights = generateInsights(patterns)
 
-  // Generate personal insights (smart constraints)
-  const personalInsights = await generatePersonalInsights(userId, patterns)
+  const db = getServerSupabase()
+  const { data: coachingRow } = await db
+    .from('user_profiles')
+    .select('created_at, primary_goal_text, quarterly_intention, north_star_last_quoted_iso_week')
+    .eq('id', userId)
+    .maybeSingle()
+
+  const personalInsights = await generatePersonalInsights(
+    userId,
+    patterns,
+    (coachingRow as CoachingMaturityProfileRow | null) ?? null
+  )
 
   return {
     userId,
@@ -426,7 +442,8 @@ export async function analyzeUser(userId: string, userProfile: UserProfile | nul
  */
 export async function generatePersonalInsights(
   userId: string,
-  patterns: UserPatterns
+  patterns: UserPatterns,
+  coachingRow: CoachingMaturityProfileRow | null = null
 ): Promise<PersonalInsight[]> {
   const insights: PersonalInsight[] = []
 
@@ -518,7 +535,7 @@ export async function generatePersonalInsights(
   const aiKey = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY
   if (aiKey) {
     try {
-      const aiInsights = await generateAIPersonalInsights(patterns)
+      const aiInsights = await generateAIPersonalInsights(userId, patterns, coachingRow)
       insights.push(...aiInsights)
     } catch (error) {
       console.error('AI personal insight generation failed, using rule-based:', error)
@@ -540,9 +557,21 @@ async function checkSystemizePattern(userId: string, patterns: UserPatterns): Pr
 /**
  * Generate AI-powered personalized insights using OpenAI or Anthropic
  */
-async function generateAIPersonalInsights(patterns: UserPatterns): Promise<PersonalInsight[]> {
+async function generateAIPersonalInsights(
+  userId: string,
+  patterns: UserPatterns,
+  coachingRow: CoachingMaturityProfileRow | null
+): Promise<PersonalInsight[]> {
   const openaiKey = process.env.OPENAI_API_KEY
   const anthropicKey = process.env.ANTHROPIC_API_KEY
+
+  const daysSince = computeDaysSinceSignup(coachingRow?.created_at ?? null)
+  const smartBlock = buildSmartContextSystemBlock({
+    daysSinceSignup: daysSince,
+    primaryGoalText: coachingRow?.primary_goal_text,
+    quarterlyIntention: coachingRow?.quarterly_intention,
+    northStarAlreadyQuotedVerbatimThisWeek: northStarAlreadyQuotedThisWeek(coachingRow),
+  })
 
   const prompt = `Based on this founder's PERSONAL data from the last 14 days:
 
@@ -606,7 +635,9 @@ Example BAD insights (DO NOT GENERATE):
         messages: [
           {
             role: 'system',
-            content: 'You are Mrs. Deer, a supportive founder coach who knows each founder personally. Generate personalized insights using "YOU" and "YOUR" language. Never use generic statistics or comparisons to others. Make it feel like you know them.',
+            content:
+              'You are Mrs. Deer, a supportive founder coach who knows each founder personally. Generate personalized insights using "YOU" and "YOUR" language. Never use generic statistics or comparisons to others. Make it feel like you know them.\n\n' +
+              smartBlock,
           },
           { role: 'user', content: prompt },
         ],
@@ -625,12 +656,14 @@ Example BAD insights (DO NOT GENERATE):
 
     try {
       const parsed = JSON.parse(content)
-      return parsed.map((insight: any) => ({
+      const mapped: PersonalInsight[] = parsed.map((insight: any) => ({
         text: insight.text,
         type: insight.type || 'pattern',
         isActionable: insight.isActionable !== false,
         dataBasedOn: insight.dataBasedOn || 'Based on your recent patterns',
       }))
+      await maybeMarkNorthStarQuotedWeek(userId, coachingRow, mapped)
+      return mapped
     } catch {
       return []
     }
@@ -647,6 +680,7 @@ Example BAD insights (DO NOT GENERATE):
       body: JSON.stringify({
         model: 'claude-3-haiku-20240307',
         max_tokens: 600,
+        system: smartBlock,
         messages: [
           {
             role: 'user',
@@ -666,17 +700,36 @@ Example BAD insights (DO NOT GENERATE):
 
     try {
       const parsed = JSON.parse(content)
-      return parsed.map((insight: any) => ({
+      const mapped: PersonalInsight[] = parsed.map((insight: any) => ({
         text: insight.text,
         type: insight.type || 'pattern',
         isActionable: insight.isActionable !== false,
         dataBasedOn: insight.dataBasedOn || 'Based on your recent patterns',
       }))
+      await maybeMarkNorthStarQuotedWeek(userId, coachingRow, mapped)
+      return mapped
     } catch {
       return []
     }
   }
 
   return []
+}
+
+async function maybeMarkNorthStarQuotedWeek(
+  userId: string,
+  coachingRow: CoachingMaturityProfileRow | null,
+  insights: PersonalInsight[]
+): Promise<void> {
+  const goal = coachingRow?.primary_goal_text?.trim()
+  if (!goal) return
+  const week = getIsoWeekId(new Date())
+  if (coachingRow?.north_star_last_quoted_iso_week?.trim() === week) return
+  const anyVerbatim = insights.some((i) => textContainsVerbatimNorthStar(i.text, goal))
+  if (!anyVerbatim) return
+  const db = getServerSupabase()
+  await (db.from('user_profiles') as any)
+    .update({ north_star_last_quoted_iso_week: week, updated_at: new Date().toISOString() })
+    .eq('id', userId)
 }
 

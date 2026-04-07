@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { InfoTooltip } from '@/components/InfoTooltip'
 import { useFounderJourney } from '@/lib/hooks/useFounderJourney'
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery'
 import type { JourneyUnlock } from '@/lib/types/founder-dna'
 import { getProgressStatus } from '@/lib/format-progress'
+import { getEffectivePlanDate } from '@/lib/effective-plan-date'
 
 type ComingUpNextProps = {
   items?: JourneyUnlock[]
@@ -15,19 +16,43 @@ type ComingUpNextProps = {
 /** Pending unlock rows shown in this card (from journey `nextUnlocks`, not total app features). */
 const MOBILE_VISIBLE = 3
 
-/** Unlocks where the description row is a real next step (not a locked DNA page). */
-const ACTIONABLE_COMING_UP_HREF: Record<string, string> = {
-  first_glimpse: '/evening',
-  founder_story: '/profile',
-  morning_insights: '/morning',
-}
+/** Unlocks where the row deep-links to the work that earns the unlock. */
+const ACTIONABLE_COMING_UP_IDS = new Set(['first_glimpse', 'founder_story', 'morning_insights'])
 
 function isActionableComingUpUnlock(id: string): boolean {
-  return Object.hasOwn(ACTIONABLE_COMING_UP_HREF, id)
+  return ACTIONABLE_COMING_UP_IDS.has(id)
 }
 
-function actionableHref(id: string): string {
-  return ACTIONABLE_COMING_UP_HREF[id] ?? '/dashboard'
+function actionableHref(id: string, planDate: string): string {
+  switch (id) {
+    case 'first_glimpse':
+      return `/evening?date=${planDate}#evening-form`
+    case 'founder_story':
+      return '/profile'
+    case 'morning_insights':
+      return '/morning'
+    default:
+      return '/dashboard'
+  }
+}
+
+/**
+ * Actionable instruction lines (journey `requirement` stays the source of truth on the API;
+ * we layer explicit “how to unlock” copy for the highest-friction dashboard rows).
+ */
+const COMING_UP_INSTRUCTIONS: Record<string, { primary: string; actionLabel: string }> = {
+  first_glimpse: {
+    primary: 'Complete 1 evening review to unlock tonight.',
+    actionLabel: 'Open Evening Reflection →',
+  },
+  founder_story: {
+    primary: 'Fill in all profile sections to unlock.',
+    actionLabel: 'Complete profile →',
+  },
+  morning_insights: {
+    primary: 'Unlocks tomorrow morning after your review.',
+    actionLabel: 'Open morning plan →',
+  },
 }
 
 /** Coral timing (day fraction in timing column when no estimate). */
@@ -46,6 +71,9 @@ function dayProgressLabel(u: JourneyUnlock): string {
   return `Day ${u.progress} of ${u.target}`
 }
 
+/** Teaser backdrop for high-value locked unlocks (chart blur). */
+const CURIOSITY_DETAIL_IDS = new Set(['first_glimpse', 'founder_story', 'morning_insights'])
+
 /** Right-column label: time-to-unlock, or day progress when no estimate (e.g. Founder Story). */
 function timingColumnLabel(u: JourneyUnlock): string {
   return unlockTimingPrimary(u) ?? dayProgressLabel(u)
@@ -54,6 +82,7 @@ function timingColumnLabel(u: JourneyUnlock): string {
 export function ComingUpNext({ items }: ComingUpNextProps) {
   const { data, loading, error } = useFounderJourney()
   const isMobile = useMediaQuery('(max-width: 768px)')
+  const planDate = useMemo(() => getEffectivePlanDate(), [])
   const list = items ?? data?.nextUnlocks ?? []
   const visibleUnlocks = isMobile ? list.slice(0, MOBILE_VISIBLE) : list
 
@@ -105,18 +134,38 @@ export function ComingUpNext({ items }: ComingUpNextProps) {
               }`}
             >
               {visibleUnlocks.map((u) => {
-                const timingPrimary = unlockTimingPrimary(u)
                 const dayProg = dayProgressLabel(u)
                 const target = Math.max(u.target, 1)
                 const progressPct = Math.max(0, Math.min(100, Math.round((u.progress / target) * 100)))
                 const timingRight = timingColumnLabel(u)
                 const showProgressParens = shouldShowProgressParens(u)
-                const detailText = `${u.requirement}${showProgressParens ? ` (${dayProg})` : ''}`
+                const rawDetail = `${u.requirement}${showProgressParens ? ` (${dayProg})` : ''}`
+                const instruction = COMING_UP_INSTRUCTIONS[u.id]
                 const actionable = isActionableComingUpUnlock(u.id)
+                const showTeaserBackdrop = CURIOSITY_DETAIL_IDS.has(u.id)
 
                 return (
-                  <div key={u.id} className="py-2 first:pt-0 space-y-0.5">
-                    <div className="flex w-full min-w-0 items-baseline justify-between gap-3">
+                  <div key={u.id} className="relative py-2 first:pt-0 space-y-0.5 overflow-hidden">
+                    {showTeaserBackdrop ? (
+                      <div
+                        className="pointer-events-none absolute right-1 top-1/2 z-0 -translate-y-1/2 w-[5.5rem] h-14 overflow-hidden rounded-md backdrop-blur-[2px]"
+                        aria-hidden
+                      >
+                        <div className="absolute inset-0 flex items-end justify-center gap-0.5 pb-0.5 blur-[4px] opacity-55 dark:opacity-45">
+                          {[42, 68, 38, 88, 52].map((h, i) => (
+                            <div
+                              key={i}
+                              className="w-1.5 rounded-t bg-gradient-to-t from-emerald-600 to-teal-300 dark:from-emerald-500 dark:to-cyan-400"
+                              style={{ height: `${h}%` }}
+                            />
+                          ))}
+                        </div>
+                        <div className="absolute inset-0 flex items-center justify-center text-2xl blur-[3px] opacity-50">
+                          🦌
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="relative z-[1] flex w-full min-w-0 items-baseline justify-between gap-3">
                       <div className="flex min-w-0 flex-1 items-baseline gap-2">
                         <span className="shrink-0 text-base leading-none">{u.icon}</span>
                         <span className="truncate text-sm font-medium text-gray-900 dark:text-white">
@@ -128,21 +177,26 @@ export function ComingUpNext({ items }: ComingUpNextProps) {
                       </span>
                     </div>
 
-                    {actionable ? (
+                    {actionable && instruction ? (
                       <Link
-                        href={actionableHref(u.id)}
-                        className="block pl-6 text-xs text-emerald-600 dark:text-emerald-400 hover:underline leading-snug"
+                        href={actionableHref(u.id, planDate)}
+                        className="relative z-[1] block pl-6 text-xs leading-snug group"
                       >
-                        {detailText} →
+                        <span className="text-gray-600 dark:text-gray-400">{instruction.primary} </span>
+                        <span className="font-semibold text-[#ef725c] underline-offset-2 group-hover:underline">
+                          {instruction.actionLabel}
+                        </span>
                       </Link>
                     ) : (
-                      <p className="pl-6 text-xs text-gray-500 dark:text-gray-400 leading-snug">{detailText}</p>
+                      <p className="relative z-[1] pl-6 text-xs text-gray-600 dark:text-gray-400 leading-snug">
+                        {rawDetail}
+                      </p>
                     )}
 
-                    <div className="mt-1.5 pl-6 md:hidden">
-                      <div className="h-1.5 w-full max-w-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                    <div className="relative z-[1] mt-1.5 pl-6">
+                      <div className="h-1.5 w-full max-w-full rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden ring-1 ring-[#ef725c]/20">
                         <div
-                          className="h-1.5 bg-[#ef725c] transition-all duration-300"
+                          className="h-1.5 rounded-full bg-gradient-to-r from-[#f0886c] to-[#ef725c] transition-all duration-300 shadow-[0_0_12px_rgba(239,114,92,0.5)]"
                           style={{ width: `${progressPct}%` }}
                           aria-hidden
                         />

@@ -28,6 +28,8 @@ import { FooterMicroLesson } from '@/components/FooterMicroLesson'
 import { SplashWithMicroLesson } from '@/components/SplashWithMicroLesson'
 import { PullToRefresh } from '@/components/PullToRefresh'
 import { SafeAreaDebugOverlay } from '@/components/SafeAreaDebugOverlay'
+import { SessionSourceCapture } from '@/components/analytics/SessionSourceCapture'
+import { EmergencyModeProvider, EmergencyShell } from '@/components/emergency/EmergencyModeProvider'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -83,6 +85,7 @@ export default async function RootLayout({
         />
         <link rel="preload" href="/dashboard/cta-dark.png" as="image" />
         <link rel="preload" href="/dashboard/morning_02.png" as="image" />
+        <link rel="preload" href="/dashboard/cta-light.png" as="image" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#152b50" />
         <meta name="mobile-web-app-capable" content="yes" />
@@ -97,6 +100,8 @@ export default async function RootLayout({
       >
         <ForceUpdateChecker>
         <ThemeProvider>
+        <EmergencyModeProvider>
+        <EmergencyShell>
         <TutorialProvider>
         <ComprehensiveTourProvider>
         <InAppNotificationProvider>
@@ -114,6 +119,9 @@ export default async function RootLayout({
         <Suspense fallback={null}>
           <SafeAreaDebugOverlay />
         </Suspense>
+        <Suspense fallback={null}>
+          <SessionSourceCapture />
+        </Suspense>
         <MainWithPadding>{children}</MainWithPadding>
         <BottomNav />
         {isTourEnabled() && (
@@ -129,6 +137,8 @@ export default async function RootLayout({
         </InAppNotificationProvider>
         </ComprehensiveTourProvider>
         </TutorialProvider>
+        </EmergencyShell>
+        </EmergencyModeProvider>
         </ThemeProvider>
         </ForceUpdateChecker>
 

@@ -3,6 +3,7 @@
 import { useMicroLesson } from '@/lib/hooks/useMicroLesson'
 import { Button } from '@/components/ui/button'
 import { usePathname, useSearchParams } from 'next/navigation'
+import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
 
 interface LoadingWithMicroLessonProps {
   message?: string
@@ -28,6 +29,11 @@ export function LoadingWithMicroLesson({
 
   return (
     <div className={`flex flex-col items-center justify-center min-h-[300px] ${className}`}>
+      {location === 'dashboard' ? (
+        <div className="mb-4">
+          <MrsDeerAvatar expression="thoughtful" size="large" />
+        </div>
+      ) : null}
       <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#ef725c] mb-3" />
       <p className="text-sm text-gray-600 dark:text-gray-300">{message}</p>
       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -49,4 +55,3 @@ export function LoadingWithMicroLesson({
     </div>
   )
 }
-

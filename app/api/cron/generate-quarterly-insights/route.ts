@@ -14,13 +14,15 @@ import {
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+export const maxDuration = 300
 
 const BATCH_SIZE = 50
 const CONCURRENCY = 5
 
 /**
- * Cron: Quarterly insights for users whose local time is Jan/Apr/Jul/Oct 1st 00:xx.
- * Schedule (vercel.json): every 5 minutes on UTC day 1 of Jan/Apr/Jul/Oct (first field * /5; month field 1,4,7,10).
+ * Cron: Quarterly insights for users on local quarter-start days (any hour) when not already completed.
+ * Schedule (vercel.json): every 5 min, UTC 10:00–23:59 on day 31 and 00:00–14:59 on day 1, months
+ * 1,4,7,10 only (~29h window per quarter rollover).
  * Batch + cron_state cursor until the UTC-quarter wave completes.
  * Does not skip users on Monday 00 local (quarter-start Mondays included).
  */

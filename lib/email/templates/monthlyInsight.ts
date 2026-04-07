@@ -75,11 +75,11 @@ Read my monthly insight: ${appUrlWithUtm('/monthly-insight', 'monthly_insight_fi
 
 After this, a fresh read lands on the 1st of each month, looking back at the month that just closed.
 
-— Mrs. Deer${renderTextFooter()}`
+— Mrs. Deer${renderTextFooter(user)}`
     }
 
     return `Your monthly insight is ready.${data?.monthlyInsightText || data?.monthlyInsight ? `\n\n${String(data?.monthlyInsightText || data?.monthlyInsight)}` : ''}${
       data?.growthEdge ? `\nGrowth edge: ${String(data.growthEdge)}` : ''
-    }` + renderTextFooter()
+    }` + renderTextFooter(user)
   },
 }

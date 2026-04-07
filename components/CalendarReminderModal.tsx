@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useMemo, useCallback } from 'react'
 import { colors } from '@/lib/design-tokens'
+import { hourFromTimeString, mrsDeerLineForEveningHour } from '@/lib/calendar-reminder-feedback'
 
 export type CalendarReminderType = 'google' | 'apple' | 'outlook' | 'other'
 
@@ -18,6 +19,8 @@ export type CalendarReminderModalProps = {
   description?: string
 }
 
+const CORAL = '#ef725c'
+
 export function CalendarReminderModal({
   isOpen,
   reminderTime,
@@ -30,6 +33,10 @@ export function CalendarReminderModal({
   description = 'Add a daily 5‑minute reminder to your calendar. This is where patterns emerge.',
 }: CalendarReminderModalProps) {
   const stop = useCallback((e: React.MouseEvent) => e.stopPropagation(), [])
+  const eveningHint = useMemo(
+    () => mrsDeerLineForEveningHour(hourFromTimeString(reminderTime)),
+    [reminderTime],
+  )
 
   if (!isOpen) return null
 
@@ -62,37 +69,29 @@ export function CalendarReminderModal({
               onChange={(e) => onChangeTime(e.target.value)}
               className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
             />
+            <p className="mt-1.5 text-xs italic text-gray-600 dark:text-gray-400">{eveningHint}</p>
           </div>
 
+          <p className="text-center text-sm italic text-[#152b50]/70 dark:text-gray-400 leading-relaxed px-1">
+            85% of our most consistent Founders use calendar nudges to stay on track.
+          </p>
+
           <p className="text-sm text-gray-500 dark:text-gray-400">Choose your calendar:</p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
+              type="button"
               onClick={() => onChooseCalendar('google')}
-              className="p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex flex-col items-center"
+              className="rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+              style={{ backgroundColor: CORAL }}
             >
-              <span className="text-xl mb-1">📅</span>
-              <span className="text-sm">Google</span>
+              Sync with Google
             </button>
             <button
+              type="button"
               onClick={() => onChooseCalendar('apple')}
-              className="p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex flex-col items-center"
+              className="rounded-lg border-2 border-[#152b50] bg-transparent px-4 py-3 text-sm font-semibold text-[#152b50] transition hover:-translate-y-0.5 hover:bg-black/[0.02] dark:border-white/70 dark:text-white dark:hover:bg-white/[0.04]"
             >
-              <span className="text-xl mb-1">🍎</span>
-              <span className="text-sm">Apple</span>
-            </button>
-            <button
-              onClick={() => onChooseCalendar('outlook')}
-              className="p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex flex-col items-center"
-            >
-              <span className="text-xl mb-1">📧</span>
-              <span className="text-sm">Outlook</span>
-            </button>
-            <button
-              onClick={() => onChooseCalendar('other')}
-              className="p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex flex-col items-center"
-            >
-              <span className="text-xl mb-1">🔗</span>
-              <span className="text-sm">Other</span>
+              Add to Apple Calendar
             </button>
           </div>
         </div>
@@ -103,7 +102,7 @@ export function CalendarReminderModal({
           </button>
           <button
             onClick={onLater}
-            className="px-4 py-2 text-white rounded hover:opacity-90"
+            className="px-4 py-2 text-white rounded-lg hover:opacity-90 transition hover:-translate-y-0.5"
             style={{ backgroundColor: colors.coral.DEFAULT }}
           >
             Later
@@ -113,4 +112,3 @@ export function CalendarReminderModal({
     </div>
   )
 }
-

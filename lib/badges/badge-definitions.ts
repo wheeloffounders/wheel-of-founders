@@ -216,7 +216,7 @@ export const BADGE_DEFINITIONS: BadgeDefinition[] = [
     description: '80%+ focus-time tasks for 30 days',
     icon: '🎯',
     category: 'behavior',
-    unlockHint: 'Keep 80%+ Focus Time tasks over 30 days.',
+    unlockHint: 'Keep 80%+ Milestone tasks over 30 days.',
     celebrationTier: 'major',
   },
   {

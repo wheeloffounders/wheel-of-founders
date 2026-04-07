@@ -6,6 +6,40 @@
 
 const isDev = process.env.NODE_ENV === 'development'
 
+/**
+ * Coerce any thrown/rejected value into an Error with a readable message.
+ * Avoids `[object Object]` when libraries reject with plain objects or `{}`.
+ */
+export function toTrackedError(input: unknown): Error {
+  if (input instanceof Error) return input
+  if (typeof input === 'string') return new Error(input)
+  if (input == null) {
+    return new Error(input === null ? 'Promise rejected with null' : 'Promise rejected with undefined')
+  }
+  if (typeof input === 'object') {
+    const o = input as Record<string, unknown>
+    const msg = o.message
+    if (typeof msg === 'string' && msg.trim()) {
+      const err = new Error(msg)
+      if (typeof o.stack === 'string') err.stack = o.stack
+      err.cause = o.cause
+      return err
+    }
+    try {
+      const s = JSON.stringify(input)
+      if (s === '{}') {
+        return new Error(
+          'Promise rejected with empty object {} — often a mistaken reject({}) or res.json().catch(() => ({})) passed to throw'
+        )
+      }
+      return new Error(`Promise rejected (object): ${s}`)
+    } catch {
+      return new Error('Promise rejected with a non-serializable object')
+    }
+  }
+  return new Error(`Promise rejected: ${String(input)}`)
+}
+
 export interface ErrorContext {
   userId?: string
   component?: string
@@ -16,17 +50,20 @@ export interface ErrorContext {
 }
 
 export async function trackError(
-  error: Error | string,
+  error: unknown,
   context: ErrorContext
 ): Promise<void> {
-  const errorObj = typeof error === 'string' ? new Error(error) : error
+  const errorObj =
+    typeof error === 'string' ? new Error(error) : toTrackedError(error)
 
   if (isDev) {
-    console.error('🔥 CODE SCARY [DEV]:', {
-      error: errorObj.message,
-      stack: errorObj.stack,
-      context,
-    })
+    console.error(
+      `🔥 CODE SCARY [DEV]: ${errorObj.name}: ${errorObj.message}`,
+      '\nstack:',
+      errorObj.stack,
+      '\ncontext:',
+      context
+    )
   }
 
   // Sentry (production only - we skip in dev via beforeSend)
@@ -71,6 +108,6 @@ export async function trackError(
   }
 }
 
-export function trackErrorSync(error: Error | string, context: ErrorContext): void {
+export function trackErrorSync(error: unknown, context: ErrorContext): void {
   trackError(error, context).catch(() => {})
 }

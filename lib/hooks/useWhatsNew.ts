@@ -2,16 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
 import type { WhatsNewItem, WhatsNewResponse } from '@/lib/types/founder-dna'
-
-/** Same-origin cookies + Bearer so Route Handlers see the session when cookies lag (e.g. preview). */
-async function founderDnaFetchHeaders(): Promise<Record<string, string>> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const headers: Record<string, string> = {}
-  if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
-  return headers
-}
+import { getClientAuthHeaders } from '@/lib/api/fetch-json'
 
 export function useWhatsNew() {
   const pathname = usePathname()
@@ -22,7 +14,7 @@ export function useWhatsNew() {
   const load = useCallback(async () => {
     try {
       setLoading(true)
-      const headers = await founderDnaFetchHeaders()
+      const headers = await getClientAuthHeaders()
       const res = await fetch('/api/founder-dna/whats-new', {
         credentials: 'include',
         headers,
@@ -69,7 +61,7 @@ export function useWhatsNew() {
 
   const markAsViewed = useCallback(async () => {
     try {
-      const headers = await founderDnaFetchHeaders()
+      const headers = await getClientAuthHeaders()
       await fetch('/api/founder-dna/mark-viewed', {
         method: 'POST',
         credentials: 'include',

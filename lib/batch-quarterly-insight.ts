@@ -7,6 +7,12 @@ import { generateAIPrompt } from '@/lib/ai-client'
 import { checkUserHistory } from '@/lib/user-history'
 import { detectWinThemes } from '@/lib/weekly-analysis'
 import { PARSE_INSTRUCTION } from '@/lib/insight-parse-instructions'
+import {
+  QUARTERLY_FORBID_SEAT_PHRASE,
+  QUARTERLY_FORBIDDEN_LLMSMS,
+  quarterlyInsightPromptExtra,
+  quarterlyStrategicLensBlock,
+} from '@/lib/quarterly/quarterly-ai-prompt-rules'
 import type { WinWithDate } from '@/lib/weekly-analysis'
 
 function parseWins(val: unknown, date: string): WinWithDate[] {
@@ -61,12 +67,14 @@ export async function generateQuarterlyInsightForUser(
   const [reviewsRes, tasksRes, profileRes] = await Promise.all([
     db.from('evening_reviews').select('review_date, wins, lessons, mood, energy').eq('user_id', userId).gte('review_date', quarterStart).lte('review_date', quarterEnd).order('review_date', { ascending: true }),
     db.from('morning_tasks').select('needle_mover, completed').eq('user_id', userId).gte('plan_date', quarterStart).lte('plan_date', quarterEnd),
-    db.from('user_profiles').select('primary_goal_text').eq('id', userId).maybeSingle(),
+    db.from('user_profiles').select('primary_goal_text, quarterly_intention').eq('id', userId).maybeSingle(),
   ])
 
   const reviews = (reviewsRes.data ?? []) as { review_date?: string; wins?: unknown; lessons?: unknown; mood?: number; energy?: number }[]
   const tasks = (tasksRes.data ?? []) as { needle_mover?: boolean; completed?: boolean }[]
-  const primaryGoal = (profileRes.data as { primary_goal_text?: string } | null)?.primary_goal_text ?? null
+  const profileRow = profileRes.data as { primary_goal_text?: string; quarterly_intention?: string | null } | null
+  const primaryGoal = profileRow?.primary_goal_text ?? null
+  const quarterlyIntention = profileRow?.quarterly_intention ?? null
 
   const winsWithDate: WinWithDate[] = []
   const lessonsByMonth: Record<string, string[]> = {}
@@ -112,6 +120,8 @@ This user had the following quarter (${quarterStart} to ${quarterEnd}):
 
 GOAL: ${primaryGoal || '(not set)'}
 
+${quarterlyStrategicLensBlock(quarterlyIntention)}
+
 BY MONTH:
 ${monthSummaries}
 
@@ -123,11 +133,11 @@ SESSIONS: ${reviews.length}
 
 ${PARSE_INSTRUCTION}
 
-CORE PHILOSOPHY: Quarterly is not "more data"—it's "what does this all mean?" and "where are we going?" Look for the throughline, not the details. Find ONE transformation that matters most. Make it feel like a milestone, not another report.
+CORE PHILOSOPHY: Quarterly is not "more data"—it's what their entries actually show about where they spent courage and care. Find ONE transformation backed by specific wins/lessons. No filler metaphors; milestone feeling comes from specificity.
 
 Generate a quarterly reflection with exactly 4 sections:
 
-1. THE QUARTER IN ONE GLANCE - A single, powerful paragraph capturing the essence. The throughline. What was the thread from 12 weeks ago to now?
+1. THE QUARTER IN ONE GLANCE - One paragraph, grounded in their logged wins/lessons and mood/energy if relevant. What actually connected week one to week twelve in their data—not a metaphor about “threads.”
 
 2. YOUR NORTH STAR - Connect everything back to their main goal. What did they build this quarter? How does it move them toward their goal? Prove it can be done YOUR way.
 
@@ -135,7 +145,7 @@ Generate a quarterly reflection with exactly 4 sections:
 
 4. WHAT'S NEXT? - Strategic guidance for the next quarter. Not tactical advice—direction. What's the next 90-day experiment? One big question to carry forward.
 
-OUTPUT FORMAT: Use markdown ## headers. Exactly 4 sections with blank lines between. Let AI choose warm, natural titles. Use their words. Strategic, not tactical. Milestone feeling.`
+OUTPUT FORMAT: Use markdown ## headers. Exactly 4 sections with blank lines between. Let AI choose warm, natural titles. Use their words. Strategic, not tactical. Milestone feeling.${quarterlyInsightPromptExtra()}`
 
   const { hasHistory } = await checkUserHistory(userId)
   const MRS_DEER_RULES = `You are Mrs. Deer, a warm, wise coach for founders. You've sat with many founders. You validate before reframing. You think with them, not at them.`
@@ -143,7 +153,7 @@ OUTPUT FORMAT: Use markdown ## headers. Exactly 4 sections with blank lines betw
 
   try {
     const insight = await generateAIPrompt({
-      systemPrompt: `${MRS_DEER_RULES}\n\nQuarterly insight: max 550 words. BIG PICTURE focus. Output exactly 4 sections with ## markdown headers. Find the throughline and ONE big shift. BANNED: needle mover, action plan, smart constraint, power list. Make it feel like a milestone.${historyNote}`,
+      systemPrompt: `${MRS_DEER_RULES}\n\nQuarterly insight: max 550 words. BIG PICTURE focus. Output exactly 4 sections with ## markdown headers. Find ONE evidence-backed shift. BANNED: needle mover, action plan, smart constraint, power list. Make it feel like a milestone. ${QUARTERLY_FORBID_SEAT_PHRASE}\n\n${QUARTERLY_FORBIDDEN_LLMSMS}${historyNote}`,
       userPrompt,
       maxTokens: 2000,
       temperature: 0.7,

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { HelpCircle } from 'lucide-react'
 
 interface InfoTooltipProps {
@@ -10,10 +11,13 @@ interface InfoTooltipProps {
   position?: 'top' | 'bottom' | 'left' | 'right'
   /**
    * `modal` — full-screen overlay (legacy).
-   * `popover` — compact panel inside the card; hover on desktop, tap to toggle on touch; stays near the trigger.
+   * `popover` — compact panel; hover on desktop, tap to toggle on touch; **rendered via portal** so cards with `overflow-x: hidden` cannot clip it.
    */
   presentation?: 'modal' | 'popover'
 }
+
+const POPOVER_Z = 500
+const GAP = 8
 
 export function InfoTooltip({
   text,
@@ -28,6 +32,57 @@ export function InfoTooltip({
   const wrapRef = useRef<HTMLSpanElement>(null)
 
   const showPopover = presentation === 'popover' && (isOpen || isHover)
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null)
+
+  const updatePopoverPosition = useCallback(() => {
+    const el = triggerRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    let top = 0
+    let left = 0
+    let transform = ''
+
+    if (position === 'bottom') {
+      left = r.left + r.width / 2
+      top = r.bottom + GAP
+      transform = 'translateX(-50%)'
+    } else if (position === 'left') {
+      left = r.left - GAP
+      top = r.top + r.height / 2
+      transform = 'translate(-100%, -50%)'
+    } else if (position === 'right') {
+      left = r.right + GAP
+      top = r.top + r.height / 2
+      transform = 'translate(0, -50%)'
+    } else {
+      left = r.left + r.width / 2
+      top = r.top - GAP
+      transform = 'translate(-50%, -100%)'
+    }
+
+    setPopoverStyle({
+      position: 'fixed',
+      top,
+      left,
+      transform,
+      zIndex: POPOVER_Z,
+    })
+  }, [position])
+
+  useLayoutEffect(() => {
+    if (presentation !== 'popover' || !showPopover) {
+      setPopoverStyle(null)
+      return
+    }
+    updatePopoverPosition()
+    const onScrollOrResize = () => updatePopoverPosition()
+    window.addEventListener('scroll', onScrollOrResize, true)
+    window.addEventListener('resize', onScrollOrResize)
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize, true)
+      window.removeEventListener('resize', onScrollOrResize)
+    }
+  }, [presentation, showPopover, updatePopoverPosition])
 
   useEffect(() => {
     if (presentation !== 'popover') return
@@ -51,41 +106,36 @@ export function InfoTooltip({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [presentation])
 
-  const alignClass =
-    position === 'right'
-      ? 'right-0 left-auto'
-      : position === 'left'
-        ? 'left-0 right-auto'
-        : 'left-1/2 -translate-x-1/2'
-
-  const popoverPlacementClass = position === 'bottom' ? 'top-full mt-1' : 'bottom-full mb-1'
-
   if (presentation === 'popover') {
+    const popoverNode =
+      showPopover && typeof document !== 'undefined' && popoverStyle ? (
+        <div
+          ref={tooltipRef}
+          role="tooltip"
+          style={popoverStyle}
+          className="w-max max-w-[min(280px,calc(100vw-2.5rem))] rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-xs text-gray-800 dark:text-gray-200 shadow-lg pointer-events-auto"
+          onMouseEnter={() => setIsHover(true)}
+          onMouseLeave={() => setIsHover(false)}
+        >
+          {text}
+        </div>
+      ) : null
+
     return (
-      <span ref={wrapRef} className={`relative inline-flex items-center ${className}`}>
+      <span ref={wrapRef} className={`inline-flex items-center ${className}`}>
         <button
           ref={triggerRef}
           type="button"
           onClick={() => setIsOpen((v) => !v)}
           onMouseEnter={() => setIsHover(true)}
           onMouseLeave={() => setIsHover(false)}
-          className="cursor-help p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0"
+          className="cursor-help p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0 relative z-0"
           aria-label="Help"
           aria-expanded={isOpen}
         >
           <HelpCircle className="w-4 h-4 text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300 transition" />
         </button>
-        {showPopover ? (
-          <div
-            ref={tooltipRef}
-            role="tooltip"
-            className={`absolute z-50 ${popoverPlacementClass} ${alignClass} w-max max-w-[min(280px,calc(100vw-2.5rem))] rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-xs text-gray-800 dark:text-gray-200 shadow-lg`}
-            onMouseEnter={() => setIsHover(true)}
-            onMouseLeave={() => setIsHover(false)}
-          >
-            {text}
-          </div>
-        ) : null}
+        {popoverNode && createPortal(popoverNode, document.body)}
       </span>
     )
   }

@@ -10,6 +10,7 @@ import { InfoTooltip } from '@/components/InfoTooltip'
 import { supabase } from '@/lib/supabase'
 import { getEffectivePlanDate } from '@/lib/effective-plan-date'
 import { fetchJson } from '@/lib/api/fetch-json'
+import { getBrowserTimeZone } from '@/lib/timezone'
 
 type ProgressStatus = 'full' | 'half' | 'partial' | 'empty' | 'future'
 
@@ -58,8 +59,12 @@ function dayCircleClass(status: ProgressStatus, isToday: boolean): string {
   if (status === 'full') {
     return `${base} bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300${isToday ? ' ring-2 ring-green-500 ring-offset-1 dark:ring-offset-gray-900' : ''}`
   }
+  /** Loss aversion: today with morning done but no evening — streak not “locked” yet */
+  if (status === 'half' && isToday) {
+    return `${base} bg-transparent text-amber-900 dark:text-amber-100 border-2 border-dashed border-[#FBBF24] shadow-[0_0_0_1px_rgba(251,191,36,0.35)] animate-pulse`
+  }
   if (status === 'half' || status === 'partial') {
-    return `${base} bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300${isToday ? ' border-2 border-amber-500' : ''}`
+    return `${base} bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300`
   }
   if (isToday) {
     return `${base} bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-2 border-amber-500`
@@ -87,7 +92,12 @@ export function JourneyProgress() {
     setStreak(typeof n === 'number' && Number.isFinite(n) ? n : 0)
   }, [])
 
-  const progressUrl = `/api/user/progress?dates=${days.join(',')}`
+  const progressUrl = useMemo(() => {
+    const q = new URLSearchParams({ dates: days.join(',') })
+    const tz = getBrowserTimeZone()
+    if (tz) q.set('tz', tz)
+    return `/api/user/progress?${q.toString()}`
+  }, [days])
   const {
     data: progress = {} as Record<string, ProgressStatus>,
     isLoading: progressLoading,
@@ -102,6 +112,8 @@ export function JourneyProgress() {
   })
 
   const todayStr = getEffectivePlanDate()
+  const reflectionPendingToday = (progress[todayStr] ?? 'empty') === 'half'
+  const streakDayToLock = streak + 1
   const rangeStart = days[0]
   const rangeEnd = days[days.length - 1]
   const rangeLabel =
@@ -193,6 +205,11 @@ export function JourneyProgress() {
                   )
                 })}
           </div>
+          {reflectionPendingToday ? (
+            <p className="text-xs font-medium text-amber-900 dark:text-amber-100/90 text-center sm:text-left leading-snug">
+              Reflection pending—finish tonight to lock in Day {streakDayToLock}.
+            </p>
+          ) : null}
         </div>
       </CardContent>
     </Card>

@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
       {
         name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
         email: user.email,
+        login_count: context.loginCount,
       },
       { ...context, ...(body.data || {}) }
     )

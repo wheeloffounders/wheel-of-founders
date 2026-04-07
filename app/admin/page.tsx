@@ -1,6 +1,15 @@
 import Link from 'next/link'
 import { getServerSupabase } from '@/lib/server-supabase'
-import { BarChart3, FlaskConical, LayoutDashboard, MessageSquare, List, TrendingDown, AlertTriangle } from 'lucide-react'
+import {
+  BarChart3,
+  FlaskConical,
+  LayoutDashboard,
+  MessageSquare,
+  List,
+  TrendingDown,
+  AlertTriangle,
+  HeartPulse,
+} from 'lucide-react'
 import { format } from 'date-fns'
 import { isDevelopment } from '@/lib/admin'
 
@@ -29,6 +38,7 @@ export default async function AdminDashboardPage() {
     { href: '/admin/cross-user-analytics', label: 'Cross-User Analytics', icon: BarChart3 },
     { href: '/admin/experiments', label: 'Experiments', icon: FlaskConical },
     { href: '/admin/analytics', label: 'Analytics Overview', icon: LayoutDashboard },
+    { href: '/admin/dashboard', label: 'Founder Journey Command Center (2.0)', icon: HeartPulse },
     { href: '/admin/feedback', label: 'Feedback', icon: MessageSquare },
   ]
 

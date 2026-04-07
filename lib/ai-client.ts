@@ -1,7 +1,6 @@
 /**
- * OpenRouter AI Client - Claude-first fallback chain.
- * Tries anthropic/claude-sonnet-4.6 first (newer, cheaper, better),
- * falls back to deepseek/deepseek-chat if Claude fails.
+ * OpenRouter AI client — ordered model fallback with per-request AbortController timeout.
+ * See `AI_REQUEST_TIMEOUT_MS` (default 5000ms) and `MODELS` in this file.
  */
 
 export class AIError extends Error {
@@ -17,13 +16,14 @@ export class AIError extends Error {
   }
 }
 
-/** Timeout for OpenRouter API. Vercel default maxDuration is 10s; increase in vercel.json if needed. */
-const AI_REQUEST_TIMEOUT_MS = 8000
+/** Fail fast so crons can fall through to the next model instead of hanging until the host kills the function. */
+const AI_REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS) || 5000
 
-/** Try models in order - DeepSeek first for speed (2-3s), Claude fallback for quality */
+/** Try models in order — fast model first, then quality, then a widely available small model. */
 const MODELS = [
-  'deepseek/deepseek-chat',       // Fast - primary for daily insights (avoids 504)
-  'anthropic/claude-sonnet-4.6',  // Slower but higher quality - fallback
+  'deepseek/deepseek-chat',
+  'anthropic/claude-sonnet-4.6',
+  'openai/gpt-4o-mini',
 ]
 
 interface AIGenerateOptions {
@@ -31,10 +31,14 @@ interface AIGenerateOptions {
   userPrompt: string
   maxTokens?: number
   temperature?: number
+  /** OpenRouter model ids to try in order. Defaults to app-wide `MODELS`. */
+  models?: readonly string[]
+  /** Called immediately before each model request (tracing / admin dashboards). */
+  onModelAttempt?: (model: string) => void
 }
 
 /**
- * Generate AI response using OpenRouter. Tries Claude first, then DeepSeek.
+ * Generate AI response using OpenRouter. Tries each model in `MODELS` until one succeeds.
  * Throws AIError with full details if all models fail.
  */
 export async function generateAIPrompt({
@@ -42,6 +46,8 @@ export async function generateAIPrompt({
   userPrompt,
   maxTokens = 200,
   temperature = 0.7,
+  models: modelOverride,
+  onModelAttempt,
 }: AIGenerateOptions): Promise<string> {
   if (typeof window !== 'undefined') {
     throw new AIError(
@@ -72,8 +78,12 @@ export async function generateAIPrompt({
 
   let lastError: AIError | Error | null = null
 
-  for (const model of MODELS) {
-  console.log(`[AI DEBUG] Trying model: ${model}`)
+  const modelList =
+    modelOverride && modelOverride.length > 0 ? [...modelOverride] : [...MODELS]
+
+  for (const model of modelList) {
+    onModelAttempt?.(model)
+    console.log(`[AI DEBUG] Trying model: ${model}`)
   console.log(`[AI DEBUG] Prompt length: ${userPrompt.length} chars, approx ${Math.ceil(userPrompt.length / 4)} tokens`)
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS)
@@ -175,8 +185,16 @@ let openRouterMsg = errorText
   }
 
   if (lastError instanceof AIError) throw lastError
-  throw lastError ?? new AIError('[AI ERROR] All models failed', MODELS[0], undefined, undefined, 'Unknown')
+  throw lastError ?? new AIError('[AI ERROR] All models failed', modelList[0] ?? MODELS[0], undefined, undefined, 'Unknown')
 }
+
+/** Fast models for Pro morning (env override, then flash-capable fallbacks). */
+export const PRO_MORNING_MODEL_CANDIDATES: readonly string[] = [
+  ...(process.env.PRO_MORNING_MODEL?.trim() ? [process.env.PRO_MORNING_MODEL.trim()] : []),
+  'google/gemini-2.0-flash-001',
+  'openai/gpt-4o-mini',
+  'deepseek/deepseek-chat',
+]
 
 /**
  * Stream AI response - yields chunks as they arrive. Uses DeepSeek first for speed.

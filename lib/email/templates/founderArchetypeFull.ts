@@ -45,6 +45,6 @@ See my archetype: ${appUrlWithUtm('/founder-dna/archetype', 'founder_archetype_f
 
 Every 90 days, I'll refresh this as you grow.
 
-— Mrs. Deer${renderTextFooter()}`
+— Mrs. Deer${renderTextFooter(user)}`
   },
 }

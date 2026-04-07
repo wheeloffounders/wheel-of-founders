@@ -1,58 +1,129 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Target } from 'lucide-react'
 import Link from 'next/link'
-import { format } from 'date-fns'
+import { getEffectivePlanDate } from '@/lib/effective-plan-date'
+import {
+  WOF_SESSION_INTENTION_PULSE_KEY,
+  WOF_SESSION_MRS_DEER_HOOK_KEY,
+  type MrsDeerDashboardHookPayload,
+} from '@/lib/dashboard-onboarding-session'
 
 export function TodaysIntention() {
   const [intention, setIntention] = useState<string | null>(null)
+  const [eveningDone, setEveningDone] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [onboardingPulse, setOnboardingPulse] = useState(false)
+  const [mrsDeerHookLine, setMrsDeerHookLine] = useState<string | null>(null)
 
-  useEffect(() => {
-    const fetchIntention = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        setLoading(false)
-        return
-      }
+  const planDate = getEffectivePlanDate()
 
-      const today = format(new Date(), 'yyyy-MM-dd')
+  const load = useCallback(async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      setLoading(false)
+      return
+    }
 
-      const { data: decision } = await supabase
+    const [{ data: decision }, { data: review }] = await Promise.all([
+      supabase
         .from('morning_decisions')
         .select('decision')
         .eq('user_id', user.id)
-        .eq('plan_date', today)
+        .eq('plan_date', planDate)
+        .maybeSingle(),
+      supabase
+        .from('evening_reviews')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('review_date', planDate)
+        .maybeSingle(),
+    ])
+
+    const row = decision as { decision?: string } | null
+    if (row?.decision?.trim()) {
+      setIntention(row.decision.trim())
+    } else {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('primary_goal_text')
+        .eq('id', user.id)
         .maybeSingle()
 
-      const row = decision as { decision?: string } | null
-      if (row?.decision?.trim()) {
-        setIntention(row.decision.trim())
+      const p = profile as { primary_goal_text?: string } | null
+      if (p?.primary_goal_text?.trim()) {
+        setIntention(p.primary_goal_text.trim())
       } else {
-        const { data: profile } = await supabase
-          .from('user_profiles')
-          .select('primary_goal_text')
-          .eq('id', user.id)
-          .maybeSingle()
+        setIntention('')
+      }
+    }
 
-        const p = profile as { primary_goal_text?: string } | null
-        if (p?.primary_goal_text?.trim()) {
-          setIntention(p.primary_goal_text.trim())
-        } else {
-          setIntention('')
+    setEveningDone(!!review)
+    setLoading(false)
+  }, [planDate])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  useEffect(() => {
+    if (loading) return
+    if (typeof window === 'undefined') return
+    let pulseTimer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const pulse = sessionStorage.getItem(WOF_SESSION_INTENTION_PULSE_KEY)
+      const raw = sessionStorage.getItem(WOF_SESSION_MRS_DEER_HOOK_KEY)
+      if (pulse === '1') {
+        sessionStorage.removeItem(WOF_SESSION_INTENTION_PULSE_KEY)
+        setOnboardingPulse(true)
+        pulseTimer = setTimeout(() => setOnboardingPulse(false), 10000)
+      }
+      if (raw) {
+        sessionStorage.removeItem(WOF_SESSION_MRS_DEER_HOOK_KEY)
+        const parsed = JSON.parse(raw) as MrsDeerDashboardHookPayload
+        const focus = parsed?.focus?.trim()
+        if (focus) {
+          const clipped = focus.length > 120 ? `${focus.slice(0, 117)}…` : focus
+          setMrsDeerHookLine(`Strategic focus: ${clipped}. I'm ready for your report tonight.`)
         }
       }
-      setLoading(false)
+    } catch {
+      // ignore
     }
-    fetchIntention()
-  }, [])
+    return () => {
+      if (pulseTimer !== undefined) clearTimeout(pulseTimer)
+    }
+  }, [loading])
+
+  useEffect(() => {
+    const onSync = () => {
+      void load()
+    }
+    window.addEventListener('data-sync-request', onSync)
+    return () => window.removeEventListener('data-sync-request', onSync)
+  }, [load])
 
   if (loading) return null
 
+  const showOpenLoopPill = Boolean(intention) && !eveningDone
+
   return (
-    <div className="bg-orange-50 dark:bg-orange-950/25 p-4 rounded-lg border-l-4 border-[#ef725c]">
+    <div
+      className={`relative bg-orange-50 dark:bg-orange-950/25 p-4 rounded-lg border-l-4 border-[#ef725c] transition-[box-shadow,ring] duration-700 ease-out ${
+        onboardingPulse
+          ? 'ring-2 ring-[#ef725c]/50 shadow-lg ring-offset-2 ring-offset-orange-50 dark:ring-offset-orange-950/30'
+          : ''
+      } ${showOpenLoopPill ? 'pr-24' : ''}`}
+    >
+      {showOpenLoopPill ? (
+        <span className="absolute top-3 right-3 inline-flex items-center rounded-full border border-amber-200/90 bg-white/90 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900/90 shadow-sm dark:border-amber-800/60 dark:bg-amber-950/50 dark:text-amber-100">
+          In progress
+        </span>
+      ) : null}
       <div className="flex items-start gap-3">
         <Target className="w-5 h-5 text-[#ef725c] mt-0.5 shrink-0" />
         <div className="min-w-0">
@@ -66,6 +137,12 @@ export function TodaysIntention() {
               </Link>
             </p>
           )}
+          {mrsDeerHookLine ? (
+            <p className="mt-2 text-xs leading-relaxed text-gray-600 dark:text-gray-400 border-t border-orange-200/60 pt-2 dark:border-orange-800/50">
+              <span className="font-medium text-gray-800 dark:text-gray-200">Mrs. Deer:</span>{' '}
+              {mrsDeerHookLine}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

@@ -1,6 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getFeatureAccess } from '@/lib/features'
-import { getUserTimezoneFromProfile, shouldRunQuarterlyInsightForUser } from '@/lib/timezone'
+import { fetchCompletedQuarterlyInsightKeys } from '@/lib/quarterly-insight/completed-check'
+import {
+  getPreviousQuarterRangeYmdInTimeZone,
+  getUserTimezoneFromProfile,
+  isUserLocalQuarterStartCalendarDay,
+} from '@/lib/timezone'
 
 export type QuarterlyInsightEligibleProfile = {
   id: string
@@ -55,21 +60,47 @@ export async function getEligibleUsersForQuarterlyInsightCron(
   }[]
 
   const eligible: QuarterlyInsightEligibleProfile[] = []
+  type Pending = (typeof rows)[number] & { quarterStart: string }
+  const pending: Pending[] = []
+
   for (const p of rows) {
     const tz = getUserTimezoneFromProfile(p)
     const testBypass = Boolean(p.is_test_user)
-    const inQuarterlyWindow = testBypass || shouldRunQuarterlyInsightForUser(now, tz)
-    if (
-      getFeatureAccess({ tier: p.tier, pro_features_enabled: p.pro_features_enabled }).personalMonthlyInsight &&
-      inQuarterlyWindow
-    ) {
+    const hasFeature = getFeatureAccess({
+      tier: p.tier,
+      pro_features_enabled: p.pro_features_enabled,
+    }).personalMonthlyInsight
+    if (!hasFeature) continue
+
+    if (testBypass) {
       eligible.push({
         id: p.id,
         tier: p.tier,
         pro_features_enabled: p.pro_features_enabled,
         timezone: tz,
       })
+      continue
     }
+
+    if (!isUserLocalQuarterStartCalendarDay(now, tz)) continue
+    const range = getPreviousQuarterRangeYmdInTimeZone(now, tz)
+    if (!range) continue
+    pending.push({ ...p, quarterStart: range.quarterStart })
+  }
+
+  const completedKeys = await fetchCompletedQuarterlyInsightKeys(
+    db,
+    pending.map((p) => ({ userId: p.id, quarterStart: p.quarterStart }))
+  )
+
+  for (const p of pending) {
+    if (completedKeys.has(`${p.id}\t${p.quarterStart}`)) continue
+    eligible.push({
+      id: p.id,
+      tier: p.tier,
+      pro_features_enabled: p.pro_features_enabled,
+      timezone: getUserTimezoneFromProfile(p),
+    })
   }
 
   eligible.sort((a, b) => a.id.localeCompare(b.id))

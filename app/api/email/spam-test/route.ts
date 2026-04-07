@@ -50,7 +50,11 @@ export async function POST(req: NextRequest) {
     const ctx = await buildPersonalizedEmailContext(body.userId)
     const rendered = renderEmailTemplate(
       body.emailType,
-      { name: user.user_metadata?.full_name || user.user_metadata?.name || user.email, email: user.email },
+      {
+        name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
+        email: user.email,
+        login_count: ctx.loginCount,
+      },
       ctx as unknown as Record<string, unknown>
     )
 

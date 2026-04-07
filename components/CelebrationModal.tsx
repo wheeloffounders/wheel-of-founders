@@ -117,7 +117,7 @@ export function CelebrationModal({
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#152b50]/90 backdrop-blur-sm"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-[#152b50]/90 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           aria-labelledby="celebration-title"

@@ -5,6 +5,7 @@ import { authorizeCronRequest, logCronRequestMeta } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+export const maxDuration = 300
 
 /**
  * Cron: Retry failed weekly insights with backoff.

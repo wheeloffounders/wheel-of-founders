@@ -209,7 +209,7 @@ export async function GET(req: NextRequest) {
         }
         const rendered = renderEmailTemplate(
           'morning_reminder',
-          { name: ctx.userName, email: authUser?.email },
+          { name: ctx.userName, email: authUser?.email, login_count: ctx.loginCount },
           morningTemplateData
         )
         const res = await sendEmailWithTracking({
@@ -270,7 +270,7 @@ export async function GET(req: NextRequest) {
         }
         const rendered = renderEmailTemplate(
           'evening_reminder',
-          { name: ctx.userName, email: authUser?.email },
+          { name: ctx.userName, email: authUser?.email, login_count: ctx.loginCount },
           eveningTemplateData
         )
         const res = await sendEmailWithTracking({

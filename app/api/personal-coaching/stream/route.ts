@@ -2,7 +2,7 @@
  * Streaming personal coaching API - uses DeepSeek for speed, streams response.
  * Use for daily insights (evening, morning, post_morning, emergency) to avoid 504 timeouts.
  */
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { withRateLimit } from '@/lib/rate-limit-middleware'
 import { addWatermark } from '@/lib/watermark'
@@ -27,6 +27,8 @@ export async function POST(req: NextRequest) {
       stream?: boolean
       emergencyDescription?: string
       severity?: 'hot' | 'warm' | 'contained'
+      /** `emergencies.id` — required for multiple fires per calendar day (unique prompt row per fire). */
+      emergencyId?: string
       /** For post_morning: pass tasks/decision to avoid DB timing issues */
       postMorningOverride?: PostMorningOverride
       /** For post_evening: pass review/tasks to avoid DB timing issues */
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     const insightType = body.emergencyDescription && body.severity ? 'emergency' : promptType
 
-    return withRateLimit(req, insightType, async () => {
+    const streamed = await withRateLimit(req, insightType, async () => {
       let userId = body.userId
       const serverSession = await getServerSessionFromRequest(req)
       if (serverSession?.user?.id) {
@@ -71,7 +73,14 @@ export async function POST(req: NextRequest) {
             let prompt: string
 
             if (promptType === 'emergency' && body.emergencyDescription && body.severity) {
-              prompt = await generateEmergencyInsight(userId!, body.emergencyDescription, body.severity, promptDate, onChunk)
+              prompt = await generateEmergencyInsight(
+                userId!,
+                body.emergencyDescription,
+                body.severity,
+                promptDate,
+                onChunk,
+                body.emergencyId ?? null
+              )
             } else {
               prompt = await generateProPlusPrompt(userId!, promptType, promptDate, {
                 onChunk,
@@ -98,6 +107,12 @@ export async function POST(req: NextRequest) {
         },
       })
     })
+
+    if (!(streamed instanceof Response)) {
+      console.error('[personal-coaching/stream] withRateLimit did not return Response')
+      return NextResponse.json({ error: 'Stream initialization failed' }, { status: 500 })
+    }
+    return streamed
   } catch (error) {
     console.error('[Personal Coaching Stream] Error:', error)
     return new Response(

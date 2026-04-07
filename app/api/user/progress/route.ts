@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { format } from 'date-fns'
+import { formatInTimeZone } from 'date-fns-tz'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+import { resolveUserTimeZone } from '@/lib/timezone'
+import { isMissingEveningIsDraftColumnError } from '@/lib/supabase/evening-is-draft-column'
 
 export const dynamic = 'force-dynamic'
 
 export type ProgressStatus = 'full' | 'half' | 'partial' | 'empty' | 'future'
 
-/** GET /api/user/progress?dates=YYYY-MM-DD,YYYY-MM-DD,...
+/** GET /api/user/progress?dates=YYYY-MM-DD,...&tz=IANA (optional)
+ * `tz` is used when profile timezone is unset so “today”/future matches the client clock.
  * Returns status per date:
  * - full: morning complete + evening review
  * - half: morning complete, evening not done
@@ -36,13 +39,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No valid dates provided' }, { status: 400 })
     }
 
-    const todayStr = format(new Date(), 'yyyy-MM-dd')
     const minDate = dateStrings.reduce((a, b) => (a < b ? a : b))
     const maxDate = dateStrings.reduce((a, b) => (a > b ? a : b))
 
     const db = getServerSupabase()
 
-    const [tasksRes, decisionsRes, reviewsRes, commitsRes] = await Promise.all([
+    const [tasksRes, decisionsRes, reviewsResFirst, commitsRes, tzRes] = await Promise.all([
       db
         .from('morning_tasks')
         .select('plan_date, completed')
@@ -59,6 +61,7 @@ export async function GET(request: NextRequest) {
         .from('evening_reviews')
         .select('review_date')
         .eq('user_id', session.user.id)
+        .eq('is_draft', false)
         .gte('review_date', minDate)
         .lte('review_date', maxDate),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- morning_plan_commits projection includes generated-type lag columns
@@ -67,7 +70,22 @@ export async function GET(request: NextRequest) {
         .eq('user_id', session.user.id)
         .gte('plan_date', minDate)
         .lte('plan_date', maxDate),
+      db.from('user_profiles').select('timezone').eq('id', session.user.id).maybeSingle(),
     ])
+
+    let reviewsRes = reviewsResFirst
+    if (reviewsRes.error && isMissingEveningIsDraftColumnError(reviewsRes.error)) {
+      reviewsRes = await db
+        .from('evening_reviews')
+        .select('review_date')
+        .eq('user_id', session.user.id)
+        .gte('review_date', minDate)
+        .lte('review_date', maxDate)
+    }
+
+    const tzHint = searchParams.get('tz')?.trim() || null
+    const tz = resolveUserTimeZone(tzRes.data as { timezone?: string | null } | null, tzHint)
+    const todayStr = formatInTimeZone(new Date(), tz, 'yyyy-MM-dd')
 
     const tasksByDate = new Map<string, boolean[]>()
     for (const r of tasksRes.data ?? []) {
@@ -85,6 +103,11 @@ export async function GET(request: NextRequest) {
       if (text.trim().length > 0) {
         decisionTextByDate.set(row.plan_date, text)
       }
+    }
+
+    if (reviewsRes.error) {
+      console.error('[user/progress] evening_reviews:', reviewsRes.error)
+      return NextResponse.json({ error: 'Failed to load progress' }, { status: 500 })
     }
 
     const eveningDates = new Set(

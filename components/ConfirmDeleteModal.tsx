@@ -20,7 +20,7 @@ export function ConfirmDeleteModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2 text-red-600 dark:text-red-400">

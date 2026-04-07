@@ -1,6 +1,7 @@
 import { getServerSupabase } from '@/lib/server-supabase'
 import { renderEmailTemplate } from '@/lib/email/templates'
 import { sendEmailWithTracking } from '@/lib/email/sender'
+import { buildPersonalizedEmailContext } from '@/lib/email/personalization'
 
 export type InsightFirstUnlockKind = 'weekly' | 'monthly' | 'quarterly'
 
@@ -24,9 +25,11 @@ export async function sendInsightFirstUnlockEmail(params: {
   try {
     const userRes = await db.auth.admin.getUserById(userId)
     const u = userRes.data.user
+    const ctx = await buildPersonalizedEmailContext(userId)
     const templateUser = {
       name: u?.user_metadata?.full_name || u?.user_metadata?.name || u?.email,
       email: u?.email,
+      login_count: ctx.loginCount,
     }
 
     if (kind === 'quarterly') {

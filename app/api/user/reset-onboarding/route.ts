@@ -1,43 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+import { FULL_RESET_BACKUP_TABLES, type FullResetBackupTable } from '@/lib/user/reset-account'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 type Scope = 'full' | 'onboarding'
-type BackupTable =
-  | 'morning_plan_commits'
-  | 'morning_tasks'
-  | 'morning_decisions'
-  | 'evening_reviews'
-  | 'emergencies'
-  | 'weekly_insights'
-  | 'personal_prompts'
-  | 'user_insights'
-  | 'insight_history'
-  | 'weekly_insight_selections'
-  | 'insight_feedback'
-  | 'weekly_insight_feedback'
-  | 'user_unlocks'
-  | 'weekly_insight_debug'
 
-const TABLES_DELETE_BY_USER_ID: readonly BackupTable[] = [
-  'morning_plan_commits',
-  'morning_tasks',
-  'morning_decisions',
-  'evening_reviews',
-  'emergencies',
-  'weekly_insights',
-  'personal_prompts',
-  'user_insights',
-  'insight_history',
-  'weekly_insight_selections',
-  'insight_feedback',
-  'weekly_insight_feedback',
-  'user_unlocks',
-  'weekly_insight_debug',
-] as const
+type BackupTable = FullResetBackupTable
+
+const TABLES_DELETE_BY_USER_ID: readonly BackupTable[] = FULL_RESET_BACKUP_TABLES
 
 /**
  * Dev-oriented reset: onboarding-only (profile fields) or full wipe of journal + related rows + streaks/badges.
@@ -56,6 +29,7 @@ export async function POST(req: NextRequest) {
     const db = getServerSupabase()
 
     if (scope === 'onboarding') {
+      const nowIso = new Date().toISOString()
       const { error } = await (db.from('user_profiles') as any)
         .update({
           primary_goal_text: null,
@@ -63,7 +37,11 @@ export async function POST(req: NextRequest) {
           struggles_other: null,
           onboarding_step: 0,
           onboarding_completed_at: null,
-          updated_at: new Date().toISOString(),
+          hide_onboarding: false,
+          has_seen_morning_tour: false,
+          login_count: 0,
+          current_streak: 0,
+          updated_at: nowIso,
         })
         .eq('id', userId)
 
@@ -183,6 +161,10 @@ export async function POST(req: NextRequest) {
       },
       {
         profile_reminder_sent_at: null,
+      },
+      {
+        has_seen_morning_tour: false,
+        login_count: 0,
       },
     ]
     for (const patch of optionalProfilePatches) {

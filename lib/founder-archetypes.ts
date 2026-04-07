@@ -18,6 +18,7 @@ export type ArchetypeDefinition = {
 export type ArchetypeResult = {
   primary: ArchetypeDefinition & { confidence: number }
   secondary?: ArchetypeDefinition & { confidence: number }
+  distribution: Array<ArchetypeDefinition & { percentage: number }>
   traits: {
     strategic: number // 0-100
     tactical: number // 0-100
@@ -149,6 +150,38 @@ function countKeywordHits(text: string, keywords: string[]) {
 function normalizeRatio(count: number, total: number) {
   if (total <= 0) return 0
   return count / total
+}
+
+function toRoundedPercentages(entries: Array<[Exclude<ArchetypeName, 'hybrid'>, number]>): Record<Exclude<ArchetypeName, 'hybrid'>, number> {
+  const total = entries.reduce((sum, [, score]) => sum + Math.max(0, score), 0)
+  if (total <= 0) {
+    return {
+      visionary: 25,
+      builder: 25,
+      hustler: 25,
+      strategist: 25,
+    }
+  }
+
+  const parts = entries.map(([name, score]) => {
+    const raw = (Math.max(0, score) / total) * 100
+    return { name, base: Math.floor(raw), frac: raw - Math.floor(raw) }
+  })
+
+  let remaining = 100 - parts.reduce((sum, p) => sum + p.base, 0)
+  parts.sort((a, b) => b.frac - a.frac)
+  for (let i = 0; i < parts.length && remaining > 0; i += 1) {
+    parts[i].base += 1
+    remaining -= 1
+  }
+
+  return parts.reduce(
+    (acc, p) => {
+      acc[p.name] = p.base
+      return acc
+    },
+    {} as Record<Exclude<ArchetypeName, 'hybrid'>, number>
+  )
 }
 
 export function computeFounderArchetype(input: ArchetypeInput): ArchetypeResult {
@@ -289,6 +322,13 @@ export function computeFounderArchetype(input: ArchetypeInput): ArchetypeResult 
     primaryKey === 'hybrid' ? (top2?.[0] as Exclude<ArchetypeName, 'hybrid'> | undefined) : undefined
 
   const secondaryDef = secondaryKey ? ARCHETYPES[secondaryKey] : undefined
+  const roundedDistribution = toRoundedPercentages(Object.entries(scores) as Array<[Exclude<ArchetypeName, 'hybrid'>, number]>)
+  const distribution = (Object.keys(ARCHETYPES) as Array<Exclude<ArchetypeName, 'hybrid'>>)
+    .map((key) => ({
+      ...ARCHETYPES[key],
+      percentage: clamp(roundedDistribution[key] ?? 0, 0, 100),
+    }))
+    .sort((a, b) => b.percentage - a.percentage)
 
   // ----------------------------
   // Breakdown signals (transparent "why")
@@ -325,7 +365,7 @@ export function computeFounderArchetype(input: ArchetypeInput): ArchetypeResult 
   const planKeyToLabel = (key: string | null): string => {
     switch (key) {
       case 'my_zone':
-        return 'Focus Time'
+        return 'Milestone'
       case 'systemize':
         return 'Systemize'
       case 'delegate_founder':
@@ -609,7 +649,7 @@ export function computeFounderArchetype(input: ArchetypeInput): ArchetypeResult 
       case 'hustler':
         return '🚀 HUSTLER — You move fast, learn by doing, and keep traction alive.'
       case 'strategist':
-        return `📐 STRATEGIST - You plan carefully, then act decisively. ${strategicPct100}% of your choices are strategic, and your mornings lean into Focus Time (${Math.round(myZonePct * 100)}% of completed plans).`
+        return `📐 STRATEGIST - You plan carefully, then act decisively. ${strategicPct100}% of your choices are strategic, and your mornings lean into Milestone (${Math.round(myZonePct * 100)}% of completed plans).`
       case 'hybrid':
         return '⚡ HYBRID — You blend strengths and adapt quickly to what the day needs.'
       default:
@@ -631,7 +671,7 @@ export function computeFounderArchetype(input: ArchetypeInput): ArchetypeResult 
       return {
         date: focusTimeExampleTask.date ?? '—',
         headline: 'You protected',
-        example: `Focus Time task: "${safeExcerpt(focusTimeExampleTask.description)}"`,
+        example: `Milestone task: "${safeExcerpt(focusTimeExampleTask.description)}"`,
         interpretation:
           'This is how your energy pattern works in practice: you keep deep work protected so good ideas can become real progress.',
       }
@@ -666,7 +706,7 @@ export function computeFounderArchetype(input: ArchetypeInput): ArchetypeResult 
       ? 'Natural leader: delegation shows up more than your other plan choices, which suggests you trust others with clear ownership.'
       : 'Natural leader: your planning style is structured, which helps you lead without needing endless consensus.',
     myZonePct >= 0.25
-      ? `Energy pattern: you're sharpest in mornings. ${Math.round(myZonePct * 100)}% of your completed plans lean into Focus Time.`
+      ? `Energy pattern: you're sharpest in mornings. ${Math.round(myZonePct * 100)}% of your completed plans lean into Milestone.`
       : 'Energy pattern: your mornings build momentum through repeatable choices.',
     topPostponedPlanLabel
       ? `Risk profile: when friction hits, your postponements tend to cluster around ${topPostponedPlanLabel}-type work.`
@@ -835,6 +875,7 @@ export function computeFounderArchetype(input: ArchetypeInput): ArchetypeResult 
           },
         }
       : {}),
+    distribution,
     traits: {
       strategic: clamp(strategicPct100, 0, 100),
       tactical: clamp(tacticalPct100, 0, 100),

@@ -47,22 +47,20 @@ export function JoyrideTutorial() {
 
     console.log('[Joyride] On morning page, checking for elements')
 
-    const checkPowerList = () => {
-      const powerList = document.querySelector('[data-tutorial="power-list"]')
-      const exists = !!powerList
-      console.log('[Joyride] Power list exists:', exists)
-      if (exists) {
-        setStepIndex(2) // step index 2 = Step 3: Power List
+    const checkMorningTutorial = () => {
+      const brainDump = document.querySelector('[data-tutorial="morning-brain-dump"]')
+      if (brainDump) {
+        setStepIndex(2) // first morning step = brain dump
         setRun(true)
         return true
       }
       return false
     }
 
-    if (checkPowerList()) return
+    if (checkMorningTutorial()) return
 
     const interval = setInterval(() => {
-      if (checkPowerList()) {
+      if (checkMorningTutorial()) {
         clearInterval(interval)
       }
     }, 200)
@@ -103,24 +101,31 @@ export function JoyrideTutorial() {
       placement: 'right',
     },
     {
-      target: '[data-tutorial="power-list"]',
+      target: '[data-tutorial="morning-brain-dump"]',
       content:
-        "This is where you add your tasks. Each task can have a description, why it matters, and how you'll approach it.",
-      title: 'Step 3: Power List',
-      placement: 'right',
+        'Start here: clear mental clutter first — speak or type your brain dump, then Finish & Sort. Mrs. Deer maps it into your priority stream. Same habit every morning.',
+      title: 'Step 3: Clear the path',
+      placement: 'bottom',
     },
     {
-      target: '[data-tutorial="decision-card"]',
+      target: '[data-tutorial="morning-intention"]',
       content:
-        "Log important decisions you're facing today - the decision itself, whether it's strategic or tactical, and your reasoning.",
-      title: 'Step 4: Decision Log',
-      placement: 'right',
+        'Set your North Star — one decision that anchors your day (same field you’ll use on Pro every morning).',
+      title: 'Step 4: Intention',
+      placement: 'bottom',
+    },
+    {
+      target: '[data-tutorial="power-list"]',
+      content:
+        'Your tactical priorities — title each row, then refine with the action matrix. This is the same Pro stream you’ll use after onboarding.',
+      title: 'Step 5: Power list',
+      placement: 'bottom',
     },
     {
       target: '[data-tutorial="save-morning"]',
       content:
-        "When you're done planning, click Save to generate personalized insights from Mrs. Deer.",
-      title: 'Step 5: Save & Continue',
+        "When you're ready, save to lock in today’s plan. Mrs. Deer will meet you again this evening.",
+      title: 'Step 6: Save & continue',
       placement: 'top',
     },
   ]
@@ -186,7 +191,7 @@ export function JoyrideTutorial() {
         return
       }
 
-      // After step 2 (Morning menu), navigate to morning page and wait for Power List
+      // After step 2 (Morning menu), navigate to morning page and wait for brain dump anchor
       if (index === 1 && pathname === '/dashboard') {
         setRun(false)
         router.push('/morning?tutorial=true')
@@ -196,38 +201,24 @@ export function JoyrideTutorial() {
         }
 
         setTimeout(() => {
-          const powerList = document.querySelector(
-            '[data-tutorial="power-list"]',
+          const brainDump = document.querySelector(
+            '[data-tutorial="morning-brain-dump"]',
           )
-          if (powerList) {
-            console.log(
-              '[Joyride] Power list found after navigation, resuming at step 3',
-            )
+          if (brainDump) {
             setStepIndex(2)
             setRun(true)
           } else {
-            console.log(
-              '[Joyride] Power list not found yet, starting retry loop…',
-            )
             let attempts = 0
             const retry = setInterval(() => {
               attempts += 1
-              const pl = document.querySelector(
-                '[data-tutorial="power-list"]',
+              const el = document.querySelector(
+                '[data-tutorial="morning-brain-dump"]',
               )
-              if (pl) {
-                console.log(
-                  '[Joyride] Found power list after',
-                  attempts,
-                  'attempts',
-                )
+              if (el) {
                 setStepIndex(2)
                 setRun(true)
                 clearInterval(retry)
               } else if (attempts > 10) {
-                console.log(
-                  '[Joyride] Giving up on power list after 10 attempts',
-                )
                 clearInterval(retry)
               }
             }, 200)
@@ -252,10 +243,17 @@ export function JoyrideTutorial() {
     }
   }
 
-  // Track tutorial step progression (step index 0-4 = steps 1-5)
+  // Track tutorial step progression (step index 0-5 = steps 1-6; check-in step removed)
   useEffect(() => {
     if (!isTutorialMode || !run) return
-    const stepNames = ['tutorial_step_1', 'tutorial_step_2', 'tutorial_step_3', 'tutorial_step_4', 'tutorial_step_5'] as const
+    const stepNames = [
+      'tutorial_step_1',
+      'tutorial_step_2',
+      'tutorial_step_3',
+      'tutorial_step_4',
+      'tutorial_step_5',
+      'tutorial_step_6',
+    ] as const
     if (stepIndex >= 0 && stepIndex < stepNames.length) {
       trackJourneyStep(stepNames[stepIndex], { step_index: stepIndex })
     }

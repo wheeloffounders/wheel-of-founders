@@ -118,6 +118,6 @@ export function badgeWhatsNewMeta(unlockName: string): {
     title: unlockName.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
     description: 'A new badge appeared on your journey.',
     icon: '🎖️',
-    link: '/dashboard',
+    link: '/founder-dna/journey',
   }
 }

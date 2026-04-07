@@ -15,6 +15,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+export const maxDuration = 300
 
 const BATCH_SIZE = 50
 const CONCURRENCY = 5

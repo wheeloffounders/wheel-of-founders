@@ -360,14 +360,26 @@ export async function GET(req: NextRequest) {
       key: 'started_tutorial',
       label: 'Started tutorial',
       check: (uid) =>
-        hasAny(uid, ['started_tutorial', 'tutorial_step_1', 'tutorial_step_2', 'tutorial_step_3', 'tutorial_step_4', 'tutorial_step_5', 'completed_tutorial']) ||
+        hasAny(uid, [
+          'started_tutorial',
+          'tutorial_step_1',
+          'tutorial_step_2',
+          'tutorial_step_3',
+          'tutorial_step_4',
+          'tutorial_step_5',
+          'tutorial_step_6',
+          'tutorial_step_7',
+          'completed_tutorial',
+        ]) ||
         !!(profileMap.get(uid) as { onboarding_completed_at?: string })?.onboarding_completed_at,
     },
     { key: 'tutorial_step_1', label: 'Tutorial step 1 (Today)', check: (uid) => journeyByUser.get(uid)?.has('tutorial_step_1') ?? false },
     { key: 'tutorial_step_2', label: 'Tutorial step 2 (Morning menu)', check: (uid) => journeyByUser.get(uid)?.has('tutorial_step_2') ?? false },
-    { key: 'tutorial_step_3', label: 'Tutorial step 3 (Power list)', check: (uid) => journeyByUser.get(uid)?.has('tutorial_step_3') ?? false },
-    { key: 'tutorial_step_4', label: 'Tutorial step 4 (Decision card)', check: (uid) => journeyByUser.get(uid)?.has('tutorial_step_4') ?? false },
-    { key: 'tutorial_step_5', label: 'Tutorial step 5 (Save)', check: (uid) => journeyByUser.get(uid)?.has('tutorial_step_5') ?? false },
+    { key: 'tutorial_step_3', label: 'Tutorial step 3 (Brain dump)', check: (uid) => journeyByUser.get(uid)?.has('tutorial_step_3') ?? false },
+    { key: 'tutorial_step_4', label: 'Tutorial step 4 (Intention)', check: (uid) => journeyByUser.get(uid)?.has('tutorial_step_4') ?? false },
+    { key: 'tutorial_step_5', label: 'Tutorial step 5 (Power list)', check: (uid) => journeyByUser.get(uid)?.has('tutorial_step_5') ?? false },
+    { key: 'tutorial_step_6', label: 'Tutorial step 6 (Save)', check: (uid) => journeyByUser.get(uid)?.has('tutorial_step_6') ?? false },
+    { key: 'tutorial_step_7', label: 'Tutorial step 7 (Save, legacy)', check: (uid) => journeyByUser.get(uid)?.has('tutorial_step_7') ?? false },
     { key: 'completed_tutorial', label: 'Completed tutorial', check: (uid) => (profileMap.get(uid) as { onboarding_completed_at?: string })?.onboarding_completed_at ? true : journeyByUser.get(uid)?.has('completed_tutorial') ?? false },
     {
       key: 'viewed_morning',

@@ -12,6 +12,6 @@ export const inactivityReminderTemplate: EmailTemplate = {
       ctaLabel: 'Return to Your Journey',
       ctaUrl: appUrlWithUtm('/dashboard', 'inactivity_reminder'),
     }),
-  getText: () => `Whenever you are ready, your journey is waiting.` + renderTextFooter(),
+  getText: (user) => `Whenever you are ready, your journey is waiting.` + renderTextFooter(user),
 }
 

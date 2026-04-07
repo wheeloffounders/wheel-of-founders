@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { getClientAuthHeaders } from '@/lib/api/fetch-json'
 import { X } from 'lucide-react'
 
 /** localStorage key: dismissed for this calendar day (same key everywhere so dismiss hides across dashboard/morning/evening) */
@@ -40,7 +41,8 @@ export function MicroLesson({ location: locationProp, page, onRecordCompletedEve
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/micro-lesson?location=${location}`, { credentials: 'include' })
+      const headers = await getClientAuthHeaders()
+      const res = await fetch(`/api/micro-lesson?location=${location}`, { credentials: 'include', headers })
       const json = await res.json()
       if (!res.ok || !json.lesson) {
         setData(null)
@@ -72,9 +74,10 @@ export function MicroLesson({ location: locationProp, page, onRecordCompletedEve
 
   const handleActionClick = async () => {
     try {
+      const auth = await getClientAuthHeaders()
       await fetch('/api/micro-lesson', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...auth },
         credentials: 'include',
         body: JSON.stringify({ action_taken: true }),
       })
@@ -87,12 +90,14 @@ export function MicroLesson({ location: locationProp, page, onRecordCompletedEve
   useEffect(() => {
     if (!onRecordCompletedEvening) return
     const record = () => {
-      fetch('/api/micro-lesson', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ completed_evening: true }),
-      }).catch(() => {})
+      void getClientAuthHeaders().then((auth) =>
+        fetch('/api/micro-lesson', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...auth },
+          credentials: 'include',
+          body: JSON.stringify({ completed_evening: true }),
+        }).catch(() => {})
+      )
     }
     ;(window as unknown as { __microLessonRecordCompletedEvening?: () => void }).__microLessonRecordCompletedEvening = record
     return () => {

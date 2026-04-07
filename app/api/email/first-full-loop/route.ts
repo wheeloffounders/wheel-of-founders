@@ -3,6 +3,7 @@ import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { renderEmailTemplate } from '@/lib/email/templates'
 import { sendEmailWithTracking } from '@/lib/email/sender'
+import { buildPersonalizedEmailContext } from '@/lib/email/personalization'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -43,9 +44,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ sent: false, reason: 'already_sent' })
     }
 
+    const ctx = await buildPersonalizedEmailContext(userId)
     const rendered = renderEmailTemplate('first_full_loop', {
       name: session.user.email?.split('@')[0],
       email: session.user.email,
+      login_count: ctx.loginCount,
     })
     const result = await sendEmailWithTracking({
       userId,

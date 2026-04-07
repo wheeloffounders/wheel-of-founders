@@ -23,7 +23,11 @@ export function JourneyBadgeSection({ journey }: JourneyBadgeSectionProps) {
 
   return (
     <>
-      <BadgeGallery badges={badges} />
+      <BadgeGallery
+        badges={badges}
+        milestones={data?.milestones ?? null}
+        nextUnlocks={data?.nextUnlocks ?? []}
+      />
       <BadgeUnlockFlow newlyUnlockedBadges={newlyUnlockedBadges} />
     </>
   )

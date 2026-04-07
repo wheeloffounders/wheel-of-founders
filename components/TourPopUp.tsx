@@ -19,7 +19,7 @@ export function TourPopUp() {
   if (!showPopUp) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50">
       <div
         className="max-w-md w-full mx-auto p-6 rounded-xl bg-white dark:bg-gray-800 shadow-xl border border-gray-200 dark:border-gray-700"
         role="dialog"

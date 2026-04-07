@@ -21,14 +21,14 @@ export function FirstTimeSuccessModal({ isOpen, onClose, insight }: FirstTimeSuc
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50">
       <div
         className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl"
         role="dialog"
         aria-labelledby="first-time-success-title"
         aria-modal="true"
       >
-        <div className="p-6 space-y-6">
+        <div className="space-y-6 px-6 pt-6 pb-[calc(10rem+env(safe-area-inset-bottom,0px))]">
           {/* Header */}
           <div className="text-center">
             <h2 id="first-time-success-title" className="text-2xl font-bold text-gray-900 dark:text-white mb-1">

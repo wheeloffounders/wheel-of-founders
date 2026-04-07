@@ -1,6 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getFeatureAccess } from '@/lib/features'
-import { getUserTimezoneFromProfile, shouldRunMonthlyInsightForUser, shouldRunQuarterlyInsightForUser, shouldRunWeeklyInsightForUser } from '@/lib/timezone'
+import { fetchCompletedMonthlyInsightKeys } from '@/lib/monthly-insight/completed-check'
+import {
+  getPreviousMonthRangeYmdInTimeZone,
+  getUserTimezoneFromProfile,
+  isUserLocalFirstCalendarDayOfMonth,
+  isUserLocalQuarterStartCalendarDay,
+  shouldRunWeeklyInsightForUser,
+} from '@/lib/timezone'
 
 export type MonthlyInsightEligibleProfile = {
   id: string
@@ -9,7 +16,7 @@ export type MonthlyInsightEligibleProfile = {
   timezone: string
 }
 
-/** Monthly-only cron: same exclusions as legacy route (no weekly or quarter-start window overlap). */
+/** Monthly-only cron: same exclusions as legacy route (no weekly or quarter-start day overlap). */
 export async function getEligibleUsersForMonthlyInsightCron(
   db: SupabaseClient,
   now: Date
@@ -53,25 +60,50 @@ export async function getEligibleUsersForMonthlyInsightCron(
   }[]
 
   const eligible: MonthlyInsightEligibleProfile[] = []
+  type Pending = (typeof rows)[number] & { monthStart: string }
+  const pending: Pending[] = []
+
   for (const p of rows) {
     const tz = getUserTimezoneFromProfile(p)
     const testBypass = Boolean(p.is_test_user)
     if (!testBypass) {
       if (shouldRunWeeklyInsightForUser(now, tz)) continue
-      if (shouldRunQuarterlyInsightForUser(now, tz)) continue
+      if (isUserLocalQuarterStartCalendarDay(now, tz)) continue
     }
-    const inMonthlyWindow = testBypass || shouldRunMonthlyInsightForUser(now, tz)
-    if (
-      getFeatureAccess({ tier: p.tier, pro_features_enabled: p.pro_features_enabled }).personalMonthlyInsight &&
-      inMonthlyWindow
-    ) {
+    const hasFeature = getFeatureAccess({
+      tier: p.tier,
+      pro_features_enabled: p.pro_features_enabled,
+    }).personalMonthlyInsight
+    if (!hasFeature) continue
+
+    if (testBypass) {
       eligible.push({
         id: p.id,
         tier: p.tier,
         pro_features_enabled: p.pro_features_enabled,
         timezone: tz,
       })
+      continue
     }
+
+    if (!isUserLocalFirstCalendarDayOfMonth(now, tz)) continue
+    const { monthStart } = getPreviousMonthRangeYmdInTimeZone(now, tz)
+    pending.push({ ...p, monthStart })
+  }
+
+  const completedKeys = await fetchCompletedMonthlyInsightKeys(
+    db,
+    pending.map((p) => ({ userId: p.id, monthStart: p.monthStart }))
+  )
+
+  for (const p of pending) {
+    if (completedKeys.has(`${p.id}\t${p.monthStart}`)) continue
+    eligible.push({
+      id: p.id,
+      tier: p.tier,
+      pro_features_enabled: p.pro_features_enabled,
+      timezone: getUserTimezoneFromProfile(p),
+    })
   }
 
   eligible.sort((a, b) => a.id.localeCompare(b.id))

@@ -120,6 +120,14 @@ function safeGet<T>(obj: unknown, key: string, defaultValue: T): T {
 }
 
 import { analyzeUserPatterns, UserPatterns } from './analysis-engine'
+import {
+  buildSmartContextSystemBlock,
+  computeDaysSinceSignup,
+  getIsoWeekId,
+  northStarAlreadyQuotedThisWeek,
+  textContainsVerbatimNorthStar,
+  type CoachingMaturityProfileRow,
+} from '@/lib/coaching-maturity-context'
 import { generateAIPrompt, generateAIPromptStream } from './ai-client'
 import { getUserGoal, getUserLanguage } from './user-language'
 
@@ -139,8 +147,54 @@ async function callAI(
   return generateAIPrompt(opts)
 }
 import { checkUserHistory } from './user-history'
+import { getEveningEmergencyContextForDate } from '@/lib/evening/emergency-context'
+import type { EveningEmergencyContext } from '@/lib/evening/emergency-context'
+
+async function loadCoachingMaturityRow(userId: string): Promise<CoachingMaturityProfileRow | null> {
+  const db = getServerSupabase()
+  const { data } = await db
+    .from('user_profiles')
+    .select('created_at, primary_goal_text, quarterly_intention, north_star_last_quoted_iso_week')
+    .eq('id', userId)
+    .maybeSingle()
+  if (!data) return null
+  return data as unknown as CoachingMaturityProfileRow
+}
+
+async function withSmartCoachingContext(systemPrompt: string, userId: string): Promise<string> {
+  const row = await loadCoachingMaturityRow(userId)
+  const days = computeDaysSinceSignup(row?.created_at ?? null)
+  const block = buildSmartContextSystemBlock({
+    daysSinceSignup: days,
+    primaryGoalText: row?.primary_goal_text,
+    quarterlyIntention: row?.quarterly_intention,
+    northStarAlreadyQuotedVerbatimThisWeek: northStarAlreadyQuotedThisWeek(row),
+  })
+  return `${systemPrompt}\n\n${block}`
+}
+
+/** First verbatim north-star quote in a given ISO week updates profile (anti-spam). */
+async function recordNorthStarVerbatimIfNeeded(userId: string, outputText: string): Promise<void> {
+  const row = await loadCoachingMaturityRow(userId)
+  const goal = row?.primary_goal_text?.trim()
+  if (!goal || !textContainsVerbatimNorthStar(outputText, goal)) return
+  const currentWeek = getIsoWeekId(new Date())
+  if (row?.north_star_last_quoted_iso_week?.trim() === currentWeek) return
+  const db = getServerSupabase()
+  await (db.from('user_profiles') as any)
+    .update({ north_star_last_quoted_iso_week: currentWeek, updated_at: new Date().toISOString() })
+    .eq('id', userId)
+}
 
 export type PromptType = 'morning' | 'post_morning' | 'post_evening' | 'weekly' | 'monthly' | 'emergency'
+
+/** Client snapshot at evening save — aligns AI with UI friction + completion counts */
+export interface PostEveningLoopCloseContext {
+  totalFiresToday: number
+  hotUnresolvedCount: number
+  tasksPlanned: number
+  tasksCompleted: number
+}
 
 interface UserData {
   userId: string
@@ -148,7 +202,7 @@ interface UserData {
   patterns: UserPatterns | null
   todayPlan?: any
   todayReview?: any
-todayDecision?: {           // ← ADD THIS
+  todayDecision?: {
     decision: string
     decision_type: string
     why_this_decision?: string | null
@@ -157,6 +211,10 @@ todayDecision?: {           // ← ADD THIS
   monthData?: any
   /** For date-specific prompts: the date we're generating for (e.g. Feb 15 morning prompt) */
   targetDate?: string
+  /** Resolved fires + tomorrow task debt for post_evening */
+  eveningEmergencyContext?: EveningEmergencyContext | null
+  /** When present, prefer these counts over inferring from todayPlan (evening save path) */
+  postEveningLoopCloseOverride?: PostEveningLoopCloseContext | null
 }
 
 /**
@@ -267,6 +325,8 @@ export async function generateProPlusPrompt(
     default:
       throw new Error(`Unknown prompt type: ${promptType}`)
   }
+
+  await recordNorthStarVerbatimIfNeeded(userId, promptText)
 
   // Calculate generation count for date-specific prompts (db already set above)
   let generationCount = 1
@@ -455,13 +515,15 @@ async function getRecentChallengesContext(userId: string, targetDate: string): P
 /** Override for post_morning when client passes tasks/decision to avoid DB timing issues */
 export interface PostMorningOverride {
   todayPlan: Array<{ description?: string; needle_mover?: boolean; [k: string]: unknown }>
-  todayDecision: { decision: string; decision_type: string; why_this_decision?: string | null } | null
+  todayDecision: { decision: string; decision_type: string } | null
 }
 
 /** Override for post_evening when client passes review/tasks to avoid DB timing issues */
 export interface PostEveningOverride {
   todayReview: { wins?: string | null; lessons?: string | null; journal?: string | null; mood?: number | null; energy?: number | null } | null
   todayPlan: Array<{ description?: string; completed?: boolean; needle_mover?: boolean; [k: string]: unknown }>
+  /** Crisis + task completion at save time (injected into Mrs. Deer loop-close) */
+  loopCloseContext?: PostEveningLoopCloseContext
 }
 
 /** Override for morning when client passes yesterday's evening review to avoid DB timing issues */
@@ -611,6 +673,36 @@ async function getUserDataForPrompt(
     }
   }
 
+  let eveningEmergencyContext: EveningEmergencyContext | null = null
+  let postEveningLoopCloseOverride: PostEveningLoopCloseContext | null = null
+  if (promptType === 'post_evening') {
+    try {
+      eveningEmergencyContext = await getEveningEmergencyContextForDate(db, userId, dateToUse)
+    } catch {
+      eveningEmergencyContext = null
+    }
+    const lc = postEveningOverride?.loopCloseContext
+    if (lc) {
+      postEveningLoopCloseOverride = lc
+      if (eveningEmergencyContext) {
+        eveningEmergencyContext = {
+          ...eveningEmergencyContext,
+          totalFiresToday: lc.totalFiresToday,
+          hotUnresolvedCount: lc.hotUnresolvedCount,
+          hadAnyFireToday: lc.totalFiresToday > 0 || eveningEmergencyContext.hadAnyFireToday,
+        }
+      } else {
+        eveningEmergencyContext = {
+          resolvedToday: [],
+          hadAnyFireToday: lc.totalFiresToday > 0,
+          tomorrowTaskDebtCount: 0,
+          totalFiresToday: lc.totalFiresToday,
+          hotUnresolvedCount: lc.hotUnresolvedCount,
+        }
+      }
+    }
+  }
+
   return {
     userId,
     stage,
@@ -621,6 +713,8 @@ async function getUserDataForPrompt(
     weekData,
     monthData,
     targetDate: dateToUse,
+    eveningEmergencyContext,
+    postEveningLoopCloseOverride,
   }
 }
 
@@ -665,8 +759,9 @@ async function generateGentleArchitectPrompt(
   const historyContext = hasHistory ? '' : HISTORY_CONTEXT
   const baseRules = promptOverrides?.systemPrompt || MRS_DEER_RULES
   const toneRules = promptOverrides?.toneRules || TONE_DETECTION_RULES
-  const systemPrompt =
+  let systemPrompt =
     baseRules + '\n\n' + MORNING_STRUCTURE + toneRules + historyNote
+  systemPrompt = await withSmartCoachingContext(systemPrompt, userData.userId)
 
   const tone = detectTone({
     wins: yesterdayData?.wins,
@@ -733,13 +828,14 @@ async function analyzeMorningPlan(userData: UserData, userLang: ReturnType<typeo
   const historyContext = hasHistory ? '' : HISTORY_CONTEXT
   const baseRules = promptOverrides?.systemPrompt || MRS_DEER_RULES
   const toneRules = promptOverrides?.toneRules || TONE_DETECTION_RULES
-  const systemPrompt =
+  let systemPrompt =
     baseRules + '\n\n' + POST_MORNING_STRUCTURE + toneRules + historyNote
+  systemPrompt = await withSmartCoachingContext(systemPrompt, userData.userId)
 
   const tone = detectTone({
     tasks: todayPlan,
     decision: userData.todayDecision?.decision,
-    why_this_decision: userData.todayDecision?.why_this_decision,
+    why_this_decision: userData.todayDecision?.why_this_decision ?? null,
   })
   const toneContext = `
 USER'S EMOTIONAL TONE: ${tone.energy}${tone.keywords.length > 0 ? ` (keywords: ${tone.keywords.join(', ')})` : ''}
@@ -754,6 +850,31 @@ ${tone.energy === 'neutral' ? 'NEUTRAL: Do NOT assume tasks are heavy or burdens
     ? taskDescriptions.map((d: string) => `"${d}"`).join(', ')
     : 'None recorded'
 
+  const hasStrategicStreamFields = todayPlan.some(
+    (t: any) => t.action_plan || t.action_plan_note || t.why_this_matters
+  )
+  const strategicStreamBlock = hasStrategicStreamFields
+    ? todayPlan
+        .filter((t: any) => t.description)
+        .map((t: any) => {
+          const bits: string[] = [`Task: ${String(t.description).trim()}`]
+          if (t.action_plan) bits.push(`matrix: ${t.action_plan}`)
+          if (t.why_this_matters) bits.push(`why: ${String(t.why_this_matters).trim().slice(0, 220)}`)
+          if (t.action_plan_note) bits.push(`strategy note: ${String(t.action_plan_note).trim().slice(0, 320)}`)
+          if (t.recurring_blueprint_key)
+            bits.push(`recurring blueprint: ${String(t.recurring_blueprint_key).trim()}`)
+          if (t.user_refined) bits.push('user refined this task’s How/Why in the app')
+          return `- ${bits.join(' | ')}`
+        })
+        .join('\n')
+    : ''
+
+  const blueprintRhythmTasks = todayPlan.filter((t: any) => t.description && t.recurring_blueprint_key)
+  const blueprintRhythmHint =
+    blueprintRhythmTasks.length > 0
+      ? `\nRHYTHM: ${blueprintRhythmTasks.length} task(s) were started from a recurring blueprint (their saved rhythm). If it fits naturally, acknowledge sticking to that rhythm in one short phrase (e.g. weekly marketing cadence)—never forced or cheesy.`
+      : ''
+
   // Only mention task-importance pattern when it's notable (none marked, or clear contrast)
   const allMarkedImportant = todayPlan.length > 0 && needleMoversToday === todayPlan.length
   const noneMarkedImportant = todayPlan.length > 0 && needleMoversToday === 0
@@ -764,19 +885,26 @@ ${tone.energy === 'neutral' ? 'NEUTRAL: Do NOT assume tasks are heavy or burdens
     : ''
 
   const userPrompt = `Generate a personalized plan review for a founder${displayName ? ` named ${displayName}` : ''} who just saved their morning plan.${contextBlock}${toneContext}${historyContext}
+${blueprintRhythmHint}
 
-CRITICAL: You MUST reference their actual tasks or decision. ${taskDescriptions.length > 0 ? `They wrote these tasks: ${taskListForAI}. Optionally quote a particularly telling phrase if it deepens insight.` : 'They may have written only a decision below. Reference what they wrote—do NOT say "zero tasks", "blank slate", or "empty plan".'}
+CRITICAL: You MUST reference their actual tasks and/or decision. ${taskDescriptions.length > 0 ? `They wrote these tasks: ${taskListForAI}. Optionally quote a particularly telling phrase if it deepens insight.` : 'They may have written only a decision below. Reference what they wrote—do NOT say "zero tasks", "blank slate", or "empty plan".'}
+
+When BOTH a decision and tasks are present: treat the decision as a possible mental background anchor (North Star, incubation) and tasks as active execution—they may diverge on purpose. It is OK to say their tasks skew toward execution while a strategic theme (e.g. delegation, systems) stays in the background for the day.
 
 VOICE: Warm, specific, earned. Focus on patterns, connections, and insights they haven't seen. If there's a particularly telling phrase, you MAY quote it back, shifted slightly. NEVER simply list their tasks back to them verbatim. End with ONE complete, specific question (no cut-offs). No product terms, no clichés, no abstract metaphors.
 
 TODAY'S PLAN:
 - Total tasks: ${todayPlan.length}
 - Task descriptions: ${taskDescriptions.join('; ') || 'None'} ${taskImportanceNote}
+${strategicStreamBlock ? `
+STRATEGIC STREAM (execution layer — matrix / why / how when provided):
+${strategicStreamBlock}
+` : ''}
 ${userData.todayDecision ? `
-TODAY'S DECISION:
+TODAY'S DECISION (Strategy Prism — may be background intent, not a literal task list):
 - Decision: ${userData.todayDecision.decision}
 - Decision type: ${userData.todayDecision.decision_type}
-- Why this decision: ${userData.todayDecision.why_this_decision || 'Not specified'}
+${userData.todayDecision.why_this_decision ? `- Written rationale (optional): ${userData.todayDecision.why_this_decision}` : ''}
 ` : ''}
 
 ${hasHistory ? `PATTERN CONTEXT (last 14 days):
@@ -806,8 +934,10 @@ async function reflectOnDay(userData: UserData, userLang: ReturnType<typeof getU
 
   // Get tasks for the date (already fetched in getUserDataForPrompt)
   const tasks = userData.todayPlan || []
-  const completedTasks = tasks.filter((t: any) => t.completed).length
-  const totalTasks = tasks.length
+  const lc = userData.postEveningLoopCloseOverride
+  const completedTasks =
+    lc != null ? lc.tasksCompleted : tasks.filter((t: any) => t.completed).length
+  const totalTasks = lc != null ? lc.tasksPlanned : tasks.length
 
   // Parse wins and lessons (handle JSON arrays)
   let winsText = ''
@@ -852,7 +982,53 @@ Match your response to this tone. Burdened→acknowledge gently. Calm→celebrat
   const displayName = profileData.preferredName || profileData.name
   const contextBlock = hasHistory && profileData.context ? '\n\nCONTEXT (reference struggles/fears when relevant; validate as part of growth):\n' + profileData.context : ''
   const hasEveningData = winsText || lessonsText || todayReview?.journal
-  const userPrompt = `Generate a personalized evening reflection for a founder${displayName ? ` named ${displayName}` : ''}.${contextBlock}${toneContext}${historyContext}
+
+  const ev = userData.eveningEmergencyContext
+  let emergencyHandoverBlock = ''
+  if (ev) {
+    if (ev.resolvedToday.length > 0) {
+      const bits = ev.resolvedToday.map(
+        (e) =>
+          `"${String(e.description).slice(0, 140)}${String(e.description).length > 140 ? '…' : ''}" (${e.severity})`
+      )
+      emergencyHandoverBlock += `\n\nEMERGENCY HANDLING (resolved today): ${bits.join('; ')}. Open by acknowledging what they moved through—not generic praise. Before you close, gently invite them to notice how much that drained their battery (tie to mood/energy below) and whether tomorrow might need a softer start. Do not name product features or UI.`
+    }
+    if (ev.tomorrowTaskDebtCount > 0) {
+      emergencyHandoverBlock += `\n\nTASK DEBT: ${ev.tomorrowTaskDebtCount} task(s) are on tomorrow's plan that were sidelined during the fire and not yet brought back to today. If it fits, ask whether they want to prioritize those first thing tomorrow.`
+    }
+  }
+
+  const moodLabel =
+    todayReview?.mood != null
+      ? (['Rough', 'Tough', 'Okay', 'Good', 'Great'][Number(todayReview.mood) - 1] ?? `mood ${todayReview.mood}/5`)
+      : 'not recorded'
+  const energyLabel =
+    todayReview?.energy != null
+      ? (['Very Low', 'Low', 'Medium', 'High', 'Very High'][Number(todayReview.energy) - 1] ?? `energy ${todayReview.energy}/5`)
+      : 'not recorded'
+  const emergencyCountForPrompt = ev?.totalFiresToday ?? 0
+  const strategicLoopClose = `STRATEGIC LOOP CLOSE (ground truth — weave into your closing note, do not contradict): Today the user planned ${totalTasks} tasks and finished ${completedTasks}. They logged ${emergencyCountForPrompt} emergency/emergencies this day${ev?.hotUnresolvedCount ? ` (${ev.hotUnresolvedCount} hot still active)` : ''}. Their mood was ${moodLabel} and energy was ${energyLabel}. Their reflection in their own words: ${todayReview?.journal ? String(todayReview.journal).trim().slice(0, 1200) : '(not recorded or very short)'}.`
+
+  const hotDebt = ev?.hotUnresolvedCount ?? 0
+  const tomorrowTaskDebt = ev?.tomorrowTaskDebtCount ?? 0
+  const tomorrowTeaser =
+    hotDebt > 0 && tomorrowTaskDebt > 0
+      ? `unresolved hot fire(s) (${hotDebt}) are still live, and ${tomorrowTaskDebt} task(s) are already waiting on tomorrow—acknowledge both gently in one sentence.`
+      : hotDebt > 0
+        ? `there ${hotDebt === 1 ? 'is' : 'are'} ${hotDebt} unresolved hot fire(s) (tomorrow debt)—tomorrow may need to honor that tension first.`
+        : tomorrowTaskDebt > 0
+          ? `${tomorrowTaskDebt} task(s) from today are parked on tomorrow's slate—tease that in one sentence.`
+          : 'offer a soft hope for rest and a clear-enough start (no invented fires or tasks).'
+  const goodnightBlock = `
+GOODNIGHT CLOSE (required, after your main reflection + question): Add a final short sign-off (2–3 sentences max):
+1) A warm "Goodnight"${displayName ? ` to ${displayName}` : ''}.
+2) Exactly ONE sentence that teases tomorrow: ${tomorrowTeaser}
+Do not name app features or buttons.`
+
+  const userPrompt = `Generate a personalized evening reflection for a founder${displayName ? ` named ${displayName}` : ''}.${contextBlock}${toneContext}${historyContext}${emergencyHandoverBlock}
+
+${strategicLoopClose}
+${goodnightBlock}
 
 CRITICAL: USE THEIR EXACT PHRASES from the data below. ${hasEveningData ? 'Quote at least one phrase from their wins, lessons, or journal.' : 'Reference what they did record (tasks, mood, energy)—do NOT say "blank", "nothing", or "empty reflection".'}
 
@@ -876,7 +1052,7 @@ ${hasHistory ? `PATTERN CONTEXT (last 14 days):
 ` : ''}Write as a wise friend: one or two short paragraphs + one open question. Use natural stage language only. BANNED: Needle Mover, Action Plan, Smart Constraints, raw stage codes, Keep shining.`
 
   const raw = await callAI(
-    { systemPrompt, userPrompt, maxTokens: 400, temperature: 0.7 },
+    { systemPrompt, userPrompt, maxTokens: 520, temperature: 0.7 },
     onChunk
   )
   if (process.env.NODE_ENV === 'development') {
@@ -1004,7 +1180,8 @@ async function generateMonthlyInsight(userData: UserData, userLang: ReturnType<t
     .maybeSingle()
 
   const profileData = await getUserProfileData(userData.userId)
-  const systemPrompt = MRS_DEER_RULES + '\n\n' + MONTHLY_STRUCTURE
+  let systemPrompt = MRS_DEER_RULES + '\n\n' + MONTHLY_STRUCTURE
+  systemPrompt = await withSmartCoachingContext(systemPrompt, userData.userId)
 
   const hasMonthData = taskDescriptions || winsList.length > 0 || lessonsList.length > 0 || emergencyDescriptions
   const userPrompt = `Generate a personalized monthly insight for a founder.${profileData.context ? '\n\nCONTEXT (reference struggles/goals when relevant):\n' + profileData.context : ''}
@@ -1041,7 +1218,9 @@ export async function generateEmergencyInsight(
   emergencyDescription: string,
   severity: 'hot' | 'warm' | 'contained',
   promptDate?: string, // Format: 'yyyy-MM-dd', defaults to today
-  onChunk?: OnChunk
+  onChunk?: OnChunk,
+  /** When set, ties the row to `emergencies.id` so multiple fires per day each get their own prompt row. */
+  emergencyId?: string | null
 ): Promise<string> {
   // Get user's current stage (same mechanism as other prompts)
   let stage = await getUserStage(userId)
@@ -1055,7 +1234,8 @@ export async function generateEmergencyInsight(
   const totalEmergencies = patterns?.emergencyPatterns.total ?? 0
 
   const profileData = await getUserProfileData(userId)
-  const systemPrompt = MRS_DEER_RULES + '\n\n' + EMERGENCY_STRUCTURE
+  let systemPrompt = MRS_DEER_RULES + '\n\n' + EMERGENCY_STRUCTURE
+  systemPrompt = await withSmartCoachingContext(systemPrompt, userId)
 
   const userPrompt = `Generate a personalized emergency insight for a founder who just logged a fire.${profileData.context ? '\n\nCONTEXT (reference struggles when relevant):\n' + profileData.context : ''}
 
@@ -1073,17 +1253,33 @@ PATTERN CONTEXT (last 14 days):
 VOICE: USE THEIR EXACT PHRASES from the fire description above—quote what they wrote. Acknowledge and validate the weight. Reframe lightly. End with one open question. Supportive, never prescriptive. No abstract metaphors.`
 
   const targetDate = promptDate || format(new Date(), 'yyyy-MM-dd')
-  
+
   const db = getServerSupabase()
-  const { data: existingPrompts } = await db
-    .from('personal_prompts')
-    .select('generation_count')
-    .eq('user_id', userId)
-    .eq('prompt_type', 'emergency')
-    .eq('prompt_date', targetDate)
-    .order('generated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+
+  let existingRowId: string | null = null
+  let priorGenerationCount = 0
+
+  if (emergencyId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DB types omit emergency_id on personal_prompts
+    const { data: row } = await (db.from('personal_prompts') as any)
+      .select('id, generation_count')
+      .eq('emergency_id', emergencyId)
+      .maybeSingle()
+    existingRowId = (row as { id?: string } | null)?.id ?? null
+    priorGenerationCount = (safeGet(row, 'generation_count', 0) as number) || 0
+  } else {
+    const { data: existingPrompts } = await db
+      .from('personal_prompts')
+      .select('generation_count')
+      .eq('user_id', userId)
+      .eq('prompt_type', 'emergency')
+      .eq('prompt_date', targetDate)
+      .is('emergency_id', null)
+      .order('generated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    priorGenerationCount = (safeGet(existingPrompts, 'generation_count', 0) as number) || 0
+  }
 
   // TEMPORARY: Generation limit disabled for debugging - always generate new
   // if (existingPrompts && (existingPrompts.generation_count || 1) >= 3) {
@@ -1099,14 +1295,15 @@ VOICE: USE THEIR EXACT PHRASES from the fire description above—quote what they
   const completed = ensureThoughtComplete(filtered)
   const aiResponse = ensureCompleteSentences(completed)
 
-  console.log('[Personal Coaching] Emergency: AI insight generated successfully')
-  const existingCount = safeGet(existingPrompts, 'generation_count', 0) as number
-  const generationCount = existingCount > 0 ? existingCount + 1 : 1
+  await recordNorthStarVerbatimIfNeeded(userId, aiResponse)
 
-  const insertData = {
+  console.log('[Personal Coaching] Emergency: AI insight generated successfully')
+  const generationCount = priorGenerationCount > 0 ? priorGenerationCount + 1 : 1
+
+  const baseRow = {
     user_id: userId,
     prompt_text: aiResponse,
-    prompt_type: 'emergency',
+    prompt_type: 'emergency' as const,
     stage_context: stage,
     prompt_date: targetDate,
     generation_count: generationCount,
@@ -1114,14 +1311,43 @@ VOICE: USE THEIR EXACT PHRASES from the fire description above—quote what they
 
   const serverSupabase = getServerSupabase()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit personal_prompts
-  const { data: insertedData, error: insertError } = await (serverSupabase.from('personal_prompts') as any)
-    .insert(insertData as any)
-    .select()
+  const promptsTable = serverSupabase.from('personal_prompts') as any
 
-  if (insertError) {
-    console.error('[SAVE INSIGHT] ❌ Emergency insight insert FAILED:', insertError)
+  if (emergencyId) {
+    if (existingRowId) {
+      const { error: updateError } = await promptsTable
+        .update({
+          prompt_text: aiResponse,
+          stage_context: stage,
+          prompt_date: targetDate,
+          generation_count: generationCount,
+        })
+        .eq('id', existingRowId)
+
+      if (updateError) {
+        console.error('[SAVE INSIGHT] ❌ Emergency insight update FAILED:', updateError)
+      } else {
+        console.log('[SAVE INSIGHT] ✅ Emergency insight update SUCCEEDED:', existingRowId)
+      }
+    } else {
+      const { data: insertedData, error: insertError } = await promptsTable
+        .insert({ ...baseRow, emergency_id: emergencyId })
+        .select()
+
+      if (insertError) {
+        console.error('[SAVE INSIGHT] ❌ Emergency insight insert FAILED:', insertError)
+      } else {
+        console.log('[SAVE INSIGHT] ✅ Emergency insight insert SUCCEEDED:', insertedData?.[0]?.id)
+      }
+    }
   } else {
-    console.log('[SAVE INSIGHT] ✅ Emergency insight insert SUCCEEDED:', insertedData?.[0]?.id)
+    const { data: insertedData, error: insertError } = await promptsTable.insert(baseRow).select()
+
+    if (insertError) {
+      console.error('[SAVE INSIGHT] ❌ Emergency insight insert FAILED:', insertError)
+    } else {
+      console.log('[SAVE INSIGHT] ✅ Emergency insight insert SUCCEEDED:', insertedData?.[0]?.id)
+    }
   }
 
   return aiResponse

@@ -25,9 +25,11 @@ interface PageHeaderProps {
   titleIcon?: ReactNode
   subtitle: string
   onCalendarClick: () => void
+  /** Tighter vertical rhythm (e.g. Emergency mobile). */
+  compact?: boolean
 }
 
-export function PageHeader({ variant, title, titleIcon, subtitle, onCalendarClick }: PageHeaderProps) {
+export function PageHeader({ variant, title, titleIcon, subtitle, onCalendarClick, compact }: PageHeaderProps) {
   const bg = BG[variant]
   const hex = BG_HEX[variant]
 
@@ -37,14 +39,18 @@ export function PageHeader({ variant, title, titleIcon, subtitle, onCalendarClic
       data-page-header={variant}
       style={{ backgroundColor: hex }}
     >
-      <div className="max-w-3xl mx-auto px-4 pb-3">
+      <div className={compact ? 'max-w-3xl mx-auto px-4 pb-2 pt-1' : 'max-w-3xl mx-auto px-4 pb-3'}>
         <div className="flex justify-between items-start gap-3">
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-semibold text-white flex items-center gap-2 min-w-0">
+            <h1
+              className={`font-semibold text-white flex items-center gap-2 min-w-0 ${
+                compact ? 'text-base leading-tight' : 'text-xl'
+              }`}
+            >
               {titleIcon ? <span className="shrink-0">{titleIcon}</span> : null}
               <span className="truncate">{title}</span>
             </h1>
-            <p className="text-white/85 text-sm mt-1">{subtitle}</p>
+            <p className={`text-white/85 mt-0.5 ${compact ? 'text-xs leading-snug' : 'text-sm mt-1'}`}>{subtitle}</p>
           </div>
           <button
             type="button"

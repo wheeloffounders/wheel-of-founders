@@ -69,6 +69,6 @@ export const morningReminderTemplate: EmailTemplate = {
     const opening = String(d?.reminderOpeningPlain || '').trim()
     const tip = d?.growthEdge ? `\nTip: ${String(d.growthEdge)}` : ''
     const core = opening || 'Your morning plan sets the tone for the day. Start now.'
-    return `${core}${tip}\n\n— Mrs. Deer` + renderTextFooter()
+    return `${core}${tip}\n\n— Mrs. Deer` + renderTextFooter(user)
   },
 }

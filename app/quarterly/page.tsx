@@ -10,6 +10,7 @@ import {
   differenceInDays,
   addMonths,
 } from 'date-fns'
+import Link from 'next/link'
 import { TrendingUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
@@ -31,7 +32,7 @@ import { colors } from '@/lib/design-tokens'
 import { showRefreshButton } from '@/lib/env'
 import { fetchQuarterlyData, type QuarterlyData } from '@/lib/quarterly/getQuarterlyData'
 import { buildQuarterlyNarrative } from '@/lib/quarterly/buildQuarterlyNarrative'
-import { resolveEmailDisplayName } from '@/lib/email/personalization'
+import { resolveEmailDisplayName } from '@/lib/email/personalization-display'
 import { InsightLetterClosing } from '@/components/insights/InsightLetterClosing'
 
 function parseQuarterParam(q: string): Date | null {
@@ -76,6 +77,7 @@ export default function QuarterlyPage() {
   const hasTriggeredGenerate = useRef(false)
   const [unlockProgress, setUnlockProgress] = useState<{ current: number; required: number; isUnlocked: boolean } | null>(null)
   const [quarterlyGreetingName, setQuarterlyGreetingName] = useState('Founder')
+  const [quarterlyIntentionSaved, setQuarterlyIntentionSaved] = useState('')
 
   const isEndOfQuarter = differenceInDays(endOfQuarter(selectedQuarter), new Date()) <= 7 || !isSameQuarter(selectedQuarter, new Date())
   const showFullQuarterly = isEndOfQuarter
@@ -152,6 +154,21 @@ export default function QuarterlyPage() {
       setUnlockProgress(progress)
     }
     checkUnlock()
+  }, [])
+
+  useEffect(() => {
+    void (async () => {
+      const session = await getUserSession()
+      if (!session) return
+      try {
+        const res = await fetch('/api/user/quarterly-intention', { credentials: 'include' })
+        if (!res.ok) return
+        const j = (await res.json()) as { quarterlyIntention?: string }
+        setQuarterlyIntentionSaved((j.quarterlyIntention ?? '').trim())
+      } catch {
+        /* ignore */
+      }
+    })()
   }, [])
 
   useEffect(() => {
@@ -367,8 +384,6 @@ export default function QuarterlyPage() {
 
       {showFullQuarterly && narrative && (
         <div className="space-y-8">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Your Quarterly Trajectory</h2>
-
           <TrajectoryWisdom
             insight={quarterlyInsightOverride ?? quarterlyInsight}
             quarterLabel={quarterLabel}
@@ -387,14 +402,23 @@ export default function QuarterlyPage() {
           <SurpriseTransformation surprise={narrative.surprise} />
 
           <QuarterlyIntention
-            onSet={(intention) => {
-              try {
-                localStorage.setItem(`quarterly-intention-${currentQuarterStr}`, intention)
-              } catch {
-                /* ignore */
-              }
-            }}
+            initialValue={quarterlyIntentionSaved}
+            unlocked={unlockProgress?.isUnlocked !== false}
             placeholder="I commit to..."
+            onSave={async (value) => {
+              const res = await fetch('/api/user/quarterly-intention', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ quarterlyIntention: value }),
+              })
+              if (!res.ok) {
+                const err = await res.json().catch(() => ({}))
+                throw new Error((err as { error?: string }).error || 'Failed to save')
+              }
+              const j = (await res.json()) as { quarterlyIntention?: string }
+              setQuarterlyIntentionSaved((j.quarterlyIntention ?? value).trim())
+            }}
           />
 
           <NextQuarterQuestion block={narrative.guidingQuestion} />
@@ -414,6 +438,12 @@ export default function QuarterlyPage() {
           )}
         </div>
       )}
+      <p className="text-sm text-gray-600 dark:text-gray-300 mt-8">
+        Explore related views:{' '}
+        <Link href="/founder-dna/rhythm" className="text-[#ef725c] hover:underline">Rhythm</Link>,{' '}
+        <Link href="/founder-dna/patterns" className="text-[#ef725c] hover:underline">Patterns</Link>,{' '}
+        <Link href="/founder-dna/journey" className="text-[#ef725c] hover:underline">Journey</Link>.
+      </p>
     </div>
   )
 }

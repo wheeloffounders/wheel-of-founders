@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
       : []
     const hasEnergyTrends = unlockedFeatures.some((f) => f?.name === 'energy_trends')
 
-    const [newUnlocksRes, lastEveningRes] = await Promise.all([
+    const [newUnlocksRes, lastEveningRes, weeklyFeedRes, monthlyFeedRes, quarterlyFeedRes] = await Promise.all([
       db
         .from('user_unlocks')
         .select('unlock_name, unlock_type, unlocked_at')
@@ -58,10 +58,83 @@ export async function GET(req: NextRequest) {
             .limit(1)
             .maybeSingle()
         : Promise.resolve({ data: null, error: null } as const),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (db.from('weekly_insights') as any)
+        .select('generated_at')
+        .eq('user_id', userId)
+        .order('week_start', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (db.from('monthly_insights') as any)
+        .select('generated_at')
+        .eq('user_id', userId)
+        .order('month_start', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (db.from('quarterly_insights') as any)
+        .select('generated_at')
+        .eq('user_id', userId)
+        .order('quarter_start', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ])
 
     const items: WhatsNewItem[] = []
     const seen = new Set<string>()
+
+    const wkFeed = weeklyFeedRes.data as { generated_at?: string } | null
+    const moFeed = monthlyFeedRes.data as { generated_at?: string } | null
+    const qFeed = quarterlyFeedRes.data as { generated_at?: string } | null
+
+    const syntheticWeekly =
+      !!wkFeed?.generated_at && new Date(wkFeed.generated_at).getTime() > lastViewedMs
+    const syntheticMonthly =
+      !!moFeed?.generated_at && new Date(moFeed.generated_at).getTime() > lastViewedMs
+    const syntheticQuarterly =
+      !!qFeed?.generated_at && new Date(qFeed.generated_at).getTime() > lastViewedMs
+
+    if (syntheticWeekly && wkFeed?.generated_at) {
+      const id = 'insight-weekly-feed'
+      seen.add(id)
+      items.push({
+        type: 'insight',
+        id,
+        title: 'Your weekly insight is ready',
+        description:
+          "Mrs. Deer's weekly read on your rhythm is waiting — open it when you have a quiet moment.",
+        icon: '📅',
+        link: '/weekly',
+        createdAt: wkFeed.generated_at,
+      })
+    }
+    if (syntheticMonthly && moFeed?.generated_at) {
+      const id = 'insight-monthly-feed'
+      seen.add(id)
+      items.push({
+        type: 'insight',
+        id,
+        title: 'Your monthly insight is ready',
+        description: 'A deeper monthly narrative from your wins and lessons is available.',
+        icon: '🌙',
+        link: '/monthly-insight',
+        createdAt: moFeed.generated_at,
+      })
+    }
+    if (syntheticQuarterly && qFeed?.generated_at) {
+      const id = 'insight-quarterly-feed'
+      seen.add(id)
+      items.push({
+        type: 'insight',
+        id,
+        title: 'Your quarterly insight is ready',
+        description: 'Your quarter-level arc and intention are ready to review.',
+        icon: '📈',
+        link: '/quarterly',
+        createdAt: qFeed.generated_at,
+      })
+    }
 
     const rows = (newUnlocksRes.data ?? []) as {
       unlock_name: string
@@ -74,6 +147,9 @@ export async function GET(req: NextRequest) {
       if (row.unlock_type === 'feature') {
         // First Glimpse uses the dedicated evening flow (`FirstGlimpseModal`), not this list modal.
         if (row.unlock_name === 'first_glimpse') continue
+        if (row.unlock_name === 'weekly_insight' && syntheticWeekly) continue
+        if (row.unlock_name === 'monthly_insight' && syntheticMonthly) continue
+        if (row.unlock_name === 'quarterly_insight' && syntheticQuarterly) continue
         const meta = FOUNDER_DNA_FEATURE_META[row.unlock_name]
         if (!meta) continue
         const id = `feature-${row.unlock_name}`
@@ -126,7 +202,12 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    const typeOrder = (t: WhatsNewItem['type']) => (t === 'insight' ? 0 : t === 'badge' ? 1 : 2)
+    items.sort((a, b) => {
+      const td = typeOrder(a.type) - typeOrder(b.type)
+      if (td !== 0) return td
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
 
     return NextResponse.json({
       hasNew: items.length > 0,

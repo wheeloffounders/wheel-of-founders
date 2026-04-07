@@ -22,6 +22,8 @@ export default function PageViewTracker() {
 
   useEffect(() => {
     if (!pathname) return
+    // Avoid batching during auth flows (reduces noise if analytics API is slow/errors)
+    if (pathname.startsWith('/auth')) return
 
     if (debounceRef.current) {
       clearTimeout(debounceRef.current)

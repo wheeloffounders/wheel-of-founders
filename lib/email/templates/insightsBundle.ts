@@ -90,6 +90,6 @@ export const insightsBundleTemplate: EmailTemplate = {
       out += `${p.heading}\n${prev ? `${prev}\n` : ''}${appUrlWithUtm(p.ctaPath, p.utmCampaign)}\n\n`
     }
     out += '— Mrs. Deer'
-    return out + renderTextFooter()
+    return out + renderTextFooter(user)
   },
 }

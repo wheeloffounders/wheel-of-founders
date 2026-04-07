@@ -97,6 +97,7 @@ export async function POST(req: NextRequest) {
       .from('morning_tasks')
       .update({
         plan_date: newDate,
+        postponed_from_plan_date: originalDate,
         updated_at: nowIso,
         postpone_count: currentCount + 1,
         first_planned_date: firstPlanned ?? originalDate,

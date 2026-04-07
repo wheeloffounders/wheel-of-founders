@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isMissingEveningIsDraftColumnError } from '@/lib/supabase/evening-is-draft-column'
 
 /**
  * Days with entries = unique YYYY-MM-DD values where the user has either:
@@ -10,10 +11,16 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  */
 export async function getDaysWithEntries(userId: string, db: SupabaseClient): Promise<number> {
 
-  const [morningsRes, eveningsRes] = await Promise.all([
-    db.from('morning_plan_commits').select('plan_date').eq('user_id', userId),
-    db.from('evening_reviews').select('review_date').eq('user_id', userId),
-  ])
+  const morningsRes = await db.from('morning_plan_commits').select('plan_date').eq('user_id', userId)
+
+  let eveningsRes = await db
+    .from('evening_reviews')
+    .select('review_date')
+    .eq('user_id', userId)
+    .eq('is_draft', false)
+  if (eveningsRes.error && isMissingEveningIsDraftColumnError(eveningsRes.error)) {
+    eveningsRes = await db.from('evening_reviews').select('review_date').eq('user_id', userId)
+  }
 
   if (morningsRes.error) throw morningsRes.error
   if (eveningsRes.error) throw eveningsRes.error
@@ -49,10 +56,25 @@ export async function getDaysWithEntriesUpTo(
   db: SupabaseClient,
   endYmd: string
 ): Promise<number> {
-  const [morningsRes, eveningsRes] = await Promise.all([
-    db.from('morning_plan_commits').select('plan_date').eq('user_id', userId).lte('plan_date', endYmd),
-    db.from('evening_reviews').select('review_date').eq('user_id', userId).lte('review_date', endYmd),
-  ])
+  const morningsRes = await db
+    .from('morning_plan_commits')
+    .select('plan_date')
+    .eq('user_id', userId)
+    .lte('plan_date', endYmd)
+
+  let eveningsRes = await db
+    .from('evening_reviews')
+    .select('review_date')
+    .eq('user_id', userId)
+    .eq('is_draft', false)
+    .lte('review_date', endYmd)
+  if (eveningsRes.error && isMissingEveningIsDraftColumnError(eveningsRes.error)) {
+    eveningsRes = await db
+      .from('evening_reviews')
+      .select('review_date')
+      .eq('user_id', userId)
+      .lte('review_date', endYmd)
+  }
 
   if (morningsRes.error) throw morningsRes.error
   if (eveningsRes.error) throw eveningsRes.error

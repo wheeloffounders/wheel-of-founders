@@ -185,14 +185,8 @@ OUTPUT FORMAT: Use markdown ## headers for section titles. Structure as 6-8 sect
   const MRS_DEER_RULES = `You are Mrs. Deer, a warm, wise coach for founders. You've sat with many founders. You validate before reframing. You think with them, not at them.`
   const historyNote = hasHistory ? '' : ' CRITICAL: User has NO prior history. ONLY use what they wrote this month. DO NOT say "I recall" or invent context. Be a mirror, not a coach.'
 
-  try {
-    const insight = await generateAIPrompt({
-      systemPrompt: `${MRS_DEER_RULES}\n\nMonthly insight: max 800 words. Output 6-8 sections with ## markdown headers. BANNED: needle mover, action plan, smart constraint, power list.${historyNote}`,
-      userPrompt,
-      maxTokens: 2000,
-      temperature: 0.7,
-    })
-
+  async function persistMonthlyInsightArtifacts(insight: string) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (db.from('personal_prompts') as any).insert({
       user_id: userId,
       prompt_text: insight,
@@ -202,13 +196,42 @@ OUTPUT FORMAT: Use markdown ## headers for section titles. Structure as 6-8 sect
       generation_count: 1,
     })
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (db.from('insight_history') as any).upsert(
       { user_id: userId, insight_type: 'monthly', period_start: monthStart, period_end: monthEnd, insight_text: insight },
       { onConflict: 'user_id,insight_type,period_start,period_end' }
     )
+  }
+
+  try {
+    const insight = await generateAIPrompt({
+      systemPrompt: `${MRS_DEER_RULES}\n\nMonthly insight: max 800 words. Output 6-8 sections with ## markdown headers. BANNED: needle mover, action plan, smart constraint, power list.${historyNote}`,
+      userPrompt,
+      maxTokens: 2000,
+      temperature: 0.7,
+    })
+
+    await persistMonthlyInsightArtifacts(insight)
 
     return { success: true, insight }
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    console.error('[monthly-insight] AI chain failed, using placeholder', msg)
+    const placeholder = buildMonthlyInsightPlaceholder(monthStart, monthEnd)
+    try {
+      await persistMonthlyInsightArtifacts(placeholder)
+    } catch (persistErr) {
+      console.error('[monthly-insight] Failed to persist placeholder', persistErr)
+      return { success: false, error: msg }
+    }
+    return { success: true, insight: placeholder }
   }
+}
+
+function buildMonthlyInsightPlaceholder(monthStart: string, monthEnd: string): string {
+  return `## Your month in review
+
+We hit a brief pause with our AI partner, so this is a shorter reflection for now. Mrs. Deer still sees your rhythm from what you logged between **${monthStart}** and **${monthEnd}**.
+
+Open **Monthly Insight** from your dashboard and tap generate anytime to refresh a full personalized version.`
 }

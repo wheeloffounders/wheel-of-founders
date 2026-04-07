@@ -115,6 +115,9 @@ export function FounderJourneyDashboard() {
     secondary?: ArchetypeMini
   } | null>(null)
   const [archetypePreviewLoading, setArchetypePreviewLoading] = useState(false)
+  const [archetypeEvolutionHistory, setArchetypeEvolutionHistory] = useState<
+    Array<{ fromPrimary: string; toPrimary: string; periodLabel: string; at: string }>
+  >([])
 
   const energyTrendsAccessible = energyTrendsUnlocked || activityDays >= SCHEDULE_ENERGY_MIN_DAYS
 
@@ -155,7 +158,10 @@ export function FounderJourneyDashboard() {
       setArchetypePreview(null)
       try {
         const res = await fetch('/api/founder-dna/archetype', { credentials: 'include' })
-        if (!res.ok) return
+        if (!res.ok) {
+          if (!cancelled) setArchetypeEvolutionHistory([])
+          return
+        }
         const json = await res.json()
         if (!cancelled && (json.status === 'preview' || json.status === 'full') && json.primary) {
           setArchetypePreview({
@@ -163,6 +169,11 @@ export function FounderJourneyDashboard() {
             primary: json.primary as ArchetypeMini,
             secondary: json.status === 'full' ? (json.secondary as ArchetypeMini | undefined) : undefined,
           })
+          if (json.status === 'full' && Array.isArray(json.evolutionHistory)) {
+            setArchetypeEvolutionHistory(json.evolutionHistory)
+          } else {
+            setArchetypeEvolutionHistory([])
+          }
         }
       } finally {
         if (!cancelled) setArchetypePreviewLoading(false)
@@ -221,6 +232,25 @@ export function FounderJourneyDashboard() {
           Progress + Next Unlocks
         </Badge>
       </div>
+
+      {archetypeEvolutionHistory.length > 0 ? (
+        <div className="rounded-lg border border-amber-200/70 dark:border-amber-900/40 bg-amber-50/40 dark:bg-amber-950/20 px-3 py-2.5">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200 mb-1.5">
+            Evolution history
+          </div>
+          <p className="text-sm text-gray-800 dark:text-gray-100 leading-relaxed">
+            {archetypeEvolutionHistory.map((e, i) => (
+              <span key={`${e.at}-${e.fromPrimary}-${e.toPrimary}`}>
+                {i > 0 ? <span className="text-gray-400 mx-1">·</span> : null}
+                <span className="capitalize">{e.fromPrimary}</span>{' '}
+                <span className="text-gray-500 dark:text-gray-400 text-xs">({e.periodLabel})</span>
+                <span className="text-amber-700 dark:text-amber-300 mx-1">→</span>
+                <span className="capitalize font-medium">{e.toPrimary}</span>
+              </span>
+            ))}
+          </p>
+        </div>
+      ) : null}
 
       <Card className="border-none shadow-none bg-transparent">
         <CardHeader className="px-0 pb-2 md:pb-0">

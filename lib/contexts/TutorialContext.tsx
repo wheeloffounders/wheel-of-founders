@@ -7,14 +7,15 @@ import { trackJourneyStep } from '@/lib/analytics/journey-tracking'
 import { isTourEnabled } from '@/lib/feature-flags'
 
 export type TutorialStep =
-  | 'dashboard'      // Point to Today button
-  | 'menu'           // Point to Morning in menu
-  | 'power_list'     // Entire Power List card with grouped explanations
-  | 'decision_card'  // Entire Decision card with grouped explanations
-  | 'save_button'    // Save button
-  | 'insight_area'   // Insight area after save
-  | 'post_morning'   // Completion modal
-  | 'complete'       // Tutorial done, full access
+  | 'dashboard' // Point to Today button
+  | 'menu' // Point to Morning in menu
+  | 'morning_brain_dump' // Brain dump first (streamlined onboarding; mood/energy deferred)
+  | 'morning_intention' // Daily pivot / decision (North Star)
+  | 'power_list' // Tactical three tasks
+  | 'save_button' // Save button
+  | 'insight_area' // Insight area after save
+  | 'post_morning' // Completion modal
+  | 'complete' // Tutorial done, full access
 
 interface TutorialContextType {
   step: TutorialStep
@@ -32,8 +33,9 @@ const TutorialContext = createContext<TutorialContextType | null>(null)
 const STEPS: TutorialStep[] = [
   'dashboard',
   'menu',
+  'morning_brain_dump',
+  'morning_intention',
   'power_list',
-  'decision_card',
   'save_button',
   'insight_area',
   'post_morning',
@@ -105,7 +107,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
         setIsActive(true)
         // Sync step from path
         if (pathname === '/dashboard') setStep('dashboard')
-        else if (pathname === '/morning') setStep('power_list')
+        else if (pathname === '/morning') setStep('morning_brain_dump')
       } else {
         setIsActive(false)
       }
@@ -120,9 +122,9 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
 
     // Handle morning page FIRST - prevents Bug M (flashback to dashboard)
     if (pathname === '/morning' && tutorialParam) {
-      const morningSteps = STEPS.slice(STEPS.indexOf('power_list'))
+      const morningSteps = STEPS.slice(STEPS.indexOf('morning_brain_dump'))
       if (!morningSteps.includes(step)) {
-        setStep('power_list')
+        setStep('morning_brain_dump')
       }
       return
     }

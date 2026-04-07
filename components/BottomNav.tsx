@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useTutorial } from '@/lib/contexts/TutorialContext'
 import type { LucideIcon } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import {
   Plus,
   Sun,
@@ -19,7 +20,6 @@ import {
   LogOut,
   AlertCircle,
   Book,
-  Sparkles,
   Activity,
   LayoutGrid,
   Route,
@@ -34,6 +34,10 @@ import { colors } from '@/lib/design-tokens'
 import { useProgress } from '@/lib/hooks/useProgress'
 import { useFounderJourney } from '@/lib/hooks/useFounderJourney'
 import { ProgressCircle } from '@/components/ProgressCircle'
+import { ProAccessBadge } from '@/components/ProAccessBadge'
+import { getTrialStatus } from '@/lib/auth/trial-status'
+import type { ProEntitlementProfile } from '@/lib/auth/is-pro'
+import { isTrialExpirySimulationEnabled } from '@/lib/trial-simulation'
 import {
   WEEKLY_INSIGHT_MIN_DAYS,
   MONTHLY_INSIGHT_MIN_DAYS,
@@ -114,10 +118,80 @@ function navItemUnlocked(daysWithEntries: number, unlockMinDays?: number) {
 
 export function BottomNav() {
   const pathname = usePathname()
+  const [emergencyHref, setEmergencyHref] = useState('/emergency')
   const { isActive: isTutorialActive, step: tutorialStep, setStep: setTutorialStep } = useTutorial()
   const { data: journey } = useFounderJourney()
   const daysWithEntries =
     journey?.milestones?.daysWithEntries ?? journey?.milestones?.daysActive ?? 0
+
+  useEffect(() => {
+    let cancelled = false
+    const loadEmergencyHref = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session?.user?.id) {
+        if (!cancelled) setEmergencyHref('/emergency')
+        return
+      }
+      const [{ data: emData }, { data: profile }] = await Promise.all([
+        supabase
+          .from('emergencies')
+          .select('id')
+          .eq('user_id', session.user.id)
+          .eq('resolved', false)
+          .not('containment_plan_committed_at', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('user_profiles')
+          .select(
+            'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at'
+          )
+          .eq('id', session.user.id)
+          .maybeSingle(),
+      ])
+      const p = profile as {
+        tier?: string | null
+        pro_features_enabled?: boolean | null
+        subscription_tier?: string | null
+        trial_starts_at?: string | null
+        trial_ends_at?: string | null
+        stripe_subscription_status?: string | null
+        created_at?: string | null
+      } | null
+      const trialProfile: ProEntitlementProfile = {
+        tier: p?.tier ?? null,
+        pro_features_enabled: p?.pro_features_enabled,
+        subscription_tier: p?.subscription_tier ?? null,
+        trial_starts_at: p?.trial_starts_at ?? null,
+        trial_ends_at: p?.trial_ends_at ?? null,
+        stripe_subscription_status: p?.stripe_subscription_status ?? null,
+        created_at: p?.created_at ?? null,
+      }
+      const expired =
+        getTrialStatus(trialProfile, { simulateExpired: isTrialExpirySimulationEnabled() }).status === 'expired'
+      if (!cancelled) {
+        if (expired) {
+          setEmergencyHref('/emergency?focus=resolution')
+        } else {
+          setEmergencyHref(emData?.id ? '/emergency?focus=resolution' : '/emergency')
+        }
+      }
+    }
+    void loadEmergencyHref()
+    const onRefresh = () => void loadEmergencyHref()
+    window.addEventListener('wof-emergency-refresh', onRefresh)
+    window.addEventListener('data-sync-request', onRefresh)
+    window.addEventListener('wof-trial-sim-changed', onRefresh)
+    return () => {
+      cancelled = true
+      window.removeEventListener('wof-emergency-refresh', onRefresh)
+      window.removeEventListener('data-sync-request', onRefresh)
+      window.removeEventListener('wof-trial-sim-changed', onRefresh)
+    }
+  }, [])
   const { weekly, monthly, quarterly } = useProgress()
   const { hasSeenMorningTour } = useHasSeenMorningTour()
   const { totalNew: newInsightsCount } = useNewInsights()
@@ -239,12 +313,13 @@ export function BottomNav() {
         className={`bottom-nav fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 dark:bg-gray-800 border-t-2 border-gray-200 dark:border-gray-700 dark:border-gray-700 ${menuOpen ? 'bottom-nav-menu-open' : ''}`}
         aria-label="Bottom navigation"
       >
-        {/* Bauhaus: 3 flat color rectangles - 24px height, 2px line */}
-        <div className="max-w-4xl mx-auto flex h-6 w-full">
+        {/* Bauhaus strip first so trial/access line sits clearly below it (no text “cutting through” colors). */}
+        <div className="max-w-4xl mx-auto flex h-6 w-full shrink-0">
           <div className="flex-1" style={{ backgroundColor: colors.coral.DEFAULT }}> </div>
           <div className="flex-1" style={{ backgroundColor: colors.amber.DEFAULT }}> </div>
           <div className="flex-1" style={{ backgroundColor: colors.navy.DEFAULT }}> </div>
         </div>
+        {isLoggedIn ? <ProAccessBadge /> : null}
         <div className="max-w-4xl mx-auto flex items-end justify-around px-2 py-3 pt-4 pb-4">
           {/* Dashboard */}
           <Link
@@ -364,10 +439,19 @@ export function BottomNav() {
                 {todayItems.map((item) => {
                   const Icon = item.icon
                   const isMorning = item.name === 'Morning'
+                  const isEmergency = item.name === 'Emergency'
+                  const morningHref = (() => {
+                    if (!isMorning) return item.href
+                    if (isTutorialActive) {
+                      return `/morning?${new URLSearchParams({ tutorial: 'true' }).toString()}`
+                    }
+                    return '/morning'
+                  })()
+                  const itemHref = isMorning ? morningHref : isEmergency ? emergencyHref : item.href
                   return (
                     <Link
                       key={item.name}
-                      href={isMorning && isTutorialActive ? '/morning?tutorial=true' : item.href}
+                      href={itemHref}
                       onClick={() => {
                         if (isMorning && isTutorialActive) {
                           console.log('[BottomNav] 🔥 MORNING LINK CLICKED')

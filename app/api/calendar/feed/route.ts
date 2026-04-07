@@ -1,18 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAppPublicOrigin } from '@/lib/app-public-url'
 import { getServerSupabase } from '@/lib/server-supabase'
+import type { CalendarEventInput } from '@/lib/calendar/ics-generator'
 import { buildCalendarIcs } from '@/lib/calendar/ics-generator'
+import { getUpcomingMondayAnchorInTimeZone } from '@/lib/calendar/upcoming-anchor'
+import { CALENDAR_SUBSCRIPTION_DISPLAY_NAME } from '@/lib/calendar/subscription-links'
+import {
+  ensureCalendarSubscriptionRow,
+  recordCalendarFeedRequest,
+  touchCalendarSubscriptionLastSync,
+} from '@/lib/analytics/calendar-subscription-tracking'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 const APP_ORIGIN = getAppPublicOrigin()
 
+function scheduleCalendarFeedTracking(req: NextRequest, userId: string, tokenTrimmed: string) {
+  const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  const ip = forwarded || req.headers.get('x-real-ip') || null
+  const ua = req.headers.get('user-agent')
+  void (async () => {
+    try {
+      const db = getServerSupabase()
+      await recordCalendarFeedRequest(db, {
+        userId,
+        token: tokenTrimmed,
+        userAgent: ua,
+        ip,
+      })
+      await touchCalendarSubscriptionLastSync(db, tokenTrimmed)
+      await ensureCalendarSubscriptionRow(db, {
+        userId,
+        token: tokenTrimmed,
+        source: 'webcal',
+      })
+    } catch (e) {
+      console.error('[calendar/feed] tracking failed', e)
+    }
+  })()
+}
+
 type FeedBuildResult =
   | { ok: true; ics: string; userId: string; eventCount: number; timezone: string }
   | { ok: false; response: NextResponse }
 
 async function buildFeedResult(req: NextRequest): Promise<FeedBuildResult> {
+  // Only `token` is required; any other query params (e.g. cache-busters) are ignored.
   const token = req.nextUrl.searchParams.get('token')
   if (!token?.trim()) {
     return { ok: false, response: NextResponse.json({ error: 'Missing token' }, { status: 401 }) }
@@ -52,15 +86,9 @@ async function buildFeedResult(req: NextRequest): Promise<FeedBuildResult> {
 
   const rawTz = typeof row.timezone === 'string' ? row.timezone.trim() : ''
   const timezone = rawTz.length > 0 ? rawTz : 'UTC'
-  const events: Array<{
-    uid: string
-    title: string
-    description: string
-    url: string
-    localHour: number
-    localMinute: number
-    rrule: string
-  }> = []
+  const events: CalendarEventInput[] = []
+  const now = new Date()
+  const weeklyAnchor = getUpcomingMondayAnchorInTimeZone(timezone, now)
 
   const parseHourMin = (v: string | null | undefined, fallback: [number, number]): [number, number] => {
     const raw = String(v || '')
@@ -75,7 +103,7 @@ async function buildFeedResult(req: NextRequest): Promise<FeedBuildResult> {
     const [h, m] = parseHourMin(s?.morning_time, [9, 0])
     events.push({
       uid: `${row.id}-morning@wheeloffounders.com`,
-      title: 'Morning Plan with Mrs. Deer',
+      title: '🌅 Morning plan with Mrs. Deer',
       description: 'Set your top priorities and start the day with clarity.',
       url: `${APP_ORIGIN}/morning`,
       localHour: h,
@@ -88,7 +116,7 @@ async function buildFeedResult(req: NextRequest): Promise<FeedBuildResult> {
     const [h, m] = parseHourMin(s?.evening_time, [20, 0])
     events.push({
       uid: `${row.id}-evening@wheeloffounders.com`,
-      title: 'Evening Reflection with Mrs. Deer',
+      title: '🌙 Evening reflection with Mrs. Deer',
       description: 'Close your daily loop and capture wins, lessons, and patterns.',
       url: `${APP_ORIGIN}/evening`,
       localHour: h,
@@ -106,13 +134,42 @@ async function buildFeedResult(req: NextRequest): Promise<FeedBuildResult> {
       localHour: 9,
       localMinute: 0,
       rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      anchorDate: weeklyAnchor,
     })
   }
 
-  const calName = `${row.preferred_name || row.name || 'Founder'} • Wheel of Founders`
+  if (events.length === 0) {
+    const [mh, mm] = parseHourMin(undefined, [9, 0])
+    const [eh, em] = parseHourMin(undefined, [20, 0])
+    events.push(
+      {
+        uid: `${row.id}-morning@wheeloffounders.com`,
+        title: '🌅 Morning plan with Mrs. Deer',
+        description: 'Set your top priorities and start the day with clarity.',
+        url: `${APP_ORIGIN}/morning`,
+        localHour: mh,
+        localMinute: mm,
+        rrule: 'FREQ=DAILY',
+      },
+      {
+        uid: `${row.id}-evening@wheeloffounders.com`,
+        title: '🌙 Evening reflection with Mrs. Deer',
+        description: 'Close your daily loop and capture wins, lessons, and patterns.',
+        url: `${APP_ORIGIN}/evening`,
+        localHour: eh,
+        localMinute: em,
+        rrule: 'FREQ=DAILY',
+      }
+    )
+  }
+
   const ics = buildCalendarIcs({
     timeZone: timezone,
-    calendarName: calName,
+    calendarName: CALENDAR_SUBSCRIPTION_DISPLAY_NAME,
+    calendarDescription:
+      row.preferred_name || row.name
+        ? `Reminders for ${String(row.preferred_name || row.name).trim()}`
+        : 'Morning & evening reminders from Wheel of Founders',
     events,
     includeVtimezone: true,
   })
@@ -124,12 +181,16 @@ async function buildFeedResult(req: NextRequest): Promise<FeedBuildResult> {
     tokenPrefix: token.trim().slice(0, 6),
   })
 
+  scheduleCalendarFeedTracking(req, row.id, token.trim())
+
   return { ok: true, ics, userId: row.id, eventCount: events.length, timezone }
 }
 
 const feedHeaders = {
   'Content-Type': 'text/calendar; charset=utf-8',
   'Cache-Control': 'no-store, no-cache, must-revalidate',
+  /** Helps some clients suggest a friendly title when saving / previewing the feed */
+  'Content-Disposition': 'inline; filename="wheel-of-founders-reminders.ics"',
 }
 
 export async function GET(req: NextRequest) {

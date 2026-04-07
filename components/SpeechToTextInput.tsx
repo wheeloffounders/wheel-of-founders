@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useRef, useState, useCallback, useEffect, forwardRef, cloneElement } from 'react'
 import { Mic, MicOff } from 'lucide-react'
 
 type BaseInputProps = Omit<
@@ -16,6 +16,25 @@ type BaseTextareaProps = Omit<
 type SpeechToTextInputProps = (BaseInputProps | BaseTextareaProps) & {
   as?: 'input' | 'textarea'
   multiline?: boolean
+  /** When true, render text field only (no mic) — e.g. freemium voice lock. */
+  hideSpeechButton?: boolean
+  /** Mic below the field, full-width typing — better on mobile. */
+  stackedLayout?: boolean
+  /** See {@link SpeechTextField} compactEmptyAutosize. */
+  compactEmptyAutosize?: boolean
+  /** Pixel height when empty + {@link compactEmptyAutosize} (default 60). */
+  compactEmptyMinPx?: number
+  /** Wrapper is `block w-full min-w-0` (default). Set false only if you need inline layout. */
+  fullWidth?: boolean
+  /**
+   * Voice-first: hide the text field visually (still in DOM for dictation). Mic stays visible;
+   * use with {@link stackedLayout} or it defaults to stacked so the button is full-width friendly.
+   */
+  hideTextField?: boolean
+  /** When the mic sits in a stacked row under the field, align it (default `end`). */
+  stackedMicAlign?: 'start' | 'center' | 'end'
+  /** Fires when browser speech recognition starts or stops. */
+  onDictationActiveChange?: (listening: boolean) => void
 }
 
 // Detect Web Speech API support (Chrome, Safari, Edge)
@@ -26,26 +45,45 @@ function getSpeechRecognition(): any | null {
   return SpeechRecognition ?? null
 }
 
-export default function SpeechToTextInput({
-  as = 'input',
-  multiline,
-  value = '',
-  onChange,
-  className = '',
-  disabled,
-  ...rest
-}: SpeechToTextInputProps) {
-  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
+function mergeRefs<T>(
+  ...refs: (React.Ref<T> | undefined)[]
+): React.RefCallback<T> {
+  return (instance) => {
+    for (const ref of refs) {
+      if (!ref) continue
+      if (typeof ref === 'function') ref(instance)
+      else (ref as React.MutableRefObject<T | null>).current = instance
+    }
+  }
+}
+
+const MAX_TEXTAREA_HEIGHT = 480
+
+export type SpeechDictationOptions = {
+  disabled?: boolean
+  /** When false, no mic and recognition is not started (e.g. voice locked). */
+  enabled?: boolean
+}
+
+/**
+ * Dictation for a single input/textarea ref. Use with {@link SpeechTextField} when the mic
+ * should sit outside the field (e.g. task card header row).
+ */
+export function useSpeechDictation(
+  inputRef: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>,
+  value: string,
+  onChange: ((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void) | undefined,
+  options?: SpeechDictationOptions
+) {
+  const enabled = options?.enabled !== false
+  const disabled = Boolean(options?.disabled)
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
   const [isListening, setIsListening] = useState(false)
-  /** Must be false on first paint (SSR + hydration) — detect in useEffect to avoid mismatch */
   const [supportsSpeech, setSupportsSpeech] = useState(false)
 
   useEffect(() => {
-    setSupportsSpeech(getSpeechRecognition() !== null)
-  }, [])
-
-  const isTextarea = as === 'textarea' || multiline
+    setSupportsSpeech(enabled && getSpeechRecognition() !== null)
+  }, [enabled])
 
   const insertAtCursor = useCallback(
     (text: string) => {
@@ -59,7 +97,6 @@ export default function SpeechToTextInput({
       const after = value.slice(end)
       const newValue = before + text + after
 
-      // Create synthetic change event
       const syntheticEvent = {
         target: { ...target, value: newValue },
         preventDefault: () => {},
@@ -67,17 +104,17 @@ export default function SpeechToTextInput({
       } as React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
       onChange(syntheticEvent)
 
-      // Restore cursor position after React updates
       requestAnimationFrame(() => {
         const newPos = start + text.length
         target.setSelectionRange(newPos, newPos)
         target.focus()
       })
     },
-    [value, onChange]
+    [value, onChange, inputRef]
   )
 
   const toggleListening = useCallback(() => {
+    if (!enabled) return
     const SpeechRecognition = getSpeechRecognition()
     if (!SpeechRecognition || disabled) return
 
@@ -130,7 +167,7 @@ export default function SpeechToTextInput({
     } catch {
       setIsListening(false)
     }
-  }, [isListening, disabled, insertAtCursor])
+  }, [enabled, isListening, disabled, insertAtCursor, inputRef])
 
   useEffect(() => {
     return () => {
@@ -142,23 +179,96 @@ export default function SpeechToTextInput({
     }
   }, [])
 
-  const MAX_TEXTAREA_HEIGHT = 300
+  const MicButton =
+    supportsSpeech && enabled ? (
+      <button
+        type="button"
+        onClick={toggleListening}
+        disabled={disabled}
+        className={`shrink-0 rounded-lg p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-[#152b50] focus:ring-offset-1 ${
+          isListening
+            ? 'animate-pulse bg-[#ef725c] text-white'
+            : 'text-gray-500 hover:bg-gray-50 hover:text-[#ef725c] dark:text-gray-500 dark:hover:bg-gray-900'
+        } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+        aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
+      >
+        {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+      </button>
+    ) : null
 
-  const resizeTextarea = useCallback((el: HTMLTextAreaElement | null) => {
-    if (!el) return
-    el.style.height = 'auto'
-    const h = Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)
-    el.style.height = h + 'px'
-    el.style.overflowY = el.scrollHeight > MAX_TEXTAREA_HEIGHT ? 'auto' : 'hidden'
-  }, [])
+  return { MicButton, isListening }
+}
+
+type SpeechTextFieldProps = (BaseInputProps | BaseTextareaProps) & {
+  as?: 'input' | 'textarea'
+  multiline?: boolean
+  /** Wider right padding when an inline mic sits inside the field wrapper. */
+  hideSpeechButton?: boolean
+  /**
+   * Empty textareas: cap measured scrollHeight (WebKit often inflates it) and enforce a 60px floor.
+   * Use on short “single-line start” fields like emergency log.
+   */
+  compactEmptyAutosize?: boolean
+  /** Empty-state height when {@link compactEmptyAutosize} (default 60). */
+  compactEmptyMinPx?: number
+}
+
+/** Input/textarea with autosizing for multiline; no dictation UI (pair with {@link useSpeechDictation}). */
+export const SpeechTextField = forwardRef<
+  HTMLInputElement | HTMLTextAreaElement,
+  SpeechTextFieldProps
+>(function SpeechTextField(
+  {
+    as = 'input',
+    multiline,
+    hideSpeechButton = false,
+    compactEmptyAutosize = false,
+    compactEmptyMinPx = 60,
+    className = '',
+    value = '',
+    onChange,
+    disabled,
+    ...rest
+  },
+  ref
+) {
+  const innerRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
+  const mergedRef = mergeRefs(innerRef, ref)
+
+  const isTextarea = as === 'textarea' || multiline
+
+  const resizeTextarea = useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      if (!el) return
+      const trimmed = String(value ?? '').trim()
+      const floor = Math.max(44, Math.min(compactEmptyMinPx, 200))
+      // Empty + compact: ignore WebKit’s inflated scrollHeight — lock to one short row.
+      if (compactEmptyAutosize && !trimmed) {
+        el.style.height = `${floor}px`
+        el.style.minHeight = `${floor}px`
+        el.style.overflowY = 'hidden'
+        return
+      }
+      if (compactEmptyAutosize) {
+        el.style.minHeight = ''
+      }
+      el.style.height = 'auto'
+      const sh = el.scrollHeight
+      const minH = compactEmptyAutosize ? floor : 0
+      const h = Math.min(Math.max(sh, minH), MAX_TEXTAREA_HEIGHT)
+      el.style.height = `${h}px`
+      el.style.overflowY = sh > MAX_TEXTAREA_HEIGHT ? 'auto' : 'hidden'
+    },
+    [value, compactEmptyAutosize, compactEmptyMinPx]
+  )
 
   useEffect(() => {
-    if (isTextarea && inputRef.current) resizeTextarea(inputRef.current as HTMLTextAreaElement)
+    if (isTextarea && innerRef.current) resizeTextarea(innerRef.current as HTMLTextAreaElement)
   }, [value, isTextarea, resizeTextarea])
 
-  const inputClassName = `pr-10 ${className}`.trim()
+  const inputClassName = `${hideSpeechButton ? 'pr-3' : 'pr-10'} ${className}`.trim()
   const commonProps = {
-    ref: inputRef as React.RefObject<HTMLInputElement & HTMLTextAreaElement>,
+    ref: mergedRef,
     value,
     onChange,
     className: inputClassName,
@@ -175,7 +285,6 @@ export default function SpeechToTextInput({
         onInput: (e: React.FormEvent<HTMLTextAreaElement>) => {
           const target = e.target as HTMLTextAreaElement
           resizeTextarea(target)
-          // Call onChange instead of onInput
           if (restTextarea.onChange) {
             restTextarea.onChange(e as any)
           }
@@ -183,33 +292,89 @@ export default function SpeechToTextInput({
       }
     : commonProps
 
-  return (
-    <div className="relative inline-block w-full">
-      {isTextarea ? (
-        <textarea {...(textareaProps as React.TextareaHTMLAttributes<HTMLTextAreaElement>)} />
-      ) : (
-        <input {...(commonProps as React.InputHTMLAttributes<HTMLInputElement>)} />
-      )}
+  if (isTextarea) {
+    return <textarea {...(textareaProps as React.TextareaHTMLAttributes<HTMLTextAreaElement>)} />
+  }
+  return <input {...(commonProps as React.InputHTMLAttributes<HTMLInputElement>)} />
+})
 
-      {supportsSpeech && (
-        <button
-          type="button"
-          onClick={toggleListening}
-          disabled={disabled}
-          className={`absolute right-2 ${isTextarea ? 'top-2' : 'top-1/2 -translate-y-1/2'} p-2 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-[#152b50] focus:ring-offset-1 ${
-            isListening
-              ? 'bg-[#ef725c] text-white animate-pulse'
-              : 'text-gray-500 dark:text-gray-500 hover:text-[#ef725c] hover:bg-gray-50 dark:bg-gray-900'
-          } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-          aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
-        >
-          {isListening ? (
-            <MicOff className="w-4 h-4" />
-          ) : (
-            <Mic className="w-4 h-4" />
-          )}
-        </button>
-      )}
+export default function SpeechToTextInput({
+  as = 'input',
+  multiline,
+  hideSpeechButton = false,
+  stackedLayout = false,
+  compactEmptyAutosize = false,
+  compactEmptyMinPx = 60,
+  fullWidth = true,
+  hideTextField = false,
+  stackedMicAlign = 'end',
+  onDictationActiveChange,
+  value = '',
+  onChange,
+  className = '',
+  disabled,
+  ...rest
+}: SpeechToTextInputProps) {
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
+  const { MicButton, isListening } = useSpeechDictation(inputRef, value, onChange, {
+    disabled,
+    enabled: !hideSpeechButton,
+  })
+
+  useEffect(() => {
+    onDictationActiveChange?.(isListening)
+  }, [isListening, onDictationActiveChange])
+
+  const isTextarea = as === 'textarea' || multiline
+  const useStacked = stackedLayout || hideTextField
+
+  const stackedJustify =
+    stackedMicAlign === 'center'
+      ? 'justify-center'
+      : stackedMicAlign === 'start'
+        ? 'justify-start'
+        : 'justify-end'
+
+  const micButton = MicButton
+    ? useStacked ? (
+        <div className={`flex w-full ${stackedJustify}`}>{MicButton}</div>
+      ) : (
+        cloneElement(MicButton as React.ReactElement<{ className?: string }>, {
+          className: `${(MicButton as React.ReactElement<{ className?: string }>).props.className ?? ''} absolute right-2 ${
+            isTextarea ? 'top-2' : 'top-1/2 -translate-y-1/2'
+          }`.trim(),
+        })
+      )
+    : null
+
+  const rootClass =
+    useStacked
+      ? 'flex w-full min-w-0 flex-col gap-1.5'
+      : fullWidth
+        ? 'relative block w-full min-w-0'
+        : 'relative inline-block w-full min-w-0'
+
+  const fieldClassName = hideTextField
+    ? `sr-only pointer-events-none fixed left-0 top-0 -z-10 h-px w-px opacity-0 ${className}`.trim()
+    : className
+
+  return (
+    <div className={rootClass}>
+      <SpeechTextField
+        ref={inputRef}
+        as={as}
+        multiline={multiline}
+        hideSpeechButton={hideSpeechButton || useStacked}
+        compactEmptyAutosize={hideTextField ? true : compactEmptyAutosize}
+        compactEmptyMinPx={hideTextField ? 1 : compactEmptyMinPx}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        className={fieldClassName}
+        {...(rest as SpeechTextFieldProps)}
+        tabIndex={hideTextField ? -1 : (rest as SpeechTextFieldProps).tabIndex}
+      />
+      {micButton}
     </div>
   )
 }

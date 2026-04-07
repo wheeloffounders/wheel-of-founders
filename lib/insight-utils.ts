@@ -13,6 +13,130 @@ export function filterInsightLabels(text: string): string {
     .trim()
 }
 
+/** Core phrase for the quarterly card — AI often echoes this as markdown under the UI title. */
+const QUARTER_IN_ONE_GLANCE = String.raw`the\s+quarter\s+in\s+one\s+glance`
+
+/**
+ * Removes leading lines that duplicate UI card titles (headings, bold, or plain).
+ * Repeats until stable so stacked duplicate headers are cleared.
+ */
+export function stripRedundantLeadingHeadings(text: string): string {
+  let t = text.trimStart()
+  const patterns: RegExp[] = [
+    // "## **The Quarter in One Glance**" / "# **...**"
+    new RegExp(
+      `^#{1,6}\\s*\\*{1,2}\\s*${QUARTER_IN_ONE_GLANCE}\\s*\\*{1,2}\\s*(?:\\n+|$)`,
+      'i'
+    ),
+    new RegExp(`^#{1,6}\\s*${QUARTER_IN_ONE_GLANCE}\\s*(?:\\n+|$)`, 'i'),
+    new RegExp(`^\\*{1,2}\\s*${QUARTER_IN_ONE_GLANCE}\\s*\\*{1,2}\\s*(?:\\n+|$)`, 'i'),
+    new RegExp(`^_{1,2}\\s*${QUARTER_IN_ONE_GLANCE}\\s*_{1,2}\\s*(?:\\n+|$)`, 'i'),
+    new RegExp(`^${QUARTER_IN_ONE_GLANCE}\\s*(?:\\n+|$)`, 'i'),
+    /^#{1,6}\s*quarterly\s*trajectory\s*(?:\n+|$)/i,
+    /^quarterly\s*trajectory\s*(?:\n+|$)/i,
+    // Canned quarterly month hook (see buildQuarterlyNarrative / AI prompts)
+    /^#{1,6}\s*[^\n]*when\s+life\s+had\s+a\s+seat\s+at\s+the\s+table[^\n]*(?:\n+|$)/i,
+    /^\*{1,2}\s*[^\n]*when\s+life\s+had\s+a\s+seat\s+at\s+the\s+table[^\n]*\*{1,2}\s*(?:\n+|$)/i,
+  ]
+
+  for (let i = 0; i < 20; i++) {
+    const start = t
+    for (const re of patterns) {
+      const m = t.match(re)
+      if (m) {
+        t = t.slice(m[0].length).trimStart()
+        break
+      }
+    }
+    if (t === start) break
+  }
+  return t
+}
+
+/**
+ * @deprecated Prefer {@link stripRedundantLeadingHeadings} — same behavior, broader title coverage.
+ * Drops duplicate "Quarterly Trajectory" / "The Quarter in One Glance" style lead lines.
+ */
+export function stripLeadingQuarterlyTrajectoryHeading(text: string): string {
+  return stripRedundantLeadingHeadings(text)
+}
+
+const MONTH_NAME_RE = /\b(January|February|March|April|May|June|July|August|September|October|November|December)\b/i
+
+/**
+ * Rewrites headings (or bold-only lines) that use the old canned month title; replaces with
+ * "{Month} progress" when a month name appears on the line or in the prior markdown heading.
+ * Also softens any remaining phrase occurrences in body text.
+ */
+export function scrubBannedQuarterlyTemplatePhrases(markdown: string): string {
+  if (!/when\s+life\s+had\s+a\s+seat\s+at\s+the\s+table/i.test(markdown)) {
+    return markdown
+  }
+
+  const lines = markdown.split('\n')
+  let lastMonth: string | null = null
+
+  const next = lines.map((line) => {
+    const hm = line.match(/^#{1,6}\s*(.*)$/)
+    if (hm) {
+      const inner = hm[1] ?? ''
+      const mm = inner.match(MONTH_NAME_RE)
+      if (mm) lastMonth = mm[1]!
+    }
+
+    if (!/when\s+life\s+had\s+a\s+seat\s+at\s+the\s+table/i.test(line)) {
+      return line
+    }
+
+    const fromLine = line.match(MONTH_NAME_RE)
+    const label = (fromLine?.[1] ?? lastMonth) ?? 'This chapter'
+
+    if (/^#{1,6}\s/.test(line)) {
+      const prefix = line.match(/^#{1,6}\s*/)?.[0] ?? '## '
+      return `${prefix}${label} progress`
+    }
+
+    const t = line.trim()
+    if (t.startsWith('**') && t.endsWith('**') && t.length < 120) {
+      return `**${label} progress**`
+    }
+
+    return line.replace(
+      /when\s+life\s+had\s+a\s+seat\s+at\s+the\s+table/gi,
+      'the weeks where home and the work both had real room'
+    )
+  })
+
+  return next.join('\n')
+}
+
+/**
+ * Removes canned “thread / weaving / balance proverb” sentences from AI markdown (fail-safe).
+ */
+export function scrubGenericSynthesisTransitions(text: string): string {
+  if (!text.trim()) return text
+  const sentenceKillers: RegExp[] = [
+    /\bthe\s+thread\s+underneath[^.!?\n]*[.!?]+/gi,
+    /\b[^\n.!?]*\bkept\s+showing\s+up\s+beside\s+it[^.!?\n]*[.!?]+/gi,
+    /\bthe\s+real\s+shift\s+was\s+quieter\s+than\s+the\s+headlines[^.!?\n]*[.!?]+/gi,
+    /\bthat'?s\s+[^.!?\n]{1,100}—\s*in\s+yourself[^.!?\n]*[.!?]+/gi,
+    /\bthat'?s\s+the\s+beginning\s+of\s+integration[^.!?\n]*[.!?]+/gi,
+    /\bweaving\s+through[^.!?\n]*[.!?]+/gi,
+    /\bnot\s+balance,\s*but\s+weaving[^.!?\n]*[.!?]?/gi,
+    /\bbalance\s+between\s+.{8,120}\s+and\s+.{8,120}[.!?]+/gi,
+  ]
+
+  let t = text
+  for (const re of sentenceKillers) {
+    t = t.replace(re, ' ')
+  }
+  return t
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}
+
 export type InsightType = 'morning' | 'evening' | 'emergency' | 'post-morning'
 
 /**

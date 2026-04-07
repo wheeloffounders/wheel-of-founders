@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { addOrUpdateSubscriber } from '@/lib/mailerlite'
 import { sendTransactionalEmail } from '@/lib/email/transactional'
+import { syncRemindersToGoogleCalendar } from '@/lib/google-calendar'
 
 const FOUNDER_EMAIL = 'wttmotivation@gmail.com'
 
@@ -17,6 +18,7 @@ export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
   const next = requestUrl.searchParams.get('next') || '/dashboard'
+  const calendarOAuth = requestUrl.searchParams.get('calendar_oauth') === '1'
 
   if (code) {
     const cookieStore = await cookies()
@@ -49,6 +51,31 @@ export async function GET(request: NextRequest) {
       const db = getServerSupabase()
       console.log('[Auth Callback] Starting for user:', data.user.id, data.user.email)
 
+      if (calendarOAuth) {
+        const s = (data as { session?: { provider_refresh_token?: string | null; provider_token?: string | null } })
+          .session
+        const refreshToken = s?.provider_refresh_token?.trim() || null
+        const accessToken = s?.provider_token?.trim() || null
+        if (refreshToken) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- new table
+          await (db.from('google_calendar_tokens') as any).upsert(
+            {
+              user_id: data.user.id,
+              refresh_token: refreshToken,
+              access_token: accessToken,
+              connected_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'user_id' }
+          )
+        }
+        try {
+          await syncRemindersToGoogleCalendar(data.user.id)
+        } catch (err) {
+          console.error('[auth/callback] google calendar sync failed', err)
+        }
+      }
+
       // Auto-grant super_admin for founder email
       if (data.user.email === FOUNDER_EMAIL) {
         const founderPayload = {
@@ -69,30 +96,36 @@ export async function GET(request: NextRequest) {
       // Check if user profile exists, create if not (use db to see upserted founder row)
       const { data: profile } = await db
         .from('user_profiles')
-        .select('id')
+        .select('id, login_count')
         .eq('id', data.user.id)
         .maybeSingle()
 
-      const isNewUser = !profile
+      const profileRow = profile as { id?: string; login_count?: number | null } | null
+      const isNewUser = !profileRow
       console.log('[Auth Callback] Profile check:', {
-        hasProfile: !!profile,
+        hasProfile: !!profileRow,
         isNewUser,
       })
 
-      if (!profile) {
+      if (!profileRow) {
         // Detect timezone
         const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
         // Create user profile with beta defaults (use db to bypass RLS)
+        const nowIso = new Date().toISOString()
+        const trialEnds = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
         const profilePayload = {
           id: data.user.id,
           email: data.user.email,
           tier: 'beta',
           pro_features_enabled: true,
           timezone: detectedTimezone,
-          timezone_detected_at: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          timezone_detected_at: nowIso,
+          login_count: 1,
+          created_at: nowIso,
+          updated_at: nowIso,
+          trial_starts_at: nowIso,
+          trial_ends_at: trialEnds,
           is_admin: data.user.email === FOUNDER_EMAIL ? true : false,
           admin_role: data.user.email === FOUNDER_EMAIL ? 'super_admin' : null,
         }
@@ -142,6 +175,18 @@ export async function GET(request: NextRequest) {
 
         // Clear onboarding flag for new users
         // This will be handled client-side via localStorage
+      } else {
+        const currentLoginCount = Number(profileRow.login_count ?? 0)
+        const nextLoginCount = Number.isFinite(currentLoginCount) ? Math.max(0, Math.floor(currentLoginCount)) + 1 : 1
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit profile columns in this context
+        await (db.from('user_profiles') as any)
+          .update({ login_count: nextLoginCount, updated_at: new Date().toISOString() })
+          .eq('id', data.user.id)
+      }
+
+      // Calendar OAuth connect should return to caller location immediately.
+      if (calendarOAuth) {
+        return NextResponse.redirect(`${requestUrl.origin}${next}`)
       }
 
       // New users must go through goal → personalization → morning. Redirect to goal.

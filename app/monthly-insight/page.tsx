@@ -29,7 +29,7 @@ import { LockedFeature } from '@/components/LockedFeature'
 import { getMonthlyProgress } from '@/lib/progress'
 import { colors } from '@/lib/design-tokens'
 import { showRefreshButton } from '@/lib/env'
-import { resolveEmailDisplayName } from '@/lib/email/personalization'
+import { resolveEmailDisplayName } from '@/lib/email/personalization-display'
 import { InsightLetterClosing } from '@/components/insights/InsightLetterClosing'
 
 export default function MonthlyInsightPage() {
@@ -517,10 +517,6 @@ export default function MonthlyInsightPage() {
           }}
           nextDisabledMessage={!hasNextMonthInsight ? getNextDisabledMessage() : undefined}
         />
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          Deep dive into <Link href="/founder-dna/rhythm" className="text-[#ef725c] hover:underline">Rhythm</Link>{' '}
-          and <Link href="/founder-dna/patterns" className="text-[#ef725c] hover:underline">Patterns</Link>.
-        </p>
       </div>
 
       {/* Month in Progress - only when viewing current month with no insight yet */}
@@ -583,6 +579,10 @@ export default function MonthlyInsightPage() {
           <InsightLetterClosing cadence="month" className="mt-2" />
         </div>
       )}
+      <p className="text-sm text-gray-600 dark:text-gray-300 mt-8">
+        Deep dive into <Link href="/founder-dna/rhythm" className="text-[#ef725c] hover:underline">Rhythm</Link>{' '}
+        and <Link href="/founder-dna/patterns" className="text-[#ef725c] hover:underline">Patterns</Link>.
+      </p>
       <div className="pt-4 flex justify-end">
         <Button variant="outline" onClick={handleExport} disabled={exporting} className="gap-2">
           <Download className="w-4 h-4" />

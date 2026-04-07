@@ -28,7 +28,7 @@ interface Task {
 
 interface TodayResponse {
   date: string
-  tasks: Task[]
+  tasks: Array<Task & { movedToTomorrow?: boolean }>
   progress: number
   original_total_count?: number
   completed_count?: number
@@ -43,12 +43,6 @@ interface TodayResponse {
 }
 
 const TASKS_TODAY_URL = '/api/tasks/today'
-
-function mergeTasksFromApi(data: TodayResponse, prev: Task[]): Task[] {
-  const apiIds = new Set(data.tasks.map((t) => t.id))
-  const carriedMoved = prev.filter((t) => t.movedToTomorrow === true && !apiIds.has(t.id))
-  return [...data.tasks, ...carriedMoved]
-}
 
 export function TaskWidget() {
   const [date, setDate] = useState<string | null>(null)
@@ -82,11 +76,12 @@ export function TaskWidget() {
     const baselineTotal = Math.max(0, Number(swrData.original_total_count ?? swrData.tasks.length))
     setOriginalTotal(baselineTotal)
     setDate(swrData.date)
-    setTasks((prev) => {
-      const merged = mergeTasksFromApi(swrData, prev)
-      queueMicrotask(() => recomputeProgress(merged, baselineTotal))
-      return merged
-    })
+    const next = swrData.tasks.map((t) => ({
+      ...t,
+      movedToTomorrow: Boolean(t.movedToTomorrow),
+    }))
+    setTasks(next)
+    queueMicrotask(() => recomputeProgress(next, baselineTotal))
   }, [swrData, recomputeProgress])
 
   useEffect(() => {

@@ -119,7 +119,7 @@ export function CalendarModal({
   if (!isOpen) return null
 
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 ${className}`}>
+    <div className={`fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 ${className}`}>
       <Card className="max-w-md w-full shadow-xl max-h-[90vh] overflow-y-auto">
         <CardHeader className="space-y-3 pb-2">
           <div className="flex flex-wrap items-center justify-between gap-2">

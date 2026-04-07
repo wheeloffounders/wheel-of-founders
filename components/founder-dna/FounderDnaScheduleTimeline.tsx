@@ -194,7 +194,19 @@ export function FounderDnaScheduleTimeline({ journey }: FounderDnaScheduleTimeli
                   </p>
                 ) : null}
                 {!row.unlocked && progress ? (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Progress: {progressLabel(progress)}</p>
+                  <>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Progress: {progressLabel(progress)}</p>
+                    <div className="mt-1.5 max-w-md">
+                      <div className="h-1.5 w-full rounded-full bg-gray-200/90 dark:bg-gray-700 overflow-hidden ring-1 ring-[#ef725c]/15">
+                        <div
+                          className="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-[#f0886c] to-[#ef725c] shadow-[0_0_14px_rgba(239,114,92,0.58)]"
+                          style={{
+                            width: `${Math.min(100, (progress.current / progress.target) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </>
                 ) : null}
                 {cta.type === 'open' ? (
                   <Link href={cta.href} className={linkClass}>

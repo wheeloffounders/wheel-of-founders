@@ -2,7 +2,7 @@
  * Morning & evening reminder copy (20 variants each), selection weights, and render helpers.
  */
 
-import { emailGreetingFromDisplayString } from '@/lib/email/personalization'
+import { emailGreetingFromDisplayString } from '@/lib/email/personalization-display'
 
 export type ReminderKind = 'morning' | 'evening'
 

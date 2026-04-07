@@ -3,7 +3,13 @@ import { getUserSession } from '@/lib/auth'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { withRateLimit } from '@/lib/rate-limit-middleware'
 import { addWatermark } from '@/lib/watermark'
-import { generateProPlusPrompt, PromptType, MorningOverride } from '@/lib/personal-coaching'
+import {
+  generateProPlusPrompt,
+  PromptType,
+  MorningOverride,
+  PostMorningOverride,
+  PostEveningOverride,
+} from '@/lib/personal-coaching'
 import { AIError } from '@/lib/ai-client'
 import { format } from 'date-fns'
 
@@ -24,6 +30,7 @@ export async function POST(req: NextRequest) {
       promptDate?: string
       emergencyDescription?: string
       severity?: 'hot' | 'warm' | 'contained'
+      emergencyId?: string
       journal?: string
       mood?: number | null
       energy?: number | null
@@ -31,6 +38,10 @@ export async function POST(req: NextRequest) {
       lessons?: string[]
       /** For morning: pass yesterday's evening review to avoid DB timing issues */
       morningOverride?: MorningOverride
+      /** For post_morning: pass tasks/decision (same as streaming endpoint) */
+      postMorningOverride?: PostMorningOverride
+      /** For post_evening: pass review/tasks */
+      postEveningOverride?: PostEveningOverride
     }
     const promptType = body.promptType
     let userId = body.userId
@@ -88,12 +99,21 @@ export async function POST(req: NextRequest) {
       if (body.emergencyDescription && body.severity) {
         const { generateEmergencyInsight } = await import('@/lib/personal-coaching')
         const emergencyDate = body.promptDate || format(new Date(), 'yyyy-MM-dd')
-        const insight = await generateEmergencyInsight(resolvedUserId!, body.emergencyDescription, body.severity, emergencyDate)
+        const insight = await generateEmergencyInsight(
+          resolvedUserId!,
+          body.emergencyDescription,
+          body.severity,
+          emergencyDate,
+          undefined,
+          body.emergencyId ?? null
+        )
         return NextResponse.json({ prompt: addWatermark(insight, resolvedUserId!) })
       }
 
       const prompt = await generateProPlusPrompt(resolvedUserId!, promptType, promptDate, {
         morningOverride: promptType === 'morning' ? body.morningOverride : undefined,
+        postMorningOverride: promptType === 'post_morning' ? body.postMorningOverride : undefined,
+        postEveningOverride: promptType === 'post_evening' ? body.postEveningOverride : undefined,
       })
       return NextResponse.json({ prompt: addWatermark(prompt, resolvedUserId!) })
     })

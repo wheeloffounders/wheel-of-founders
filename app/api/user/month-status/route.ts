@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+import { isMissingEveningIsDraftColumnError } from '@/lib/supabase/evening-is-draft-column'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
 
     const db = getServerSupabase()
 
-    const [tasksRes, decisionsRes, reviewsRes, emergenciesRes] = await Promise.all([
+    const [tasksRes, decisionsRes, reviewsResFirst, emergenciesRes] = await Promise.all([
       db
         .from('morning_tasks')
         .select('plan_date')
@@ -45,6 +46,7 @@ export async function GET(request: NextRequest) {
         .from('evening_reviews')
         .select('review_date')
         .eq('user_id', session.user.id)
+        .eq('is_draft', false)
         .gte('review_date', startStr)
         .lte('review_date', endStr),
       db
@@ -54,6 +56,16 @@ export async function GET(request: NextRequest) {
         .gte('fire_date', startStr)
         .lte('fire_date', endStr),
     ])
+
+    let reviewsRes = reviewsResFirst
+    if (reviewsRes.error && isMissingEveningIsDraftColumnError(reviewsRes.error)) {
+      reviewsRes = await db
+        .from('evening_reviews')
+        .select('review_date')
+        .eq('user_id', session.user.id)
+        .gte('review_date', startStr)
+        .lte('review_date', endStr)
+    }
 
     const morningDates = new Set<string>()
     for (const r of tasksRes.data ?? []) {

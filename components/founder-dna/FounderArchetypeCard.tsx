@@ -2,15 +2,23 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { format, parseISO } from 'date-fns'
+import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
 import { LockedFeature } from '@/components/LockedFeature'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { colors } from '@/lib/design-tokens'
 import { ArchetypeBreakdown } from '@/components/founder-dna/ArchetypeBreakdown'
 import { Progress } from '@/components/ui/progress'
-import type { ArchetypeApiFullResponse, ArchetypeApiPreviewResponse } from '@/lib/types/founder-dna'
+import type {
+  ArchetypeApiFullResponse,
+  ArchetypeApiPreviewResponse,
+  ArchetypeEvolutionHistoryEntry,
+} from '@/lib/types/founder-dna'
+import { ArchetypeEvolutionModal } from '@/components/founder-dna/ArchetypeEvolutionModal'
+import { ARCHETYPE_SNAPSHOT_REFRESH_DAYS } from '@/lib/founder-dna/archetype-snapshot'
 import { ARCHETYPE_FULL_MIN_DAYS, ARCHETYPE_PREVIEW_MIN_DAYS } from '@/lib/founder-dna/archetype-timing'
+import { getArchetypeEvolutionPreview } from '@/lib/founder-dna/archetype-evolution-copy'
 
 type ArchetypePayload = ArchetypeApiPreviewResponse | ArchetypeApiFullResponse
 
@@ -23,6 +31,17 @@ type LockedResponse = {
   }
 }
 
+function formatArchetypeDate(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  try {
+    const d = parseISO(iso)
+    if (Number.isNaN(d.getTime())) return null
+    return format(d, 'MMMM d, yyyy')
+  } catch {
+    return null
+  }
+}
+
 export function FounderArchetypeCard() {
   const [loading, setLoading] = useState(true)
   const [locked, setLocked] = useState(false)
@@ -30,11 +49,28 @@ export function FounderArchetypeCard() {
   const [data, setData] = useState<ArchetypePayload | null>(null)
   const [progress, setProgress] = useState<LockedResponse['progress'] | null>(null)
   const [showBreakdown, setShowBreakdown] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [evolutionAckPrompt, setEvolutionAckPrompt] = useState<ArchetypeEvolutionHistoryEntry | null>(null)
+
+  useEffect(() => {
+    if (!data || data.status !== 'full') return
+    const fullPayload = data as ArchetypeApiFullResponse
+    const hist = fullPayload.evolutionHistory
+    if (!hist?.length) return
+    const latest = hist[0]
+    try {
+      const ack = localStorage.getItem('wof-archetype-evolution-ack-at')
+      if (ack && new Date(latest.at).getTime() <= new Date(ack).getTime()) return
+    } catch {
+      /* ignore */
+    }
+    setEvolutionAckPrompt(latest)
+  }, [data])
 
   const planKeyToLabel = (key: string | null | undefined): string | null => {
     switch (key) {
       case 'my_zone':
-        return 'Focus Time'
+        return 'Milestone'
       case 'systemize':
         return 'Systemize'
       case 'delegate_founder':
@@ -89,6 +125,56 @@ export function FounderArchetypeCard() {
     }
   }, [])
 
+  const handleManualRefresh = async () => {
+    setRefreshing(true)
+    try {
+      const res = await fetch('/api/founder-dna/archetype/refresh', {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const json = (await res.json().catch(() => ({}))) as ArchetypePayload & { error?: string }
+      if (!res.ok) {
+        throw new Error((json as { error?: string }).error || 'Failed to refresh')
+      }
+      if (json.status !== 'full') {
+        throw new Error('Unexpected response')
+      }
+      setData(json)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('toast', { detail: { message: 'Archetype updated with your latest data.', type: 'success' } })
+        )
+      }
+    } catch (err) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('toast', {
+            detail: {
+              message: err instanceof Error ? err.message : 'Could not refresh archetype.',
+              type: 'error',
+            },
+          })
+        )
+      }
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const handleEvolutionDismiss = () => {
+    if (evolutionAckPrompt) {
+      try {
+        localStorage.setItem('wof-archetype-evolution-ack-at', evolutionAckPrompt.at)
+      } catch {
+        /* ignore */
+      }
+    }
+    setEvolutionAckPrompt(null)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('archetype-updated'))
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -126,7 +212,13 @@ export function FounderArchetypeCard() {
   }
 
   if (data.status === 'preview') {
-    const { primary, message, daysUntilFull, topSignals } = data
+    const { distribution, message, daysUntilFull, topSignals, unlockChecklist } = data
+    const visibleDistribution = (distribution ?? []).filter((item) => item.percentage > 0).slice(0, 3)
+    const blurredPlaceholders = (distribution ?? [])
+      .filter((item) => item.percentage > 0)
+      .slice(3, 8)
+      .map((item) => item.icon)
+    const fallbackEmojis = ['🧭', '🌿', '⚡', '🔮', '🛠️']
     return (
       <>
         <div className="rounded-xl border border-dashed border-amber-200/90 dark:border-amber-800/50 bg-gradient-to-b from-amber-50/40 to-white/60 dark:from-amber-950/20 dark:to-gray-800/30 p-4 w-full max-w-3xl">
@@ -136,23 +228,31 @@ export function FounderArchetypeCard() {
             </Badge>
             <span className="text-[11px] text-gray-500 dark:text-gray-400">Emerging pattern</span>
           </div>
-          <div className="flex items-start gap-3 mb-3">
-            <div className="text-3xl leading-none">{primary.icon}</div>
-            <div className="min-w-0 max-w-full">
-              <div className="font-semibold text-sm text-gray-900 dark:text-white break-words">{primary.label}</div>
-              <div className="text-xs text-gray-600 dark:text-gray-300 mt-1 leading-relaxed break-words">
-                {primary.description}
-              </div>
-              <div className="text-[11px] text-amber-800/90 dark:text-amber-200/90 mt-2">
-                ~{primary.confidence}% confidence (preview range)
-              </div>
+          <div className="mb-3">
+            <div className="font-semibold text-sm text-gray-900 dark:text-white">What we see so far</div>
+            <div className="text-xs text-gray-600 dark:text-gray-300 mt-1 leading-relaxed">
+              Mrs. Deer reads your reflections below; the full profile unlocks after {ARCHETYPE_FULL_MIN_DAYS} days.
             </div>
           </div>
-          <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed mb-2">{message}</p>
+          <div className="space-y-2">
+            {visibleDistribution.map((item) => (
+              <div
+                key={item.name}
+                className="flex items-center justify-between rounded-lg border border-amber-200/70 dark:border-amber-800/40 bg-white/50 dark:bg-gray-900/20 px-3 py-2"
+              >
+                <div className="text-sm text-gray-900 dark:text-gray-100">
+                  <span className="mr-2">{item.icon}</span>
+                  {item.label}
+                </div>
+                <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{item.percentage}%</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed mt-4 mb-2">{message}</p>
           <p className="text-sm text-gray-600 dark:text-gray-400">
             {daysUntilFull === 0
               ? `You’ve reached ${ARCHETYPE_FULL_MIN_DAYS} days — refresh if your full profile hasn’t appeared yet.`
-              : `${daysUntilFull} more day${daysUntilFull === 1 ? '' : 's'} until your full archetype profile unlocks.`}
+              : `At ${ARCHETYPE_FULL_MIN_DAYS} days, you'll see your full archetype profile. ${daysUntilFull} more day${daysUntilFull === 1 ? '' : 's'} to go.`}
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <Link href="/dashboard" className="text-sm" style={{ color: colors.navy.DEFAULT }}>
@@ -165,12 +265,66 @@ export function FounderArchetypeCard() {
           mode="preview"
           breakdown={{
             signals: Array.isArray(topSignals) ? topSignals : [],
-            totalConfidence: primary.confidence,
+            totalConfidence: visibleDistribution[0]?.percentage ?? 0,
             explanation:
               'These are the strongest signals in your data so far. Keep logging mornings and evenings — the full breakdown unlocks after 30 days.',
           }}
-          primaryArchetype={{ label: primary.label, icon: primary.icon }}
+          primaryArchetype={{
+            label: visibleDistribution[0]?.label ?? 'Emerging',
+            icon: visibleDistribution[0]?.icon ?? '🔮',
+          }}
         />
+
+        <div className="rounded-xl border border-dashed border-[#152b50]/20 dark:border-sky-900/40 bg-white/50 dark:bg-gray-900/25 p-4 w-full max-w-3xl mt-4">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-[#152b50] dark:text-sky-200 mb-2">
+            Path to evolution
+          </div>
+          <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed">
+            Your full Founder Archetype profile—including trait breakdown and evolution cues—unlocks after{' '}
+            {ARCHETYPE_FULL_MIN_DAYS} days of signal. You’re on the path; a few more consistent mornings and evenings
+            sharpen the read.
+          </p>
+          <ul className="mt-3 space-y-1.5 text-sm text-gray-600 dark:text-gray-300">
+            <li>
+              <span className="font-medium text-gray-900 dark:text-white">Days until full unlock:</span>{' '}
+              {unlockChecklist?.unlock
+                ? unlockChecklist.unlock.daysRemaining
+                : daysUntilFull}
+            </li>
+            {unlockChecklist?.decisionsSignal && unlockChecklist.decisionsSignal.total > 0 ? (
+              <li>
+                <span className="font-medium text-gray-900 dark:text-white">Decisions in your signal:</span>{' '}
+                {unlockChecklist.decisionsSignal.total} logged ({unlockChecklist.decisionsSignal.strategic} strategic,{' '}
+                {unlockChecklist.decisionsSignal.tactical} tactical)
+                {unlockChecklist.decisionsSignal.ready ? ' · threshold met' : ''}
+              </li>
+            ) : null}
+            {unlockChecklist?.taskPlansSignal && unlockChecklist.taskPlansSignal.totalCompletedTasks > 0 ? (
+              <li>
+                <span className="font-medium text-gray-900 dark:text-white">Action plans completed:</span>{' '}
+                {unlockChecklist.taskPlansSignal.totalCompletedTasks}
+                {unlockChecklist.taskPlansSignal.topPlan
+                  ? ` · often “${unlockChecklist.taskPlansSignal.topPlan}”`
+                  : ''}
+              </li>
+            ) : null}
+          </ul>
+          {(blurredPlaceholders.length > 0 ? blurredPlaceholders : fallbackEmojis).length > 0 ? (
+            <div
+              className="mt-4 flex flex-wrap gap-3 justify-center sm:justify-start rounded-lg border border-gray-200/60 dark:border-gray-700/60 bg-gray-50/80 dark:bg-gray-900/40 px-3 py-2"
+              aria-hidden
+            >
+              {(blurredPlaceholders.length > 0 ? blurredPlaceholders : fallbackEmojis).map((icon, i) => (
+                <span
+                  key={`${icon}-${i}`}
+                  className="text-2xl leading-none opacity-50 blur-[3px] select-none pointer-events-none"
+                >
+                  {icon}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </>
     )
   }
@@ -206,6 +360,7 @@ export function FounderArchetypeCard() {
     explanation: breakdownRaw?.explanation ?? '',
   }
   const stillForming = primary.confidence < 80
+  const evolutionPreview = getArchetypeEvolutionPreview(primary.name, traits.strategic)
 
   const howCalculatedBlock = (
     <div className="mt-4 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
@@ -214,9 +369,15 @@ export function FounderArchetypeCard() {
         Mrs. Deer looks at your decision mix (strategic vs tactical), your morning action plans, and keyword signals from
         your evening wins/lessons to estimate your archetype.
       </div>
-      <div className="mt-2">Confidence increases as you log more entries over time.</div>
+      <div className="mt-2">
+        Your full profile is recomputed automatically every {ARCHETYPE_SNAPSHOT_REFRESH_DAYS} days (and whenever you use
+        Refresh) so your identity read stays stable between updates.
+      </div>
     </div>
   )
+
+  const updatedLabel = formatArchetypeDate(full.archetypeUpdatedAt)
+  const nextLabel = formatArchetypeDate(full.nextArchetypeUpdateAt)
 
   return (
     <>
@@ -259,6 +420,72 @@ export function FounderArchetypeCard() {
           ) : null}
         </div>
 
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-gray-200/80 dark:border-gray-700/80 bg-gray-50/50 dark:bg-gray-900/20 px-3 py-2.5">
+          <div className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed min-w-0">
+            {updatedLabel ? (
+              <>
+                <span className="text-gray-900 dark:text-gray-200 font-medium">Updated:</span> {updatedLabel}
+                {nextLabel ? (
+                  <>
+                    {' '}
+                    · <span className="text-gray-900 dark:text-gray-200 font-medium">Next auto-update:</span> {nextLabel}
+                  </>
+                ) : null}
+              </>
+            ) : nextLabel ? (
+              <>
+                <span className="text-gray-900 dark:text-gray-200 font-medium">Next auto-update:</span> {nextLabel}
+              </>
+            ) : (
+              <span>Full profile refreshes every {ARCHETYPE_SNAPSHOT_REFRESH_DAYS} days. Use Refresh to update sooner.</span>
+            )}
+            {typeof full.fromCache === 'boolean' ? (
+              <span className="block mt-1 text-[11px] text-gray-500 dark:text-gray-500">
+                {full.fromCache
+                  ? 'Showing your saved profile between automatic refreshes.'
+                  : 'Just recomputed from your latest data.'}
+              </span>
+            ) : null}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 rounded-lg"
+            disabled={refreshing}
+            onClick={() => void handleManualRefresh()}
+          >
+            {refreshing ? (
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
+            ) : (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5 inline" aria-hidden />
+                Refresh now
+              </>
+            )}
+          </Button>
+        </div>
+
+        {(full.evolutionHistory?.length ?? 0) > 0 ? (
+          <div className="mt-4 rounded-lg border border-amber-200/60 dark:border-amber-900/45 bg-gradient-to-br from-amber-50/50 to-white/60 dark:from-amber-950/25 dark:to-gray-900/30 p-3">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200 mb-2">
+              Evolution lineage
+            </div>
+            <ul className="space-y-1.5 text-sm text-gray-800 dark:text-gray-100">
+              {(full.evolutionHistory ?? []).map((e) => (
+                <li key={`${e.at}-${e.fromPrimary}-${e.toPrimary}`} className="flex flex-wrap items-baseline gap-x-1.5">
+                  <span className="font-medium capitalize">{e.fromPrimary}</span>
+                  <span className="text-gray-500 dark:text-gray-400 text-xs">({e.periodLabel})</span>
+                  <span className="text-amber-700 dark:text-amber-300" aria-hidden>
+                    →
+                  </span>
+                  <span className="font-medium capitalize">{e.toPrimary}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         <div className="mt-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4">
           <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
             <span>📅</span>
@@ -276,7 +503,7 @@ export function FounderArchetypeCard() {
           </div>
         </div>
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-5 space-y-4">
           <div>
             <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Strategic leaning</div>
             <Progress value={traits.strategic} max={100} className="h-1.5" />
@@ -292,6 +519,30 @@ export function FounderArchetypeCard() {
           <div>
             <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Builder signal</div>
             <Progress value={traits.builder} max={100} className="h-1.5" />
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-dashed border-[#ef725c]/45 bg-gradient-to-br from-[#152b50]/10 to-[#ef725c]/10 dark:from-[#152b50]/25 dark:to-[#ef725c]/15 p-4">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-[#152b50] dark:text-sky-200 mb-3">
+            Path to evolution
+          </div>
+          <div className="flex items-start gap-4">
+            <div className="relative h-14 w-14 shrink-0">
+              <div
+                className="absolute inset-0 flex items-center justify-center rounded-2xl bg-gray-300/60 dark:bg-gray-600 text-3xl blur-sm opacity-70"
+                aria-hidden
+              >
+                {evolutionPreview.nextIcon}
+              </div>
+              <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl border border-[#ef725c]/50 bg-white/90 dark:bg-gray-800/90 text-2xl shadow-sm">
+                {evolutionPreview.nextIcon}
+              </div>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs text-gray-500 dark:text-gray-400">Next level in your DNA read</div>
+              <div className="text-sm font-semibold text-gray-900 dark:text-white">{evolutionPreview.nextLabel}</div>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mt-2 leading-relaxed">{evolutionPreview.statsHint}</p>
+            </div>
           </div>
         </div>
 
@@ -386,6 +637,15 @@ export function FounderArchetypeCard() {
           icon: primary.icon,
         }}
       />
+
+      {evolutionAckPrompt ? (
+        <ArchetypeEvolutionModal
+          isOpen
+          onClose={handleEvolutionDismiss}
+          onContinue={handleEvolutionDismiss}
+          entry={evolutionAckPrompt}
+        />
+      ) : null}
     </>
   )
 }

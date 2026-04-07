@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { format, parseISO, subDays } from 'date-fns'
 import { buildReminderVariationEmailParts, pickReminderVariationId } from '@/lib/email/reminder-variations'
-import { resolveEmailDisplayName } from '@/lib/email/personalization'
+import { resolveEmailDisplayName } from '@/lib/email/personalization-display'
 import { renderEmailTemplate } from '@/lib/email/templates'
 import type { EmailTemplateUser } from '@/lib/email/templates/types'
 import { buildTemplatePreview, type EmailPreview } from '@/lib/test/emailPreview'
@@ -120,8 +120,17 @@ export async function simulateDays(
   const endDate = options.startDate
   const n = Math.min(100, Math.max(1, Math.floor(options.numDays)))
 
-  const { data: profile } = await db.from('user_profiles').select('preferred_name, name, email_address').eq('id', userId).maybeSingle()
-  const pr = profile as { preferred_name?: string | null; name?: string | null; email_address?: string | null } | null
+  const { data: profile } = await db
+    .from('user_profiles')
+    .select('preferred_name, name, email_address, login_count')
+    .eq('id', userId)
+    .maybeSingle()
+  const pr = profile as {
+    preferred_name?: string | null
+    name?: string | null
+    email_address?: string | null
+    login_count?: number | null
+  } | null
   const recipient = (pr?.email_address || 'preview@localhost').trim()
   const templateUser: EmailTemplateUser = {
     name: resolveEmailDisplayName(
@@ -135,6 +144,7 @@ export async function simulateDays(
       null
     ),
     email: recipient,
+    login_count: Math.max(0, Number(pr?.login_count ?? 0) || 0),
   }
 
   const prefs = await loadNotificationPrefs(db, userId)

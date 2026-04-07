@@ -186,11 +186,12 @@ export async function sendInsightDigestEmail(
   }
 
   const user = await db.auth.admin.getUserById(userId)
+  const ctx = await buildPersonalizedEmailContext(userId)
   const templateUser = {
     name: user.data.user?.user_metadata?.full_name || user.data.user?.user_metadata?.name || user.data.user?.email,
     email: user.data.user?.email,
+    login_count: ctx.loginCount,
   }
-  const ctx = await buildPersonalizedEmailContext(userId)
 
   if (parts.length >= 2) {
     const rendered = renderEmailTemplate('insights_bundle', templateUser, {

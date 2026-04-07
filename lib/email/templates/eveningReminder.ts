@@ -62,6 +62,6 @@ export const eveningReminderTemplate: EmailTemplate = {
     const opening = String(d?.reminderOpeningPlain || '').trim()
     const win = d?.recentWin ? `\nMrs. Deer noticed: "${String(d.recentWin)}"` : ''
     const core = opening || 'Close the loop with your evening reflection.'
-    return `${core}${win}\n\n— Mrs. Deer` + renderTextFooter()
+    return `${core}${win}\n\n— Mrs. Deer` + renderTextFooter(_user)
   },
 }

@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS insight_feedback (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   insight_id TEXT NOT NULL,
   insight_type TEXT NOT NULL,
-  feedback TEXT NOT NULL CHECK (feedback IN ('helpful', 'not-helpful')),
+  feedback TEXT NOT NULL CHECK (feedback IN ('helpful', 'not-helpful', 'tone-adjustment')),
   feedback_text TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

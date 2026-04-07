@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+import { syncRemindersToGoogleCalendar } from '@/lib/google-calendar'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -18,6 +19,7 @@ const DEFAULT_SETTINGS = {
   emailEveningReminderTime: '20:00',
   emailFrequency: 'daily' as 'daily' | 'weekly_only' | 'achievements_only' | 'none',
   emailUnsubscribed: false,
+  googleCalendarConnected: false,
 }
 
 /** GET: Load notification settings for the current user */
@@ -29,13 +31,17 @@ export async function GET(req: NextRequest) {
     }
 
     const db = getServerSupabase()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generated types lag notification settings columns
-    const { data, error } = await (db.from('user_notification_settings') as any)
-      .select(
-        'morning_enabled, morning_time, evening_enabled, evening_time, weekly_insights_enabled, monthly_insights_enabled, quarterly_insights_enabled, profile_reminders_enabled, email_morning_reminder_time, email_evening_reminder_time, email_frequency, email_unsubscribed_at'
-      )
-      .eq('user_id', session.user.id)
-      .maybeSingle()
+    const [{ data, error }, { data: googleToken }] = await Promise.all([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generated types lag notification settings columns
+      (db.from('user_notification_settings') as any)
+        .select(
+          'morning_enabled, morning_time, evening_enabled, evening_time, weekly_insights_enabled, monthly_insights_enabled, quarterly_insights_enabled, profile_reminders_enabled, email_morning_reminder_time, email_evening_reminder_time, email_frequency, email_unsubscribed_at'
+        )
+        .eq('user_id', session.user.id)
+        .maybeSingle(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- new table
+      (db.from('google_calendar_tokens') as any).select('user_id').eq('user_id', session.user.id).maybeSingle(),
+    ])
 
     if (error) {
       return NextResponse.json({ settings: DEFAULT_SETTINGS })
@@ -76,6 +82,7 @@ export async function GET(req: NextRequest) {
       emailEveningReminderTime: timeStr(row.email_evening_reminder_time) ?? '20:00',
       emailFrequency: row.email_frequency ?? 'daily',
       emailUnsubscribed: Boolean(row.email_unsubscribed_at),
+      googleCalendarConnected: Boolean(googleToken),
     }
 
     return NextResponse.json({ settings })
@@ -188,6 +195,11 @@ export async function POST(req: NextRequest) {
         weekly_insights_enabled: weeklyInsightsFlag,
       })
     }
+
+    // Keep connected Google Calendar events in sync with latest reminder settings.
+    void syncRemindersToGoogleCalendar(session.user.id).catch((err) => {
+      console.error('[notification-settings] google calendar sync failed', err)
+    })
 
     return NextResponse.json({
       success: true,

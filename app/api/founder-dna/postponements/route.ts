@@ -43,7 +43,7 @@ function isPostponementSnapshot(s: unknown): s is PostponementResponse {
 function planKeyToLabel(plan: string | null | undefined): string {
   switch (plan) {
     case 'my_zone':
-      return 'Focus Time'
+      return 'Milestone'
     case 'systemize':
       return 'Systemize'
     case 'delegate_founder':
@@ -59,6 +59,7 @@ function planKeyToLabel(plan: string | null | undefined): string {
 
 function tipForPlan(planLabel: string): string {
   switch (planLabel) {
+    case 'Milestone':
     case 'Focus Time':
       return "You postpone deep-focus work. Try scheduling it for your highest-energy hour and start with a 20-minute sprint."
     case 'Systemize':

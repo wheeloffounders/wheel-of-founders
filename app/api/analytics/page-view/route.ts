@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
       sessionId: body.session_id ?? null,
       referrer: body.referrer ?? req.headers.get('referer') ?? null,
       metadata: body.metadata ?? undefined,
+      userAgent: req.headers.get('user-agent'),
     })
 
     return NextResponse.json({ ok: true })

@@ -415,7 +415,7 @@ export default function AdminExperimentsPage() {
 
       {/* Create modal */}
       {modal === 'create' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50">
           <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 dark:text-white mb-4">
@@ -534,7 +534,7 @@ export default function AdminExperimentsPage() {
 
       {/* Edit modal */}
       {modal === 'edit' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50">
           <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">

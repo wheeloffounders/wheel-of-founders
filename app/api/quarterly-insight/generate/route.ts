@@ -8,6 +8,12 @@ import { checkUserHistory } from '@/lib/user-history'
 import { format, startOfMonth, endOfMonth, addMonths } from 'date-fns'
 import { detectWinThemes } from '@/lib/weekly-analysis'
 import { PARSE_INSTRUCTION } from '@/lib/insight-parse-instructions'
+import {
+  QUARTERLY_FORBID_SEAT_PHRASE,
+  QUARTERLY_FORBIDDEN_LLMSMS,
+  quarterlyInsightPromptExtra,
+  quarterlyStrategicLensBlock,
+} from '@/lib/quarterly/quarterly-ai-prompt-rules'
 import type { WinWithDate } from '@/lib/weekly-analysis'
 
 const MRS_DEER_RULES = `You are Mrs. Deer, a warm, wise coach for founders. You've sat with many founders. You validate before reframing. You think with them, not at them.`
@@ -121,13 +127,15 @@ export async function POST(req: NextRequest) {
           .eq('user_id', session.user.id)
           .gte('plan_date', quarterStart)
           .lte('plan_date', quarterEnd),
-        db.from('user_profiles').select('primary_goal_text').eq('id', session.user.id).maybeSingle(),
+        db.from('user_profiles').select('primary_goal_text, quarterly_intention').eq('id', session.user.id).maybeSingle(),
       ])
 
       const tasks = (tasksRes.data ?? []) as any[]
       const needleMoversTotal = tasks.filter((t) => t.needle_mover).length
       const needleMoversCompleted = tasks.filter((t) => t.needle_mover && t.completed).length
-      const primaryGoal = (profileRes.data as { primary_goal_text?: string } | null)?.primary_goal_text ?? null
+      const profileRow = profileRes.data as { primary_goal_text?: string; quarterly_intention?: string | null } | null
+      const primaryGoal = profileRow?.primary_goal_text ?? null
+      const quarterlyIntention = profileRow?.quarterly_intention ?? null
       const topThemes = detectWinThemes(winsWithDate).slice(0, 5)
       const avgMood = moods.length > 0 ? Math.round(moods.reduce((a, b) => a + b, 0) / moods.length * 10) / 10 : null
       const avgEnergy = energies.length > 0 ? Math.round(energies.reduce((a, b) => a + b, 0) / energies.length * 10) / 10 : null
@@ -146,6 +154,8 @@ This user had the following quarter (${quarterStart} to ${quarterEnd}):
 
 GOAL: ${primaryGoal || '(not set)'}
 
+${quarterlyStrategicLensBlock(quarterlyIntention)}
+
 BY MONTH:
 ${monthSummaries}
 
@@ -157,11 +167,11 @@ SESSIONS: ${reviews?.length ?? 0}
 
 ${PARSE_INSTRUCTION}
 
-CORE PHILOSOPHY: Quarterly is not "more data"—it's "what does this all mean?" and "where are we going?" Look for the throughline, not the details. Find ONE transformation that matters most. Make it feel like a milestone, not another report.
+CORE PHILOSOPHY: Quarterly is not "more data"—it's what their entries actually show about where they spent courage and care. Find ONE transformation backed by specific wins/lessons. No filler metaphors; milestone feeling comes from specificity.
 
 Generate a quarterly reflection with exactly 4 sections:
 
-1. THE QUARTER IN ONE GLANCE - A single, powerful paragraph capturing the essence. The throughline. What was the thread from 12 weeks ago to now?
+1. THE QUARTER IN ONE GLANCE - One paragraph, grounded in their logged wins/lessons and mood/energy if relevant. What actually connected week one to week twelve in their data—not a metaphor about "threads."
 
 2. YOUR NORTH STAR - Connect everything back to their main goal. What did they build this quarter? How does it move them toward their goal? Prove it can be done YOUR way.
 
@@ -169,7 +179,7 @@ Generate a quarterly reflection with exactly 4 sections:
 
 4. WHAT'S NEXT? - Strategic guidance for the next quarter. Not tactical advice—direction. What's the next 90-day experiment? One big question to carry forward.
 
-OUTPUT FORMAT: Use markdown ## headers. Exactly 4 sections with blank lines between. Let AI choose warm, natural titles. Use their words. Strategic, not tactical. Milestone feeling.`
+OUTPUT FORMAT: Use markdown ## headers. Exactly 4 sections with blank lines between. Let AI choose warm, natural titles. Use their words. Strategic, not tactical. Milestone feeling.${quarterlyInsightPromptExtra()}`
 
       const { hasHistory } = await checkUserHistory(session.user.id)
       console.log(`[quarterly-insight] User hasHistory=${hasHistory}, template=${hasHistory ? 'pattern' : 'mirror'}`)
@@ -177,7 +187,9 @@ OUTPUT FORMAT: Use markdown ## headers. Exactly 4 sections with blank lines betw
       const historyNote = hasHistory ? '' : ' CRITICAL: User has NO prior history. ONLY use what they wrote this quarter. DO NOT say "I recall" or invent context. Be a mirror, not a coach.'
       const systemPrompt = `${MRS_DEER_RULES}
 
-Quarterly insight: max 550 words. BIG PICTURE focus. Output exactly 4 sections with ## markdown headers. Find the throughline and ONE big shift. Strategic direction, not tactical advice. BANNED: needle mover, action plan, smart constraint, power list. Use natural language only. Make it feel like a milestone.${historyNote}`
+Quarterly insight: max 550 words. BIG PICTURE focus. Output exactly 4 sections with ## markdown headers. Find ONE evidence-backed shift. Strategic direction, not tactical advice. BANNED: needle mover, action plan, smart constraint, power list. Use natural language only. Make it feel like a milestone. ${QUARTERLY_FORBID_SEAT_PHRASE}
+
+${QUARTERLY_FORBIDDEN_LLMSMS}${historyNote}`
 
       const insight = await generateAIPrompt({
         systemPrompt,

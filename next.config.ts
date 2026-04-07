@@ -44,6 +44,13 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async rewrites() {
+    return [
+      // URL stays on `/morning/free` / `/emergency/free` so freemium audit paths work while GLOBAL_BETA_OVERRIDE is true.
+      { source: "/morning/free", destination: "/morning" },
+      { source: "/emergency/free", destination: "/emergency" },
+    ];
+  },
   async redirects() {
     return [
       {

@@ -1,8 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateQuarterlyInsightForUser } from '@/lib/batch-quarterly-insight'
-import { getPreviousQuarterRangeYmdInTimeZone, shouldRunMonthlyInsightForUser } from '@/lib/timezone'
-import { sendInsightDigestEmail } from '@/lib/email/send-insight-digest'
+import { hasCompletedMonthlyInsight } from '@/lib/monthly-insight/completed-check'
 import { processMonthlyInsightCronUser } from '@/lib/monthly-insight/process-user'
+import {
+  getPreviousMonthRangeYmdInTimeZone,
+  getPreviousQuarterRangeYmdInTimeZone,
+  isUserLocalFirstCalendarDayOfMonth,
+} from '@/lib/timezone'
+import { sendInsightDigestEmail } from '@/lib/email/send-insight-digest'
 
 export type ProcessQuarterlyCronUserResult = {
   success: boolean
@@ -24,14 +29,17 @@ export async function processQuarterlyInsightCronUser(params: {
   const { quarterStart, quarterEnd } = range
 
   try {
-    if (shouldRunMonthlyInsightForUser(now, timeZone)) {
-      await processMonthlyInsightCronUser({
-        db,
-        userId,
-        timeZone,
-        now,
-        sendEmail: false,
-      })
+    if (isUserLocalFirstCalendarDayOfMonth(now, timeZone)) {
+      const { monthStart } = getPreviousMonthRangeYmdInTimeZone(now, timeZone)
+      if (!(await hasCompletedMonthlyInsight(db, userId, monthStart))) {
+        await processMonthlyInsightCronUser({
+          db,
+          userId,
+          timeZone,
+          now,
+          sendEmail: false,
+        })
+      }
     }
 
     const result = await generateQuarterlyInsightForUser(userId, quarterStart, quarterEnd)

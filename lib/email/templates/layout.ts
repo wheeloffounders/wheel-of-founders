@@ -1,6 +1,7 @@
 import type { EmailTemplateUser } from './types'
 import { emailHtmlLayout } from '@/lib/email/html-layout'
-import { emailGreetingFromDisplayString } from '@/lib/email/personalization'
+import { emailGreetingFromDisplayString } from '@/lib/email/personalization-display'
+import { getSocialProofEmailLine } from '@/lib/social-proof'
 
 const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://wheeloffounders.com'
@@ -31,6 +32,21 @@ export function unsubscribeUrl(token = '{{unsubscribe_token}}'): string {
 
 function trackClickUrl(url: string, emailLogId: string): string {
   return `${APP_URL}/api/email/track/click?url=${encodeURIComponent(url)}&email_log_id=${encodeURIComponent(emailLogId)}`
+}
+
+function escapeHtmlAttr(s: string): string {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function socialProofFooterHtml(user: EmailTemplateUser): string {
+  const line = getSocialProofEmailLine(user.login_count ?? 0)
+  const quote = escapeHtmlAttr(line.text)
+  const author = escapeHtmlAttr(line.author)
+  return `<p style="font-size:11px;color:#94a3b8;font-style:italic;margin:0 0 14px 0;line-height:1.45;">&ldquo;${quote}&rdquo; — ${author}</p>`
 }
 
 export function renderEmailLayout(params: {
@@ -71,6 +87,7 @@ export function renderEmailLayout(params: {
   ${cta}
   ${afterCta}
   <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
+  ${socialProofFooterHtml(params.user)}
   <p style="font-size:12px;color:#64748b;">
     <a href="${trackClickUrl(managePrefsUrl(), emailLogId)}" style="color:#475569;">Manage preferences</a>
     &nbsp;·&nbsp;
@@ -83,8 +100,9 @@ export function renderEmailLayout(params: {
   return emailHtmlLayout(content, preheaderText)
 }
 
-export function renderTextFooter(): string {
-  return `\n\nManage preferences: ${managePrefsUrl()}\nUnsubscribe: ${unsubscribeUrl()}`
+export function renderTextFooter(user?: EmailTemplateUser | null): string {
+  const line = getSocialProofEmailLine(user?.login_count ?? 0)
+  return `\n\n"${line.text}" — ${line.author}\n\nManage preferences: ${managePrefsUrl()}\nUnsubscribe: ${unsubscribeUrl()}`
 }
 
 export function appUrlWithUtm(path: string, campaign: string): string {

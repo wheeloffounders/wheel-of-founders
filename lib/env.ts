@@ -17,6 +17,15 @@ export const isProduction = APP_ENV === 'production'
 /** True when deployed on Vercel preview (branch/PR deployments) */
 export const isPreview = process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview'
 
+/**
+ * Pro morning/emergency: show "Preview free tier" / "Back to Pro tier" audit links (top right).
+ * Never true in production deploys unless you explicitly set NEXT_PUBLIC_PREVIEW_MODE.
+ */
+export const showFreemiumAuditLinks =
+  process.env.NODE_ENV === 'development' ||
+  process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview' ||
+  process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true'
+
 /** Show debug/refresh buttons - only in local development (npm run dev), NOT in preview or production */
 export const showDebugTools = process.env.NODE_ENV === 'development'
 

@@ -3,6 +3,7 @@
 import { JourneyBadgeSection } from '@/components/badges/JourneyBadgeSection'
 import { FounderDnaScheduleTimeline } from '@/components/founder-dna/FounderDnaScheduleTimeline'
 import { FounderDnaLifetimeStats } from '@/components/founder-dna/FounderDnaLifetimeStats'
+import { JourneyDNA } from '@/components/dashboard/JourneyDNA'
 import { useFounderJourney } from '@/lib/hooks/useFounderJourney'
 
 /** Single journey fetch for the hub so Badge / Schedule / Stats stay in sync (avoids triple loading on mobile). */
@@ -11,6 +12,7 @@ export function FounderDnaJourneySections() {
 
   return (
     <div className="space-y-8">
+      <JourneyDNA />
       <section aria-labelledby="journey-schedule">
         <h2 id="journey-schedule" className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
           Unlock schedule

@@ -30,6 +30,7 @@ import {
   Download,
   Users,
   Activity,
+  Radar,
 } from 'lucide-react'
 
 const COLORS = ['#ef725c', '#152b50', '#10b981', '#f59e0b', '#6b7280']
@@ -98,10 +99,11 @@ function calcChange(stats: { [key: string]: unknown }[], field: string): number 
   return (((curr as number) - (prev as number)) / (prev as number)) * 100
 }
 
-type TabId = 'overview' | 'funnels' | 'retention' | 'journeys' | 'realtime' | 'experiments'
+type TabId = 'overview' | 'funnels' | 'retention' | 'journeys' | 'realtime' | 'experiments' | 'tracking'
 
 const TABS: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'tracking', label: 'Product tracking', icon: Radar },
   { id: 'funnels', label: 'Funnels', icon: Filter },
   { id: 'retention', label: 'Retention', icon: TrendingUp },
   { id: 'journeys', label: 'Journeys', icon: Map },
@@ -154,6 +156,7 @@ export default function AdminAnalyticsPage() {
   const [timeframe, setTimeframe] = useState('7d')
   const [loading, setLoading] = useState(true)
   const [funnelName, setFunnelName] = useState('daily_flow')
+  const [tracking, setTracking] = useState<Record<string, unknown> | null>(null)
 
   useEffect(() => {
     const init = async () => {
@@ -168,7 +171,7 @@ export default function AdminAnalyticsPage() {
   }, [router])
 
   useEffect(() => {
-    if (activeTab === 'overview' || activeTab === 'funnels') loadOverview()
+    if (activeTab === 'overview' || activeTab === 'funnels' || activeTab === 'tracking') loadOverview()
     if (activeTab === 'retention') loadRetention()
     if (activeTab === 'journeys') loadJourneys()
     if (activeTab === 'realtime') loadRealtime()
@@ -190,13 +193,17 @@ export default function AdminAnalyticsPage() {
         fetch(`/api/admin/analytics?timeframe=${timeframe}`),
         fetch(`/api/admin/funnels?funnel=${funnelName}&days=${timeframe === '7d' ? 7 : 30}`),
       ])
-      const analyticsData = analyticsRes.ok ? await analyticsRes.json() : { dailyStats: [], topPatterns: [] }
+      const analyticsData = analyticsRes.ok
+        ? await analyticsRes.json()
+        : { dailyStats: [], topPatterns: [], tracking: null }
       const funnelsData = funnelsRes.ok ? await funnelsRes.json() : { steps: [] }
       setStats({ dailyStats: analyticsData.dailyStats ?? [], topPatterns: analyticsData.topPatterns ?? [] })
       setFunnelSteps(funnelsData.steps ?? [])
+      setTracking((analyticsData.tracking as Record<string, unknown> | null | undefined) ?? null)
     } catch {
       setStats({ dailyStats: [], topPatterns: [] })
       setFunnelSteps([])
+      setTracking(null)
     } finally {
       setLoading(false)
     }
@@ -325,7 +332,7 @@ export default function AdminAnalyticsPage() {
       </div>
 
       <div className="p-6">
-        {loading && activeTab === 'overview' ? (
+        {loading && (activeTab === 'overview' || activeTab === 'funnels' || activeTab === 'tracking') ? (
           <p className="text-gray-500 dark:text-gray-500">Loading...</p>
         ) : (
           <>
@@ -457,6 +464,217 @@ export default function AdminAnalyticsPage() {
                   <p className="text-gray-500 dark:text-gray-500">
                     No analytics data yet. Run the daily cron job to populate stats.
                   </p>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'tracking' && (
+              <div className="space-y-6">
+                {!tracking ? (
+                  <p className="text-gray-500 dark:text-gray-400">
+                    No tracking aggregates returned. Apply migration{' '}
+                    <code className="text-sm bg-gray-200 dark:bg-gray-700 px-1 rounded">122_tracking_tables.sql</code>{' '}
+                    and ensure the admin analytics request succeeds.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Window: last{' '}
+                      <strong>{typeof tracking.windowDays === 'number' ? tracking.windowDays : 7}</strong> days
+                      (UTC). DAU uses distinct logged-in users in{' '}
+                      <code className="text-xs bg-gray-200 dark:bg-gray-700 px-1 rounded">page_views</code> today.
+                    </p>
+                    {typeof tracking.retentionError === 'string' && tracking.retentionError ? (
+                      <p className="text-sm text-amber-700 dark:text-amber-300">
+                        Retention RPC note: {tracking.retentionError}
+                      </p>
+                    ) : null}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+                      <MetricCard
+                        title="DAU (today, UTC)"
+                        value={Number(tracking.dau ?? 0)}
+                        icon={Users}
+                      />
+                      <MetricCard
+                        title="Morning planners (window)"
+                        value={Number(tracking.morningDistinctUsers ?? 0)}
+                        icon={Activity}
+                      />
+                      <MetricCard
+                        title="Evening reviews (window)"
+                        value={Number(tracking.eveningDistinctUsers ?? 0)}
+                        icon={Activity}
+                      />
+                      <MetricCard
+                        title="Active calendar subs"
+                        value={Number(tracking.calendarActiveSubscribers ?? 0)}
+                        icon={Zap}
+                      />
+                      <MetricCard
+                        title="Feed fetches (window)"
+                        value={Number(tracking.calendarFeedRequestsInWindow ?? 0)}
+                        icon={Zap}
+                      />
+                      <MetricCard
+                        title="Email open rate"
+                        value={`${Number(tracking.emailOpenRatePct ?? 0)}%`}
+                        icon={TrendingUp}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <ChartCard title="Day retention (signup cohort 31–120d ago)" exportable={false}>
+                        {(() => {
+                          const r = (tracking.retention ?? {}) as Record<string, unknown>
+                          const data = [
+                            { name: 'D+1', pct: Number(r.d1_pct ?? 0) },
+                            { name: 'D+1–3', pct: Number(r.d3_pct ?? 0) },
+                            { name: 'D+1–7', pct: Number(r.d7_pct ?? 0) },
+                            { name: 'D+1–30', pct: Number(r.d30_pct ?? 0) },
+                          ]
+                          return (
+                            <ResponsiveContainer width="100%" height={280}>
+                              <BarChart data={data}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                <XAxis dataKey="name" stroke="#94a3b8" />
+                                <YAxis stroke="#94a3b8" unit="%" />
+                                <Tooltip
+                                  contentStyle={{ backgroundColor: NAVY, color: '#fff', border: 'none' }}
+                                  formatter={(v) => [`${v ?? 0}%`, 'Retention']}
+                                />
+                                <Bar dataKey="pct" fill={CORAL} name="%" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          )
+                        })()}
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                          Cohort size:{' '}
+                          {Number((tracking.retention as Record<string, unknown> | undefined)?.cohort_users ?? 0)}{' '}
+                          users. Activity = morning task or evening review on calendar day.
+                        </p>
+                      </ChartCard>
+
+                      <ChartCard title="Session sources (UTM events, window)" exportable={false}>
+                        {Array.isArray(tracking.sessionSourceBreakdown) &&
+                        tracking.sessionSourceBreakdown.length > 0 ? (
+                          <ResponsiveContainer width="100%" height={280}>
+                            <PieChart>
+                              <Pie
+                                data={tracking.sessionSourceBreakdown as { name: string; value: number }[]}
+                                cx="50%"
+                                cy="50%"
+                                labelLine={false}
+                                label={({ name, percent }) =>
+                                  `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
+                                }
+                                outerRadius={100}
+                                dataKey="value"
+                              >
+                                {(tracking.sessionSourceBreakdown as { name: string }[]).map((_, i) => (
+                                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                                ))}
+                              </Pie>
+                              <Tooltip
+                                contentStyle={{ backgroundColor: NAVY, color: '#fff', border: 'none' }}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        ) : (
+                          <p className="text-gray-500 dark:text-gray-400 py-12 text-sm">
+                            No session source events yet. Link with{' '}
+                            <code className="text-xs bg-gray-200 dark:bg-gray-700 px-1 rounded">
+                              ?utm_source=email
+                            </code>{' '}
+                            etc.
+                          </p>
+                        )}
+                      </ChartCard>
+                    </div>
+
+                    <ChartCard title="New calendar subscription rows (by day, window)" exportable={false}>
+                      {Array.isArray(tracking.calendarSubscriptionsOverTime) &&
+                      tracking.calendarSubscriptionsOverTime.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={280}>
+                          <LineChart data={tracking.calendarSubscriptionsOverTime as { date: string; count: number }[]}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                            <XAxis dataKey="date" stroke="#94a3b8" />
+                            <YAxis stroke="#94a3b8" allowDecimals={false} />
+                            <Tooltip
+                              contentStyle={{ backgroundColor: NAVY, color: '#fff', border: 'none' }}
+                            />
+                            <Line type="monotone" dataKey="count" stroke={EMERALD} name="Subscriptions" />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">No subscription rows in this window.</p>
+                      )}
+                    </ChartCard>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <ChartCard title="Calendar subscribers by source (active)" exportable={false}>
+                        {Array.isArray(tracking.calendarSubscriptionsBySource) &&
+                        tracking.calendarSubscriptionsBySource.length > 0 ? (
+                          <ResponsiveContainer width="100%" height={260}>
+                            <BarChart
+                              data={
+                                tracking.calendarSubscriptionsBySource as { source: string; count: number }[]
+                              }
+                            >
+                              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                              <XAxis dataKey="source" stroke="#94a3b8" />
+                              <YAxis stroke="#94a3b8" allowDecimals={false} />
+                              <Tooltip
+                                contentStyle={{ backgroundColor: NAVY, color: '#fff', border: 'none' }}
+                              />
+                              <Bar dataKey="count" fill={NAVY} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        ) : (
+                          <p className="text-gray-500 dark:text-gray-400 text-sm">No active subscription rows.</p>
+                        )}
+                      </ChartCard>
+
+                      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                        <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">
+                          Email performance (window)
+                        </h2>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                          Sent: {Number(tracking.emailSentInWindow ?? 0)} · Opens:{' '}
+                          {Number(tracking.emailOpensInWindow ?? 0)} · Clicks:{' '}
+                          {Number(tracking.emailClicksInWindow ?? 0)} · Click rate:{' '}
+                          {Number(tracking.emailClickRatePct ?? 0)}%
+                        </p>
+                        <div className="overflow-x-auto max-h-72 overflow-y-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b dark:border-gray-600 text-left">
+                                <th className="py-2 pr-2">Type</th>
+                                <th className="py-2 pr-2">Sent</th>
+                                <th className="py-2 pr-2">Open %</th>
+                                <th className="py-2 pr-2">Click %</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Array.isArray(tracking.emailByType) &&
+                                (tracking.emailByType as { email_type: string; sent: number; open_rate_pct: number; click_rate_pct: number }[]).map(
+                                  (row) => (
+                                    <tr key={row.email_type} className="border-t dark:border-gray-700">
+                                      <td className="py-2 pr-2 font-mono text-xs">{row.email_type}</td>
+                                      <td className="py-2 pr-2">{row.sent}</td>
+                                      <td className="py-2 pr-2">{row.open_rate_pct}%</td>
+                                      <td className="py-2 pr-2">{row.click_rate_pct}%</td>
+                                    </tr>
+                                  )
+                                )}
+                            </tbody>
+                          </table>
+                        </div>
+                        {(!Array.isArray(tracking.emailByType) || tracking.emailByType.length === 0) && (
+                          <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">No email logs in window.</p>
+                        )}
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             )}

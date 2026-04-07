@@ -33,6 +33,7 @@ import { checkAndPersistBadgeUnlocks } from '@/lib/badges/check-badge-unlocks'
 import { calculateStreakForUser } from '@/lib/streak-calculate'
 import { renderEmailTemplate } from '@/lib/email/templates'
 import { sendEmailWithTracking } from '@/lib/email/sender'
+import { buildPersonalizedEmailContext } from '@/lib/email/personalization'
 import { sendInsightFirstUnlockEmail } from '@/lib/email/send-insight-first-unlock-email'
 import { sendFounderArchetypeFullEmail } from '@/lib/email/send-founder-archetype-full-email'
 import { getDaysWithEntries } from '@/lib/founder-dna/days-with-entries'
@@ -71,7 +72,9 @@ export async function loadFounderJourneyPayload(userId: string): Promise<Founder
           .eq('user_id', userId),
         db
           .from('user_profiles')
-          .select('created_at, current_streak, unlocked_features, profile_completed_at, timezone, badges, has_seen_morning_tour, founder_personality, total_quick_wins')
+          .select(
+            'created_at, current_streak, unlocked_features, profile_completed_at, timezone, badges, has_seen_morning_tour, founder_personality, total_quick_wins, archetype_updated_at'
+          )
           .eq('id', userId)
           .maybeSingle(),
         db
@@ -97,9 +100,15 @@ export async function loadFounderJourneyPayload(userId: string): Promise<Founder
 
     if ([7, 30, 60, 90].includes(displayCurrentStreak)) {
       try {
+        const ctx = await buildPersonalizedEmailContext(userId)
+        const authRow = await db.auth.admin.getUserById(userId)
         const rendered = renderEmailTemplate(
           'streak_milestone',
-          { name: undefined, email: undefined },
+          {
+            name: ctx.userName,
+            email: authRow.data.user?.email,
+            login_count: ctx.loginCount,
+          },
           { streak: displayCurrentStreak }
         )
         await sendEmailWithTracking({
@@ -699,6 +708,7 @@ export async function loadFounderJourneyPayload(userId: string): Promise<Founder
       archetypeStatus,
       profileComplete,
       userTimeZone,
+      archetypeUpdatedAt: (profile as { archetype_updated_at?: string | null })?.archetype_updated_at ?? null,
     })
 
     const newlyUnlockedFeatures = unlockedFeatures.filter((f) => !featureNamesBeforeProgressiveUnlocks.has(f.name))

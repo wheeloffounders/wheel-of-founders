@@ -22,6 +22,46 @@ export function getUserTimezoneFromProfile(
   }
 }
 
+/** IANA zone from the runtime (browser or Node). Null if unavailable. */
+export function getBrowserTimeZone(): string | null {
+  if (typeof Intl === 'undefined') return null
+  try {
+    const z = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return typeof z === 'string' && z.length > 0 ? z : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Prefer `user_profiles.timezone`; if unset/invalid, use `browserFallback` (from the client).
+ * Otherwise UTC — avoids “first day” users inheriting the server’s zone.
+ */
+export function resolveUserTimeZone(
+  row: { timezone?: string | null } | null | undefined,
+  browserFallback?: string | null
+): string {
+  const raw = row?.timezone?.trim()
+  if (raw) {
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: raw })
+      return raw
+    } catch {
+      /* fall through */
+    }
+  }
+  const b = typeof browserFallback === 'string' ? browserFallback.trim() : ''
+  if (b) {
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: b })
+      return b
+    } catch {
+      /* fall through */
+    }
+  }
+  return DEFAULT_USER_TIMEZONE
+}
+
 /**
  * Calendar days between signup and now in the user's timezone (0 on signup day).
  */
@@ -219,11 +259,18 @@ export function getLastCompletedIsoWeekRangeYmdInTimeZone(
   return { weekStart, weekEnd }
 }
 
+/** Legacy narrow window: local 1st at 00:00 only. Prefer `isUserLocalFirstCalendarDayOfMonth` for crons. */
 export function shouldRunMonthlyInsightForUser(now: Date, timeZone: string): boolean {
   const ymd = formatInTimeZone(now, timeZone, 'yyyy-MM-dd')
   const d = parseInt(ymd.split('-')[2], 10)
   const h = parseInt(formatInTimeZone(now, timeZone, 'H'), 10)
   return d === 1 && h === 0
+}
+
+/** User's local calendar date is the 1st (any hour). */
+export function isUserLocalFirstCalendarDayOfMonth(now: Date, timeZone: string): boolean {
+  const ymd = formatInTimeZone(now, timeZone, 'yyyy-MM-dd')
+  return parseInt(ymd.split('-')[2], 10) === 1
 }
 
 function lastDayOfMonthUtcCalendar(year: number, month1to12: number): number {
@@ -250,12 +297,21 @@ export function getPreviousMonthRangeYmdInTimeZone(
   return { monthStart, monthEnd }
 }
 
+/** Legacy narrow window: quarter-start local days at 00:00 only. Prefer `isUserLocalQuarterStartCalendarDay` for crons. */
 export function shouldRunQuarterlyInsightForUser(now: Date, timeZone: string): boolean {
   const ymd = formatInTimeZone(now, timeZone, 'yyyy-MM-dd')
-  const [y, m, d] = ymd.split('-').map(Number)
+  const [, m, d] = ymd.split('-').map(Number)
   const h = parseInt(formatInTimeZone(now, timeZone, 'H'), 10)
   const quarterStarts = [1, 4, 7, 10]
   return d === 1 && quarterStarts.includes(m) && h === 0
+}
+
+/** Jan 1 / Apr 1 / Jul 1 / Oct 1 in user TZ (any hour). */
+export function isUserLocalQuarterStartCalendarDay(now: Date, timeZone: string): boolean {
+  const ymd = formatInTimeZone(now, timeZone, 'yyyy-MM-dd')
+  const [, m, d] = ymd.split('-').map(Number)
+  const quarterStarts = [1, 4, 7, 10]
+  return d === 1 && quarterStarts.includes(m)
 }
 
 export function getPreviousQuarterRangeYmdInTimeZone(

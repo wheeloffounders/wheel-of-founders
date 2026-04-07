@@ -51,7 +51,7 @@ export function FirstDayBadgeModal({ isOpen, onClose, onContinue, insight }: Fir
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           aria-labelledby="first-day-badge-title"
@@ -62,7 +62,7 @@ export function FirstDayBadgeModal({ isOpen, onClose, onContinue, insight }: Fir
           onClick={onClose}
         >
           <motion.div
-            className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 text-left max-h-[90vh] overflow-y-auto"
+            className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full px-6 pt-6 text-left max-h-[90vh] overflow-y-auto pb-[calc(10rem+env(safe-area-inset-bottom,0px))]"
             initial={{ opacity: 0, scale: 0.92, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.92, y: 10 }}
@@ -101,18 +101,17 @@ export function FirstDayBadgeModal({ isOpen, onClose, onContinue, insight }: Fir
 
             <hr className="border-gray-200 dark:border-gray-700 mb-4" />
 
-            <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-              🌙 The real magic happens tonight.
-            </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-              After your evening reflection, Mrs. Deer will show you:
+            <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 leading-relaxed">
+              The Strategy is set.{' '}
+              <span className="font-medium text-indigo-600 dark:text-indigo-400">
+                Mrs. Deer is now tracking your patterns
+              </span>{' '}
+              in the background. Ready to execute?
             </p>
-            <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1 list-disc list-inside mb-4">
-              <li>What today actually built</li>
-              <li>One pattern you might have missed</li>
-            </ul>
-            <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400 mb-6">
-              <em>Come back after 7 PM to see it.</em>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-6 leading-relaxed">
+              Tonight, after your evening reflection, she&apos;ll show what today built and one pattern you might have
+              missed —{' '}
+              <span className="font-semibold text-[#152b50] dark:text-sky-200">your dashboard is live now</span>.
             </p>
 
             <button
@@ -121,7 +120,7 @@ export function FirstDayBadgeModal({ isOpen, onClose, onContinue, insight }: Fir
               className="w-full py-3 rounded-lg font-medium text-white hover:opacity-90 transition"
               style={{ backgroundColor: colors.coral.DEFAULT }}
             >
-              Continue →
+              Enter My Dashboard →
             </button>
           </motion.div>
         </motion.div>

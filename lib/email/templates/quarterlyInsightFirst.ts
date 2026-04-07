@@ -45,6 +45,6 @@ Read my quarterly trajectory: ${appUrlWithUtm('/quarterly', 'quarterly_insight_f
 
 After this, a fresh read lands at the start of each quarter — January, April, July, October — looking back at the arc that just closed.
 
-— Mrs. Deer${renderTextFooter()}`
+— Mrs. Deer${renderTextFooter(user)}`
   },
 }

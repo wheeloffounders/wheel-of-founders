@@ -11,7 +11,9 @@ const toDateStr = (d: Date) => d.toISOString().split('T')[0]
 export async function POST(req: NextRequest) {
   try {
     return withRateLimit(req, 'emergency', async () => {
-      const { description, severity, userId } = await req.json()
+      const { description, severity, userId, location: locationRaw } = await req.json()
+      const location =
+        typeof locationRaw === 'string' && locationRaw.trim() ? locationRaw.trim().slice(0, 220) : null
 
       let actualUserId = userId
       if (!actualUserId) {
@@ -32,6 +34,7 @@ export async function POST(req: NextRequest) {
           description,
           severity: severity || 'contained',
           resolved: false,
+          location,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -46,21 +49,15 @@ export async function POST(req: NextRequest) {
           actualUserId,
           description,
           severity || 'contained',
-          today
+          today,
+          undefined,
+          emergency?.id ?? null
         )
 
         if (insight && emergency?.id) {
           const watermarked = addWatermark(insight, actualUserId)
           await (db.from('emergencies') as any).update({ insight: watermarked }).eq('id', emergency.id)
           insight = watermarked
-          await (db.from('personal_prompts') as any).insert({
-            user_id: actualUserId,
-            prompt_type: 'emergency',
-            prompt_text: watermarked,
-            prompt_date: today,
-            emergency_id: emergency.id,
-            generated_at: new Date().toISOString()
-          })
         }
       } catch (insightError) {
         console.error('Failed to generate emergency insight:', insightError)

@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No valid page views' }, { status: 400 })
     }
 
-    const { error } = await recordPageViewsBatch(items, userId)
+    const { error } = await recordPageViewsBatch(items, userId, req.headers.get('user-agent'))
     if (error) {
       return NextResponse.json({ error: 'Failed to insert' }, { status: 500 })
     }

@@ -12,8 +12,8 @@ export const streakMilestoneTemplate: EmailTemplate = {
       ctaLabel: 'View Your Journey',
       ctaUrl: appUrlWithUtm('/founder-dna/journey', 'streak_milestone'),
     }),
-  getText: (_user, data) =>
+  getText: (user, data) =>
     `${String(data?.streak || '')} days and counting.${data?.personalizedInsight ? `\n${String(data.personalizedInsight)}` : ''}` +
-    renderTextFooter(),
+    renderTextFooter(user),
 }
 

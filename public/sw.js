@@ -1,10 +1,17 @@
-// Version: 2026.03.10 - Push logging and error handling
+// Version: 2026.04.04 - Bypass API/_next so slow dev / timeouts are not masked as 503 offline
 // Bump this when you change the SW so browsers pick up the new file
 
-const CACHE_NAME = 'wof-v5'
+const CACHE_NAME = 'wof-v7'
 
 self.addEventListener('install', function (event) {
   console.log('[sw] install', CACHE_NAME)
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(function (cache) {
+      return cache.add('/offline.html').catch(function (e) {
+        console.warn('[sw] could not cache offline.html', e)
+      })
+    })
+  )
   self.skipWaiting()
 })
 
@@ -91,18 +98,48 @@ self.addEventListener('notificationclick', function (event) {
   )
 })
 
+function offlineNavigationResponse() {
+  return (
+    caches.match('/offline.html').then(function (cached) {
+      if (cached) return cached
+      return new Response(
+        '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width"/><title>Offline</title></head><body><p>Offline. <a href="/">Home</a></p></body></html>',
+        { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+      )
+    })
+  )
+}
+
+function offlineApiResponse() {
+  return new Response(JSON.stringify({ error: 'offline', message: 'Network unavailable' }), {
+    status: 503,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
 self.addEventListener('fetch', event => {
+  const url = new URL(event.request.url)
+  // Never cache or replace these with synthetic offline responses. A failed fetch must
+  // surface as a real network error — otherwise the SW returns 503 for uncached JS/API
+  // when the dev server is slow, Supabase times out, or a chunk fails to load.
+  if (
+    url.origin === self.location.origin &&
+    (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/'))
+  ) {
+    event.respondWith(fetch(event.request))
+    return
+  }
+
   // For HTML pages (navigation requests) - ALWAYS go to network
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
-        .then(response => {
-          // Never cache HTML
+        .then(function (response) {
           return response
         })
-        .catch(() => {
-          // If offline, try to serve a minimal offline page
-          return caches.match('/offline.html')
+        .catch(function () {
+          // Must always resolve to a Response — caches.match('/offline.html') was undefined when file missing
+          return offlineNavigationResponse()
         })
     )
     return
@@ -111,20 +148,32 @@ self.addEventListener('fetch', event => {
   // For assets (JS, CSS, images) - network-first, cache fallback
   // Skip caching for non-GET - Cache API does not support POST/PUT/etc
   if (event.request.method !== 'GET') {
-    event.respondWith(fetch(event.request))
+    event.respondWith(
+      fetch(event.request).catch(function () {
+        return offlineApiResponse()
+      })
+    )
     return
   }
   event.respondWith(
     fetch(event.request)
-      .then(response => {
+      .then(function (response) {
         if (response.status === 200) {
           const responseClone = response.clone()
-          caches.open(CACHE_NAME).then(cache => {
+          caches.open(CACHE_NAME).then(function (cache) {
             cache.put(event.request, responseClone)
           })
         }
         return response
       })
-      .catch(() => caches.match(event.request))
+      .catch(function () {
+        return caches.match(event.request).then(function (cached) {
+          if (cached) return cached
+          return new Response('Unavailable offline', {
+            status: 503,
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          })
+        })
+      })
   )
 })

@@ -178,6 +178,7 @@ export type ArchetypeUnlockChecklist = {
 /** 21–30 days: emerging read only (no full profile / breakdown). */
 export type ArchetypeApiPreviewResponse = {
   status: 'preview'
+  daysActive: number
   primary: {
     name: string
     label: string
@@ -185,15 +186,35 @@ export type ArchetypeApiPreviewResponse = {
     description: string
     confidence: number
   }
+  distribution: Array<{
+    name: string
+    label: string
+    icon: string
+    percentage: number
+  }>
   message: string
   daysUntilFull: number
   topSignals: ArchetypeSignalBreakdown[]
   unlockChecklist: ArchetypeUnlockChecklist
 }
 
+export type ArchetypeEvolutionHistoryEntry = {
+  fromPrimary: string
+  toPrimary: string
+  at: string
+  periodLabel: string
+  strategicPctRolling?: number
+}
+
 /** 31+ days: full archetype + personality profile. */
 export type ArchetypeApiFullResponse = {
   status: 'full'
+  /** ISO — last time the full archetype snapshot was computed (90-day cadence). */
+  archetypeUpdatedAt?: string | null
+  /** ISO — earliest automatic recompute after archetypeUpdatedAt. */
+  nextArchetypeUpdateAt?: string | null
+  /** True when body was served from DB snapshot this request. */
+  fromCache?: boolean
   primary: {
     name: string
     label: string
@@ -217,6 +238,8 @@ export type ArchetypeApiFullResponse = {
   personalityProfile: FounderPersonalityProfile
   breakdown: ArchetypeBreakdown
   unlockChecklist: ArchetypeUnlockChecklist
+  /** Newest first; from quarterly rolling-window reassessment. */
+  evolutionHistory?: ArchetypeEvolutionHistoryEntry[]
 }
 
 export type ArchetypeApiResponse = ArchetypeApiPreviewResponse | ArchetypeApiFullResponse

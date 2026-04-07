@@ -50,7 +50,11 @@ import { showRefreshButton } from '@/lib/env'
 import { LockedFeature } from '@/components/LockedFeature'
 import { InsightLetterClosing } from '@/components/insights/InsightLetterClosing'
 import { getWeeklyInsightProgress } from '@/lib/progress'
-import { resolveEmailDisplayName } from '@/lib/email/personalization'
+import { resolveEmailDisplayName } from '@/lib/email/personalization-display'
+import type { ProEntitlementProfile } from '@/lib/auth/is-pro'
+import { getTrialStatus } from '@/lib/auth/trial-status'
+import { isTrialExpirySimulationEnabled } from '@/lib/trial-simulation'
+import { StrategicProLockOverlay } from '@/components/pro/StrategicProLockOverlay'
 
 const MOOD_LABELS: Record<number, string> = {
   1: 'Tough',
@@ -146,8 +150,51 @@ export default function WeeklyPage() {
     null,
   )
   const [insightGreetingName, setInsightGreetingName] = useState<string>('Founder')
+  const [trialStrategicLocked, setTrialStrategicLocked] = useState(false)
 
   const lastCompletedWeekStart = format(subWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), 1), 'yyyy-MM-dd')
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const session = await getUserSession()
+      if (!session?.user?.id) return
+      const { data } = await supabase
+        .from('user_profiles')
+        .select(
+          'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at'
+        )
+        .eq('id', session.user.id)
+        .maybeSingle()
+      if (cancelled) return
+      const p = data as ProEntitlementProfile | null
+      const locked = getTrialStatus(p, { simulateExpired: isTrialExpirySimulationEnabled() }).status === 'expired'
+      setTrialStrategicLocked(locked)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const onSim = () => {
+      void (async () => {
+        const session = await getUserSession()
+        if (!session?.user?.id) return
+        const { data } = await supabase
+          .from('user_profiles')
+          .select(
+            'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at'
+          )
+          .eq('id', session.user.id)
+          .maybeSingle()
+        const p = data as ProEntitlementProfile | null
+        setTrialStrategicLocked(getTrialStatus(p, { simulateExpired: isTrialExpirySimulationEnabled() }).status === 'expired')
+      })()
+    }
+    window.addEventListener('wof-trial-sim-changed', onSim)
+    return () => window.removeEventListener('wof-trial-sim-changed', onSim)
+  }, [])
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -774,12 +821,6 @@ export default function WeeklyPage() {
               : undefined
           }
         />
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          Explore related views:{' '}
-          <Link href="/founder-dna/rhythm" className="text-[#ef725c] hover:underline">Rhythm</Link>,{' '}
-          <Link href="/founder-dna/patterns" className="text-[#ef725c] hover:underline">Patterns</Link>,{' '}
-          <Link href="/founder-dna/journey" className="text-[#ef725c] hover:underline">Journey</Link>.
-        </p>
       </div>
 
       {/* Only show fallback if auto-repair already ran and failed (e.g. cron down + API error) */}
@@ -968,20 +1009,44 @@ export default function WeeklyPage() {
             </Card>
           )}
 
-          {(patternForQuestion || allTopics.length > 0) && (
-            <Card className="mb-8">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
-                  <Sparkles className="w-5 h-5" style={{ color: colors.amber.DEFAULT }} />
-                  Patterns Mrs. Deer, your AI companion noticed
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <MrsDeerMessageBubble expression="thoughtful">
-                  <PatternQuestion pattern={patternForQuestion} allTopics={allTopics} />
-                </MrsDeerMessageBubble>
-              </CardContent>
-            </Card>
+          {((patternForQuestion || allTopics.length > 0) || data.avgMood != null || data.avgEnergy != null) && (
+            <StrategicProLockOverlay active={trialStrategicLocked} variant="insights_analytics">
+              <div className="space-y-8">
+                {(patternForQuestion || allTopics.length > 0) && (
+                  <Card className="mb-8">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
+                        <Sparkles className="w-5 h-5" style={{ color: colors.amber.DEFAULT }} />
+                        Patterns Mrs. Deer, your AI companion noticed
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <MrsDeerMessageBubble expression="thoughtful">
+                        <PatternQuestion pattern={patternForQuestion} allTopics={allTopics} />
+                      </MrsDeerMessageBubble>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {(data.avgMood != null || data.avgEnergy != null) && (
+                  <Card className="mb-8">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
+                        <Heart className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
+                        Mood & Energy
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <MoodChart
+                        days={moodChartDays}
+                        avgMood={data.avgMood}
+                        avgEnergy={data.avgEnergy}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </StrategicProLockOverlay>
           )}
 
           {data.primaryGoal && (
@@ -1039,24 +1104,6 @@ export default function WeeklyPage() {
             </Card>
           )}
 
-          {(data.avgMood != null || data.avgEnergy != null) && (
-            <Card className="mb-8">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
-                  <Heart className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
-                  Mood & Energy
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <MoodChart
-                  days={moodChartDays}
-                  avgMood={data.avgMood}
-                  avgEnergy={data.avgEnergy}
-                />
-              </CardContent>
-            </Card>
-          )}
-
           <InsightLetterClosing cadence="week" className="mt-2" />
         </div>
       )}
@@ -1071,6 +1118,12 @@ export default function WeeklyPage() {
             No data for this week yet. Start your Morning Plan and Evening Reviews to build your insights.
           </p>
         )}
+      <p className="text-sm text-gray-600 dark:text-gray-300 mt-8">
+        Explore related views:{' '}
+        <Link href="/founder-dna/rhythm" className="text-[#ef725c] hover:underline">Rhythm</Link>,{' '}
+        <Link href="/founder-dna/patterns" className="text-[#ef725c] hover:underline">Patterns</Link>,{' '}
+        <Link href="/founder-dna/journey" className="text-[#ef725c] hover:underline">Journey</Link>.
+      </p>
       <div className="pt-4 flex justify-end">
         <Button variant="outline" onClick={handleCopySummary} className="gap-2">
           {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}

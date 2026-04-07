@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { getClientAuthHeaders } from '@/lib/api/fetch-json'
 
 export type MicroLessonLocation = 'dashboard' | 'morning' | 'evening'
 
@@ -30,7 +31,11 @@ export function useMicroLesson(location: MicroLessonLocation = 'dashboard') {
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/micro-lesson?location=${location}`, { credentials: 'include' })
+      const headers = await getClientAuthHeaders()
+      const res = await fetch(`/api/micro-lesson?location=${location}`, {
+        credentials: 'include',
+        headers,
+      })
       const json = await res.json()
       if (!res.ok || !json.lesson) {
         setLesson(null)
@@ -51,9 +56,10 @@ export function useMicroLesson(location: MicroLessonLocation = 'dashboard') {
   const submitFeedback = useCallback(
     async (payload: { response: MicroLessonFeedbackResponse; lessonMessage: string; actionTaken?: boolean }) => {
       try {
+        const auth = await getClientAuthHeaders()
         await fetch('/api/micro-lesson', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...auth },
           credentials: 'include',
           body: JSON.stringify({
             action_taken: payload.actionTaken === true,

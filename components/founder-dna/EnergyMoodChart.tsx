@@ -11,10 +11,19 @@ import {
   Tooltip,
 } from 'recharts'
 import { Loader2, Lock, AlertTriangle } from 'lucide-react'
-import type { EnergyTrendsResponse } from '@/lib/types/founder-dna'
+import { DnaInsightBlock } from '@/components/founder-dna/DnaInsightBlock'
+import type { EnergyMoodInsightType, EnergyTrendsResponse } from '@/lib/types/founder-dna'
+import type { InsightPresentationKind } from '@/lib/founder-dna/insight-card-presentation'
+import { usePrimaryArchetypeName } from '@/lib/hooks/usePrimaryArchetypeName'
 import { SCHEDULE_ENERGY_MIN_DAYS } from '@/lib/founder-dna/unlock-schedule-config'
 
 type Point = { date: string; mood: number; energy: number }
+
+function energyInsightKind(t: EnergyMoodInsightType): InsightPresentationKind {
+  if (t === 'energy_drop' || t === 'weekly_rhythm') return 'energy'
+  if (t === 'mood_peak' || t === 'correlation' || t === 'recovery') return 'pattern'
+  return 'default'
+}
 
 function coerceScale(n: unknown) {
   const v = typeof n === 'number' ? n : Number(n)
@@ -48,6 +57,7 @@ function TooltipContent({
 }
 
 export function EnergyMoodChart() {
+  const currentArchetype = usePrimaryArchetypeName()
   const [loading, setLoading] = useState(true)
   const [locked, setLocked] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -230,17 +240,15 @@ export function EnergyMoodChart() {
           <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
             Mrs. Deer&apos;s observations
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {insights.map((insight, i) => (
-              <div
+              <DnaInsightBlock
                 key={`${insight.type}-${i}-${insight.description.slice(0, 24)}`}
-                className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg"
-              >
-                <span className="text-lg shrink-0" aria-hidden>
-                  ✨
-                </span>
-                <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{insight.description}</p>
-              </div>
+                description={insight.description}
+                kind={energyInsightKind(insight.type)}
+                morningIntent="energy"
+                currentArchetype={currentArchetype}
+              />
             ))}
           </div>
         </div>

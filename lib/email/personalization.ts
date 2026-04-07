@@ -1,8 +1,12 @@
 import { getServerSupabase } from '@/lib/server-supabase'
+import type { AuthUserLike } from '@/lib/email/personalization-display'
+import { resolveEmailDisplayName } from '@/lib/email/personalization-display'
 
 export interface EmailContext {
   userName: string
   streak: number
+  /** Mirrors `user_profiles.login_count` for email footer social proof */
+  loginCount: number
   recentWin?: string
   unseenWin?: string
   celebrationGap?: string
@@ -14,11 +18,6 @@ export interface EmailContext {
   /** Today's morning decision or top task (for evening check-in copy); requires planDate */
   todaysIntentionSnippet?: string
 }
-
-export type AuthUserLike = {
-  email?: string | null
-  user_metadata?: Record<string, unknown> | null
-} | null
 
 function pickFirstLine(s: string | null | undefined, fallback?: string): string | undefined {
   const v = String(s || '').trim()
@@ -34,72 +33,6 @@ function truncate(s: string, max: number): string {
   const t = s.trim()
   if (t.length <= max) return t
   return `${t.slice(0, max - 1)}…`
-}
-
-/**
- * First name for email greetings: "First Last" → First; "Last, First …" → First;
- * strips trailing comma on tokens. Empty if unparseable.
- */
-export function emailGreetingFromDisplayString(raw: string | null | undefined): string {
-  const t = String(raw ?? '')
-    .trim()
-    .replace(/\s+/g, ' ')
-  if (!t) return ''
-  if (t.includes(',')) {
-    const afterComma = t
-      .split(',')
-      .slice(1)
-      .join(',')
-      .trim()
-    if (afterComma) {
-      const first = afterComma.split(/\s+/)[0]?.replace(/[,;.:]+$/, '') ?? ''
-      return first || afterComma
-    }
-    return t.split(',')[0]?.trim().replace(/[,;.:]+$/, '') ?? t
-  }
-  const firstWord = t.split(/\s+/)[0]?.replace(/[,;.:]+$/, '') ?? ''
-  return firstWord || t
-}
-
-/**
- * 1. preferred_name (first name only) · 2. auth first_name / given_name · 3. profile full name → first name ·
- * 4. email local part (profile then auth) · 5. Founder
- */
-export function resolveEmailDisplayName(
-  profile: {
-    preferred_name?: string | null
-    name?: string | null
-    email_address?: string | null
-  } | null,
-  auth?: AuthUserLike
-): string {
-  const fromPreferred = emailGreetingFromDisplayString(profile?.preferred_name)
-  if (fromPreferred) return fromPreferred
-
-  const meta = auth?.user_metadata
-  const fn = meta?.first_name ?? meta?.given_name
-  if (typeof fn === 'string' && fn.trim()) {
-    const g = emailGreetingFromDisplayString(fn)
-    if (g) return g
-  }
-
-  const authFull = meta?.full_name ?? meta?.name
-  if (typeof authFull === 'string' && authFull.trim()) {
-    const g = emailGreetingFromDisplayString(authFull)
-    if (g) return g
-  }
-
-  const fromFull = emailGreetingFromDisplayString(profile?.name)
-  if (fromFull) return fromFull
-
-  const em = (profile?.email_address || auth?.email || '').trim()
-  if (em.includes('@')) {
-    const local = em.split('@')[0] ?? ''
-    const g = emailGreetingFromDisplayString(local.replace(/[._+]/g, ' '))
-    if (g) return g
-    return local || 'Founder'
-  }
-  return 'Founder'
 }
 
 export type BuildPersonalizedEmailContextOptions = {
@@ -126,7 +59,7 @@ export async function buildPersonalizedEmailContext(
     ] = await Promise.all([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (db.from('user_profiles') as any)
-        .select('preferred_name, name, email_address, current_streak')
+        .select('preferred_name, name, email_address, current_streak, login_count')
         .eq('id', userId)
         .maybeSingle(),
       db
@@ -191,6 +124,7 @@ export async function buildPersonalizedEmailContext(
       name?: string | null
       email_address?: string | null
       current_streak?: number | null
+      login_count?: number | null
     } | null) ?? null
     const recentEveningRows = (recentEveningsRes.data ?? []) as Array<{
       wins?: string | null
@@ -238,6 +172,7 @@ export async function buildPersonalizedEmailContext(
     return {
       userName: name || 'Founder',
       streak: Math.max(0, Number(profile?.current_streak || 0)),
+      loginCount: Math.max(0, Number(profile?.login_count ?? 0) || 0),
       recentWin: pickFirstLine(latestEvening?.wins),
       unseenWin: pickFirstLine(weekly?.unseen_wins_pattern),
       celebrationGap: pickFirstLine(celebration?.insight),
@@ -248,6 +183,6 @@ export async function buildPersonalizedEmailContext(
       todaysIntentionSnippet,
     }
   } catch {
-    return { userName: 'Founder', streak: 0 }
+    return { userName: 'Founder', streak: 0, loginCount: 0 }
   }
 }

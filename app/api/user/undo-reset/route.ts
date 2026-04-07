@@ -1,26 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+import type { FullResetBackupTable } from '@/lib/user/reset-account'
 
-type BackupTable =
-  | 'morning_plan_commits'
-  | 'morning_tasks'
-  | 'morning_decisions'
-  | 'evening_reviews'
-  | 'emergencies'
-  | 'weekly_insights'
-  | 'personal_prompts'
-  | 'user_insights'
-  | 'insight_history'
-  | 'weekly_insight_selections'
-  | 'insight_feedback'
-  | 'weekly_insight_feedback'
-  | 'user_unlocks'
-  | 'weekly_insight_debug'
+type BackupTable = FullResetBackupTable
 
+/** Parent rows before children that reference them (e.g. task_postponements → morning_tasks). */
 const RESTORE_PLAN: ReadonlyArray<{ table: BackupTable; onConflict: string }> = [
   { table: 'morning_plan_commits', onConflict: 'user_id,plan_date' },
   { table: 'morning_tasks', onConflict: 'id' },
+  { table: 'task_postponements', onConflict: 'id' },
   { table: 'morning_decisions', onConflict: 'id' },
   { table: 'evening_reviews', onConflict: 'id' },
   { table: 'emergencies', onConflict: 'id' },
@@ -33,6 +22,10 @@ const RESTORE_PLAN: ReadonlyArray<{ table: BackupTable; onConflict: string }> = 
   { table: 'weekly_insight_feedback', onConflict: 'id' },
   { table: 'user_unlocks', onConflict: 'id' },
   { table: 'weekly_insight_debug', onConflict: 'id' },
+  { table: 'monthly_insights', onConflict: 'user_id,month_start' },
+  { table: 'quarterly_insights', onConflict: 'user_id,quarter_start' },
+  { table: 'morning_plan_autosave', onConflict: 'user_id,plan_date' },
+  { table: 'emergency_compose_drafts', onConflict: 'user_id,fire_date' },
 ]
 
 export const dynamic = 'force-dynamic'

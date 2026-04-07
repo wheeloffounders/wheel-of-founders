@@ -31,13 +31,148 @@ export type QuarterlyNarrative = {
   guidingQuestion: GuidingQuestionBlock
 }
 
-const MONTH_HEADING: Record<string, string> = {
-  Family: 'When life had a seat at the table',
-  'App / Product': 'When you built in the open',
-  Community: 'When you reached outward',
-  Health: 'When you protected your energy',
-  Work: 'When you moved the business',
-  Learning: 'When you learned out loud',
+/** Template phrase we never surface as a month hook (was overused when Family led every month). */
+const BANNED_HOOK_SUBSTRING = /when\s+life\s+had\s+a\s+seat\s+at\s+the\s+table/i
+
+/** If hook ends on a dangling preposition, pull one more token or trim back. */
+const TRAILING_PREP = new Set([
+  'of',
+  'for',
+  'with',
+  'to',
+  'by',
+  'in',
+  'on',
+  'at',
+  'from',
+  'as',
+  'about',
+  'into',
+  'onto',
+  'over',
+  'off',
+])
+
+const LEADING_STOPWORDS = new Set([
+  'i',
+  'we',
+  'my',
+  'our',
+  'the',
+  'a',
+  'an',
+  'and',
+  'or',
+  'but',
+  'to',
+  'for',
+  'of',
+  'in',
+  'on',
+  'at',
+  'is',
+  'was',
+  'were',
+  'had',
+  'did',
+  'made',
+  'got',
+  'finally',
+  'actually',
+  'really',
+  'just',
+  'so',
+  'today',
+  'this',
+  'that',
+])
+
+function stripEdgePunct(w: string): string {
+  return w.replace(/^["'([«]+/g, '').replace(/[,.;:!?"')\]]+$/g, '')
+}
+
+function titleCaseHookWords(ws: string[]): string {
+  return ws
+    .map((w) => {
+      const core = stripEdgePunct(w)
+      if (!core) return ''
+      if (core.length <= 3 && /^(of|the|and|at|in|to|a|an)$/i.test(core)) return core.toLowerCase()
+      const first = core.charAt(0).toUpperCase()
+      const rest = core.slice(1)
+      const lower = /[a-z]/.test(rest) ? rest.toLowerCase() : rest
+      return first + lower
+    })
+    .filter(Boolean)
+    .join(' ')
+}
+
+/**
+ * Pull a short, concrete hook (4–7 words) from a win line for month headings.
+ */
+function extractHookFromWinText(raw: string, minWords = 4, maxWords = 7): string | null {
+  const s0 = raw.replace(/\s+/g, ' ').trim()
+  if (s0.length < 14) return null
+  const words = s0.split(/\s+/).map(stripEdgePunct).filter(Boolean)
+  if (words.length < minWords) return null
+
+  let i = 0
+  while (i < words.length && i < 5 && LEADING_STOPWORDS.has(words[i]!.toLowerCase())) {
+    i++
+  }
+
+  const out: string[] = []
+  while (i < words.length && out.length < maxWords) {
+    out.push(words[i]!)
+    i++
+  }
+
+  const finalize = (picked: string[], idx: number): string | null => {
+    const w = [...picked]
+    let j = idx
+    while (
+      w.length > 0 &&
+      j < words.length &&
+      TRAILING_PREP.has(stripEdgePunct(w[w.length - 1]!).toLowerCase())
+    ) {
+      w.push(words[j]!)
+      j++
+      if (w.length > maxWords + 2) break
+    }
+    while (
+      w.length > minWords &&
+      TRAILING_PREP.has(stripEdgePunct(w[w.length - 1]!).toLowerCase())
+    ) {
+      w.pop()
+    }
+    if (w.length < minWords) return null
+    const hook = titleCaseHookWords(w)
+    return BANNED_HOOK_SUBSTRING.test(hook) ? null : hook
+  }
+
+  if (out.length < minWords) {
+    const fb = words.slice(0, Math.min(maxWords, words.length))
+    if (fb.length < minWords) return null
+    return finalize(fb, fb.length)
+  }
+
+  return finalize(out, i)
+}
+
+function monthShortFromLabel(monthLabel: string): string {
+  return monthLabel.split(/\s+/)[0] ?? monthLabel
+}
+
+function hookFromMonthWins(wins: WinWithReviewDate[], skipHooks: Set<string>): string | null {
+  const curated = curateWinsForMonth(wins, 10)
+  for (const w of curated) {
+    const hook = extractHookFromWinText(w.text)
+    if (!hook) continue
+    const key = hook.toLowerCase()
+    if (skipHooks.has(key)) continue
+    skipHooks.add(key)
+    return hook
+  }
+  return null
 }
 
 function toWinWithDate(w: WinWithReviewDate): WinWithDate {
@@ -83,23 +218,54 @@ export function curateWinsForMonth(wins: WinWithReviewDate[], max = 3): WinWithR
   return picked
 }
 
-function monthHeadingFromThemes(monthWins: WinWithReviewDate[], monthLabel: string): string {
+function monthHeadingFromThemes(
+  monthWins: WinWithReviewDate[],
+  monthLabel: string,
+  usedHooks: Set<string>
+): string {
+  const monthShort = monthShortFromLabel(monthLabel)
   const themes = detectWinThemes(monthWins.map(toWinWithDate))
   const t0 = themes[0]?.theme
-  if (t0 && MONTH_HEADING[t0]) return `${monthLabel}: ${MONTH_HEADING[t0]}`
-  if (t0) return `${monthLabel}: ${t0} in focus`
-  return `${monthLabel}: Showing up`
+
+  const hook = hookFromMonthWins(monthWins, usedHooks)
+  if (hook) {
+    return `${monthShort}: ${hook}`
+  }
+
+  if (t0) {
+    return `${monthShort}: ${t0} in your wins`
+  }
+  return `${monthShort}: Showing up`
 }
 
+function clipWinSample(w: WinWithReviewDate | undefined): string {
+  if (!w) return ''
+  const s = w.text.replace(/\s+/g, ' ').trim()
+  return s.length > 140 ? `${s.slice(0, 140)}…` : s
+}
+
+/** Month blurb: cite themes + a real win line—no shared “thread” template. */
 function revelationForMonth(monthWins: WinWithReviewDate[]): string {
   const themes = detectWinThemes(monthWins.map(toWinWithDate))
+  const sampleWin = curateWinsForMonth(monthWins, 1)[0]
+  const sample = clipWinSample(sampleWin)
+
   if (themes.length >= 2) {
-    return `The thread underneath wasn’t just ${themes[0].theme.toLowerCase()} — it was how ${themes[1].theme.toLowerCase()} kept showing up beside it. That’s becoming, not juggling.`
+    const t0 = themes[0]!.theme.toLowerCase()
+    const t1 = themes[1]!.theme.toLowerCase()
+    return sample
+      ? `Wins this month kept naming ${t0} and ${t1}. You wrote, for example: “${sample}”`
+      : `Wins this month clustered around ${t0} and ${t1}—see the samples above for your exact words.`
   }
   if (themes.length === 1) {
-    return `The real shift was quieter than the headlines: you kept returning to ${themes[0].theme.toLowerCase()} until it felt like yours, not a phase.`
+    const t0 = themes[0]!.theme.toLowerCase()
+    return sample
+      ? `The strongest signal in what you logged was ${t0}. One line: “${sample}”`
+      : `The strongest signal in what you logged was ${t0}.`
   }
-  return `Between the lines, you were practicing consistency — the kind that doesn’t need applause to count.`
+  return sample
+    ? `This month showed up in what you wrote—e.g. “${sample}”`
+    : 'You still logged wins this month—the specifics are in the list above.'
 }
 
 function buildTransformation(
@@ -170,8 +336,8 @@ function buildCarried(stats: QuarterlyData['stats'], allWins: WinWithReviewDate[
         }
 
   const s3: CarriedStrength = {
-    title: `stay close to your ${t0} thread`,
-    detail: `Your wins kept echoing ${t0}. That’s not a label — it’s a lever. When you’re overwhelmed, come back to that thread before you add more to the pile.`,
+    title: `stay close to your ${t0} signal`,
+    detail: `Your wins kept echoing ${t0}. When you’re overwhelmed, come back to that pattern in your entries before you add more to the pile.`,
   }
 
   if (completionRate >= 0.55 && stats.totalTasks >= 8) {
@@ -213,13 +379,25 @@ function buildSurprise(allWins: WinWithReviewDate[]): SurpriseBlock {
   }
 }
 
-function buildGuiding(goal: string | null, themes: { theme: string }[]): GuidingQuestionBlock {
+function buildGuiding(
+  goal: string | null,
+  themes: { theme: string }[],
+  quarterlyIntention: string | null
+): GuidingQuestionBlock {
   const top = themes[0]?.theme
   const g = goal?.trim()
+  const qi = quarterlyIntention?.trim()
+
+  if (qi) {
+    return {
+      question: `Against your quarterly intention—“${qi.slice(0, 140)}${qi.length > 140 ? '…' : ''}”—where did this quarter’s wins clearly line up, and where did the week-to-week calendar tell a different story?`,
+      explain: 'Use that intention as the yardstick for the next 90 days—not a generic idea of balance.',
+    }
+  }
   if (g && top) {
     return {
-      question: `What would it look like to move toward “${g.slice(0, 100)}${g.length > 100 ? '…' : ''}” in a way that honors your ${top.toLowerCase()} thread — not as an extra, but as part of the strategy?`,
-      explain: 'This question keeps your next 90 days from becoming a pile of tasks that forget what you’re building for.',
+      question: `What would it look like to move toward “${g.slice(0, 100)}${g.length > 100 ? '…' : ''}” while still making room for the ${top.toLowerCase()} wins you keep choosing?`,
+      explain: 'This question keeps your next 90 days tied to what you actually log, not a performance of “having it all.”',
     }
   }
   if (g) {
@@ -237,16 +415,18 @@ function buildGuiding(goal: string | null, themes: { theme: string }[]): Guiding
 export function buildQuarterlyNarrative(data: QuarterlyData, profile: QuarterlyUserProfile): QuarterlyNarrative {
   const allWins = data.allWinsFlat
   const goal = profile.primary_goal_text
+  const quarterlyIntention = profile.quarterly_intention ?? null
 
   const monthsWithWins = data.winsByMonth.filter((m) => m.wins.length > 0)
+  const usedMonthHooks = new Set<string>()
   const shiftShowedUp: ShiftMonthBlock[] = monthsWithWins.map((m) => {
     const curated = curateWinsForMonth(m.wins, 3)
     return {
       monthLabel: m.label,
       monthKey: m.monthKey,
-      heading: monthHeadingFromThemes(m.wins, m.label),
+      heading: monthHeadingFromThemes(m.wins, m.label, usedMonthHooks),
       winSamples: curated.map((w) => w.text),
-      revelation: revelationForMonth(m.wins, m.monthKey),
+      revelation: revelationForMonth(m.wins),
     }
   })
 
@@ -254,7 +434,7 @@ export function buildQuarterlyNarrative(data: QuarterlyData, profile: QuarterlyU
   const carried = buildCarried(data.stats, allWins)
   const surprise = buildSurprise(allWins)
   const themes = detectWinThemes(allWins.map(toWinWithDate))
-  const guiding = buildGuiding(goal, themes)
+  const guiding = buildGuiding(goal, themes, quarterlyIntention)
 
   if (allWins.length === 0) {
     return {
@@ -284,7 +464,7 @@ export function buildQuarterlyNarrative(data: QuarterlyData, profile: QuarterlyU
         headline: 'You’re still here — still choosing to look back and steer.',
         body: 'That kind of follow-through is easy to underestimate. It’s also how meaningful quarters begin.',
       },
-      guidingQuestion: buildGuiding(goal, []),
+      guidingQuestion: buildGuiding(goal, [], quarterlyIntention),
     }
   }
 

@@ -3,7 +3,7 @@
  * Matches morning page ACTION_PLAN_OPTIONS_2.
  */
 export const ACTION_PLAN_LABELS: Record<string, string> = {
-  my_zone: 'Focus Time',
+  my_zone: 'Milestone',
   systemize: 'Systemize',
   delegate_founder: 'Delegate',
   eliminate_founder: 'Eliminate',

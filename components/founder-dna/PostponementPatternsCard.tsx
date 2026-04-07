@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2, AlertTriangle, Lock } from 'lucide-react'
+import { DnaInsightBlock } from '@/components/founder-dna/DnaInsightBlock'
+import { usePrimaryArchetypeName } from '@/lib/hooks/usePrimaryArchetypeName'
 
 type PostponementPattern = {
   actionPlan: string
@@ -28,6 +30,7 @@ type LockedResponse = {
 }
 
 export function PostponementPatternsCard() {
+  const currentArchetype = usePrimaryArchetypeName()
   const [loading, setLoading] = useState(true)
   const [locked, setLocked] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -126,8 +129,13 @@ export function PostponementPatternsCard() {
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4">
-        <div className="text-sm font-semibold text-gray-900 dark:text-white">⏳ Postponement Patterns</div>
-        <div className="text-sm text-gray-600 dark:text-gray-300 mt-3 whitespace-pre-line">{data.insight}</div>
+        <div className="text-sm font-semibold text-gray-900 dark:text-white mb-3">⏳ Postponement Patterns</div>
+        <DnaInsightBlock
+          description={data.insight}
+          kind="postponement"
+          morningIntent="postponement"
+          currentArchetype={currentArchetype}
+        />
       </div>
 
       <div className="space-y-2">

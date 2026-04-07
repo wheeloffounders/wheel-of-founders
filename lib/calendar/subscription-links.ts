@@ -1,5 +1,8 @@
 import { getAppPublicOrigin } from '@/lib/app-public-url'
 
+/** Matches `X-WR-CALNAME` / `NAME` in the ICS feed — keep in sync with calendar feed route. */
+export const CALENDAR_SUBSCRIPTION_DISPLAY_NAME = 'Wheel of Founders Reminders'
+
 function toWebcal(url: string): string {
   return url.replace(/^https?:\/\//i, 'webcal://')
 }
@@ -7,6 +10,21 @@ function toWebcal(url: string): string {
 export function buildCalendarFeedUrl(token: string, origin?: string): string {
   const base = (origin?.trim() || getAppPublicOrigin()).replace(/\/$/, '')
   return `${base}/api/calendar/feed?token=${encodeURIComponent(token)}`
+}
+
+/**
+ * Google sometimes no-ops or shows a blank page when opening the same `calendar/r?cid=…`
+ * URL twice in a row. Append a harmless query param so each click is a distinct navigation.
+ */
+export function withGoogleCalendarSubscribeNonce(googleSubscribeUrl: string): string {
+  try {
+    const u = new URL(googleSubscribeUrl)
+    u.searchParams.set('_wof', String(Date.now()))
+    return u.toString()
+  } catch {
+    const sep = googleSubscribeUrl.includes('?') ? '&' : '?'
+    return `${googleSubscribeUrl}${sep}_wof=${Date.now()}`
+  }
 }
 
 export function buildCalendarProviderLinks(token: string, origin?: string): {
@@ -27,11 +45,14 @@ export function buildCalendarProviderLinks(token: string, origin?: string): {
     feed: feedUrl,
     feedUrl,
     webcalUrl,
-    // Google subscribes using the webcal:// form of the feed URL as `cid`
-    google: `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(webcalUrl)}`,
+    // One-click Google subscribe: `cid` must be the feed URL with a webcal:// scheme (same path as
+    // `feedUrl`); `/calendar/r` is the subscribe entry point that reliably shows the add prompt.
+    // The ICS is still served over HTTPS — only this link uses webcal for Google’s handler.
+    // Token is rotated on each Google click (see prepare-google-calendar-subscribe) so re-add works.
+    google: `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}`,
     apple: feedUrl,
     appleWebcal: webcalUrl,
-    outlook: `https://outlook.live.com/calendar/0/deeplink/subscribe?url=${encodeURIComponent(feedUrl)}&name=${encodeURIComponent('Wheel of Founders')}`,
+    outlook: `https://outlook.live.com/calendar/0/deeplink/subscribe?url=${encodeURIComponent(feedUrl)}&name=${encodeURIComponent(CALENDAR_SUBSCRIPTION_DISPLAY_NAME)}`,
   }
 }
 

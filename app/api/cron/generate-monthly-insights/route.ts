@@ -14,16 +14,17 @@ import {
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+/** Ensures Vercel uses 300s even if vercel.json glob order changes; pairs with vercel.json entry. */
+export const maxDuration = 300
 
 const BATCH_SIZE = 50
 const CONCURRENCY = 5
 
 /**
- * Cron: Monthly insights for users whose local time is 1st of month 00:xx.
- * Schedule (vercel.json): every 5 minutes on UTC calendar day 1 only (first cron field: * /5).
+ * Cron: Monthly insights for users on local calendar day 1 (any hour) when not already completed.
+ * Schedule (vercel.json): every 5 min, UTC 10:00–23:59 on day 31 and 00:00–14:59 on day 1 (~29h)
+ * so all timezones plus retry headroom are covered.
  * Batch + cron_state cursor until the UTC-month wave completes.
- * Note: Vercel cron uses UTC; users whose local 1st 00:xx falls on the prior UTC date rely on
- * that window still overlapping minute-level runs, or widen the schedule if you see misses.
  */
 export async function GET(request: NextRequest) {
   logCronRequestMeta('cron/generate-monthly-insights', request)

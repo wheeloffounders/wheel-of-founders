@@ -11,6 +11,6 @@ export const badgeEarnedTemplate: EmailTemplate = {
       ctaLabel: 'View All Badges',
       ctaUrl: appUrlWithUtm('/founder-dna/journey', 'badge_earned'),
     }),
-  getText: (_user, data) => `New badge unlocked: ${String(data?.badgeName || 'New badge')}.` + renderTextFooter(),
+  getText: (user, data) => `New badge unlocked: ${String(data?.badgeName || 'New badge')}.` + renderTextFooter(user),
 }
 

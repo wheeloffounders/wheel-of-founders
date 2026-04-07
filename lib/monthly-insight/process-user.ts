@@ -8,12 +8,35 @@ export type ProcessMonthlyCronUserResult = {
   error?: string
 }
 
-export async function processMonthlyInsightCronUser(params: {
+const DEFAULT_PER_USER_BUDGET_MS = 55_000
+
+async function upsertMonthlyInsightFailedRow(
+  db: SupabaseClient,
+  userId: string,
+  monthStart: string,
+  monthEnd: string
+) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (db.from('monthly_insights') as any).upsert(
+    {
+      user_id: userId,
+      month_start: monthStart,
+      month_end: monthEnd,
+      insight_text: null,
+      generated_at: new Date().toISOString(),
+      status: 'failed',
+      retry_count: 0,
+      next_retry_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    },
+    { onConflict: 'user_id,month_start' }
+  )
+}
+
+async function runMonthlyInsightCronForUser(params: {
   db: SupabaseClient
   userId: string
   timeZone: string
   now: Date
-  /** When false (e.g. quarter cron runs month gen first), skip digest email here. */
   sendEmail: boolean
 }): Promise<ProcessMonthlyCronUserResult> {
   const { db, userId, timeZone, now, sendEmail } = params
@@ -52,37 +75,45 @@ export async function processMonthlyInsightCronUser(params: {
     }
 
     const err = result.error ?? 'Monthly generation failed'
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (db.from('monthly_insights') as any).upsert(
-      {
-        user_id: userId,
-        month_start: monthStart,
-        month_end: monthEnd,
-        insight_text: null,
-        generated_at: new Date().toISOString(),
-        status: 'failed',
-        retry_count: 0,
-        next_retry_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-      },
-      { onConflict: 'user_id,month_start' }
-    )
+    await upsertMonthlyInsightFailedRow(db, userId, monthStart, monthEnd)
     return { success: false, error: err }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (db.from('monthly_insights') as any).upsert(
-      {
-        user_id: userId,
-        month_start: monthStart,
-        month_end: monthEnd,
-        insight_text: null,
-        generated_at: new Date().toISOString(),
-        status: 'failed',
-        retry_count: 0,
-        next_retry_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-      },
-      { onConflict: 'user_id,month_start' }
-    )
+    await upsertMonthlyInsightFailedRow(db, userId, monthStart, monthEnd)
+    return { success: false, error: message }
+  }
+}
+
+/**
+ * Generates previous-month insight, upserts `monthly_insights`, optionally sends digest.
+ * Bounded by `MONTHLY_CRON_PER_USER_MS` (default 55s) so one slow user cannot exhaust the whole cron.
+ */
+export async function processMonthlyInsightCronUser(params: {
+  db: SupabaseClient
+  userId: string
+  timeZone: string
+  now: Date
+  /** When false (e.g. quarter cron runs month gen first), skip digest email here. */
+  sendEmail: boolean
+}): Promise<ProcessMonthlyCronUserResult> {
+  const budgetMs = Number(process.env.MONTHLY_CRON_PER_USER_MS) || DEFAULT_PER_USER_BUDGET_MS
+  const { db, userId, timeZone, now } = params
+  const { monthStart, monthEnd } = getPreviousMonthRangeYmdInTimeZone(now, timeZone)
+
+  try {
+    return await Promise.race([
+      runMonthlyInsightCronForUser(params),
+      new Promise<ProcessMonthlyCronUserResult>((_, reject) =>
+        setTimeout(() => reject(new Error(`Monthly insight exceeded ${budgetMs}ms`)), budgetMs)
+      ),
+    ])
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    try {
+      await upsertMonthlyInsightFailedRow(db, userId, monthStart, monthEnd)
+    } catch (upErr) {
+      console.error('[monthly-insight] Failed to record failed row after timeout', upErr)
+    }
     return { success: false, error: message }
   }
 }

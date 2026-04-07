@@ -5,6 +5,8 @@ import { getUserSession } from '@/lib/auth'
 import { fetchEmailPreferences, updateEmailPreferences, type EmailPreferences } from '@/lib/email/preferences'
 import { PreferenceToggle } from '@/components/ui/preference-toggle'
 import { CalendarMrsDeerReminderNote } from '@/components/CalendarMrsDeerReminderNote'
+import { startGoogleCalendarOAuth } from '@/lib/google-calendar-oauth'
+import { colors } from '@/lib/design-tokens'
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 
 export function NotificationSettings() {
@@ -27,11 +29,17 @@ export function NotificationSettings() {
 
   const [calendarLinks, setCalendarLinks] = useState<{
     feedUrl: string
+    webcalUrl?: string
     google: string
     apple: string
     outlook: string
   } | null>(null)
-  const [openingProvider, setOpeningProvider] = useState<'google' | 'apple' | 'outlook' | null>(null)
+  const [openingProvider, setOpeningProvider] = useState<'apple' | 'outlook' | null>(null)
+  const [googleConnected, setGoogleConnected] = useState(false)
+  const [googleBusy, setGoogleBusy] = useState(false)
+  const [regeneratingCalendar, setRegeneratingCalendar] = useState(false)
+  const [calendarLinkMessage, setCalendarLinkMessage] = useState<string | null>(null)
+  const [feedJustCopied, setFeedJustCopied] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -48,6 +56,7 @@ export function NotificationSettings() {
             morningTime?: string
             eveningTime?: string
             weeklyInsights?: boolean
+            googleCalendarConnected?: boolean
           }
         }
         const s = settingsJson.settings
@@ -61,13 +70,20 @@ export function NotificationSettings() {
         if (cm) setCalMorning(cm)
         if (cv) setCalEvening(cv)
         if (s?.weeklyInsights !== undefined) setCalendarWeeklyInsight(s.weeklyInsights)
+        setGoogleConnected(Boolean(s?.googleCalendarConnected))
 
         const prefs = await fetchEmailPreferences()
         setEmailPrefs(prefs)
 
         const subRes = await fetch('/api/user/calendar-subscription', { credentials: 'include' })
         const subJson = (await subRes.json().catch(() => ({}))) as {
-          links?: { feedUrl: string; google: string; apple: string; outlook: string }
+          links?: {
+            feedUrl: string
+            webcalUrl?: string
+            google: string
+            apple: string
+            outlook: string
+          }
         }
         if (subJson.links) setCalendarLinks(subJson.links)
       } finally {
@@ -142,16 +158,97 @@ export function NotificationSettings() {
     }
   }
 
+  const handleRegenerateCalendarToken = async () => {
+    setRegeneratingCalendar(true)
+    setCalendarLinkMessage(null)
+    try {
+      const res = await fetch('/api/user/calendar-subscription/regenerate', {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const json = (await res.json().catch(() => ({}))) as {
+        success?: boolean
+        links?: {
+          feedUrl: string
+          webcalUrl?: string
+          google: string
+          apple: string
+          outlook: string
+        }
+        error?: string
+      }
+      if (!res.ok) {
+        throw new Error(json.error || 'Failed to regenerate calendar link')
+      }
+      if (json.links) setCalendarLinks(json.links)
+      setCalendarLinkMessage(
+        'Your subscription link was reset. Remove the old calendar in your app if needed, then subscribe again using the new URL or the buttons below.'
+      )
+    } catch (err) {
+      setCalendarLinkMessage(err instanceof Error ? err.message : 'Could not regenerate link.')
+    } finally {
+      setRegeneratingCalendar(false)
+    }
+  }
+
+  const copyFeedUrl = async () => {
+    const url = calendarLinks?.feedUrl
+    if (!url || typeof navigator === 'undefined' || !navigator.clipboard) return
+    try {
+      await navigator.clipboard.writeText(url)
+      setFeedJustCopied(true)
+      setTimeout(() => setFeedJustCopied(false), 2000)
+    } catch {
+      setCalendarLinkMessage('Could not copy — select the URL and copy manually.')
+    }
+  }
+
   const openCalendarProvider = async (provider: 'google' | 'apple' | 'outlook') => {
-    const url = calendarLinks?.[provider]
-    if (!url) return
+    if (provider === 'google') {
+      setGoogleBusy(true)
+      try {
+        await persistNotificationSettings()
+        void fetch('/api/analytics/calendar-subscribe', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: 'google' }),
+        }).catch(() => {})
+        await startGoogleCalendarOAuth('/settings?tab=notifications')
+      } catch (err) {
+        setCalendarLinkMessage(err instanceof Error ? err.message : 'Could not start Google Calendar connection.')
+      } finally {
+        setGoogleBusy(false)
+      }
+      return
+    }
     setOpeningProvider(provider)
     try {
       await persistNotificationSettings()
+      const url = calendarLinks?.[provider]
+      if (!url) return
       const w = window.open(url, '_blank', 'noopener,noreferrer')
       if (!w) window.location.href = url
     } finally {
       setOpeningProvider(null)
+    }
+  }
+
+  const handleDisconnectGoogle = async () => {
+    setGoogleBusy(true)
+    setCalendarLinkMessage(null)
+    try {
+      const res = await fetch('/api/user/google-calendar', {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (!res.ok) throw new Error('Failed to disconnect Google Calendar')
+      setGoogleConnected(false)
+      setCalendarLinkMessage('Disconnected from Google Calendar.')
+    } catch (err) {
+      setCalendarLinkMessage(err instanceof Error ? err.message : 'Could not disconnect Google Calendar.')
+    } finally {
+      setGoogleBusy(false)
     }
   }
 
@@ -355,15 +452,81 @@ export function NotificationSettings() {
             </label>
 
             <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">Add to your calendar:</p>
+
+            {calendarLinks?.feedUrl ? (
+              <div className="mb-4 space-y-2">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Feed URL (manual subscribe)
+                </label>
+                <div className="flex flex-col sm:flex-row gap-2 sm:items-stretch">
+                  <input
+                    readOnly
+                    value={calendarLinks.feedUrl}
+                    className="flex-1 min-w-0 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/50 px-3 py-2 text-xs font-mono text-gray-800 dark:text-gray-200"
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void copyFeedUrl()}
+                    className="shrink-0 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm font-medium text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 min-w-[5.5rem]"
+                  >
+                    {feedJustCopied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
+              <button
+                type="button"
+                disabled={regeneratingCalendar}
+                onClick={() => void handleRegenerateCalendarToken()}
+                className="text-sm font-medium hover:opacity-80 disabled:opacity-50"
+                style={{ color: colors.coral.DEFAULT }}
+              >
+                {regeneratingCalendar ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
+                    Regenerating…
+                  </span>
+                ) : (
+                  'Regenerate calendar link'
+                )}
+              </button>
+            </div>
+
+            {calendarLinkMessage ? (
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">{calendarLinkMessage}</p>
+            ) : null}
+
             <div className="flex flex-col sm:flex-row flex-wrap gap-2">
               <button
                 type="button"
-                disabled={!calendarLinks?.google || openingProvider !== null}
+                disabled={googleBusy || openingProvider !== null}
                 onClick={() => void openCalendarProvider('google')}
                 className="inline-flex justify-center items-center px-4 py-2.5 rounded-lg bg-[#ef725c] text-white text-sm font-medium hover:opacity-90 disabled:opacity-40"
               >
-                {openingProvider === 'google' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Google Calendar'}
+                {googleBusy ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Connecting...
+                  </span>
+                ) : googleConnected ? (
+                  '✓ Connected to Google Calendar'
+                ) : (
+                  'Connect Google Calendar'
+                )}
               </button>
+              {googleConnected ? (
+                <button
+                  type="button"
+                  disabled={googleBusy || openingProvider !== null}
+                  onClick={() => void handleDisconnectGoogle()}
+                  className="inline-flex justify-center items-center px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
+                >
+                  Disconnect
+                </button>
+              ) : null}
               <button
                 type="button"
                 disabled={!calendarLinks?.apple || openingProvider !== null}

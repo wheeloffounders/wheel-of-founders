@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { TutorialProgress } from '@/components/TutorialProgress'
 import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
 import { colors } from '@/lib/design-tokens'
+import { inferPrimaryGoalEnumFromFreeText } from '@/lib/social-proof'
 
 export default function GoalPage() {
   const [goal, setGoal] = useState('')
@@ -38,7 +39,7 @@ export default function GoalPage() {
       // Check if profile exists
       const { data: existingProfile, error: profileError } = await supabase
         .from('user_profiles')
-        .select('id, primary_goal_text, onboarding_step')
+        .select('id, primary_goal, primary_goal_text, onboarding_step')
         .eq('id', user.id)
         .maybeSingle()
 
@@ -48,10 +49,15 @@ export default function GoalPage() {
       }
       console.log('[Goal] Existing profile:', existingProfile ? 'exists' : 'null')
 
-      const payload = {
+      const inferredEnum = inferPrimaryGoalEnumFromFreeText(goal.trim())
+      const row = existingProfile as { primary_goal?: string | null } | null
+      const payload: Record<string, unknown> = {
         primary_goal_text: goal.trim(),
         onboarding_step: 1,
         updated_at: new Date().toISOString(),
+      }
+      if (!row?.primary_goal?.trim() && inferredEnum) {
+        payload.primary_goal = inferredEnum
       }
 
       if (!existingProfile) {
@@ -85,13 +91,12 @@ export default function GoalPage() {
       }
 
       trackJourneyStep('completed_goal', { goal_length: goal.trim().length })
-      // Navigate only after save completes
-      router.replace('/onboarding/personalization')
+      router.replace('/onboarding/social-proof')
     } catch (err: any) {
       // Handle AbortError specifically (common on mobile/slow networks)
       if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
         console.warn('[Goal] Request aborted, navigating anyway:', err)
-        router.replace('/onboarding/personalization')
+        router.replace('/onboarding/social-proof')
         return
       }
       console.error('[Goal] Caught error:', err)

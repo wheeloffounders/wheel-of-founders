@@ -13,7 +13,7 @@ export const welcomeTemplate: EmailTemplate = {
       ctaLabel: 'Start Your Morning',
       ctaUrl: appUrlWithUtm('/morning', 'welcome'),
     }),
-  getText: () =>
-    `Welcome to Wheel of Founders.\nStart with Morning, capture one decision, and close with Evening Reflection.` + renderTextFooter(),
+  getText: (user) =>
+    `Welcome to Wheel of Founders.\nStart with Morning, capture one decision, and close with Evening Reflection.` + renderTextFooter(user),
 }
 

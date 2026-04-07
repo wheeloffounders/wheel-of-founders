@@ -2,6 +2,8 @@
 
 import { Sparkles, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
+import { DnaInsightBlock } from '@/components/founder-dna/DnaInsightBlock'
+import { usePrimaryArchetypeName } from '@/lib/hooks/usePrimaryArchetypeName'
 
 interface PersonalInsight {
   insight_text: string
@@ -24,6 +26,7 @@ export function PersonalInsightsCard({
   refreshable = true,
   onRefresh,
 }: PersonalInsightsCardProps) {
+  const currentArchetype = usePrimaryArchetypeName()
   const [refreshing, setRefreshing] = useState(false)
 
   const typeEmoji: Record<string, string> = {
@@ -69,23 +72,18 @@ export function PersonalInsightsCard({
       {insights.length > 0 ? (
         <div className="space-y-4">
           {insights.map((insight, idx) => (
-            <div
-              key={idx}
-              className="bg-white dark:bg-gray-800 dark:bg-[#0F1419] rounded-lg p-5 border-l-4 border-amber-500 shadow-sm"
-            >
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 mt-0.5 text-2xl">
-                  {typeEmoji[insight.insight_type] || '💡'}
-                </div>
-                <div className="flex-1">
-                  <p className="text-gray-900 dark:text-gray-100 dark:text-[#E2E8F0] leading-relaxed mb-2">
-                    {insight.insight_text}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 italic">
-                    {insight.data_based_on}
-                  </p>
-                </div>
+            <div key={idx} className="rounded-lg border-l-4 border-amber-500 bg-white dark:bg-[#0F1419] p-4 shadow-sm">
+              <div className="flex items-start gap-2 mb-2 text-2xl">
+                <span aria-hidden>{typeEmoji[insight.insight_type] || '💡'}</span>
               </div>
+              <DnaInsightBlock
+                description={insight.insight_text}
+                kind={insight.insight_type === 'pattern' ? 'postponement' : 'default'}
+                morningIntent="focus"
+                showChallengeCta={insight.insight_type === 'pattern' || insight.insight_type === 'nudge'}
+                currentArchetype={currentArchetype}
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 italic mt-2 pl-1">{insight.data_based_on}</p>
             </div>
           ))}
         </div>

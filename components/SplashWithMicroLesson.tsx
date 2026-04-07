@@ -36,7 +36,7 @@ export function SplashWithMicroLesson() {
         setVisible(false)
         window.localStorage.setItem(SPLASH_KEY, 'true')
       }}
-      className="fixed inset-0 z-50 bg-white/92 dark:bg-gray-900/92 backdrop-blur-sm flex items-center justify-center p-6"
+      className="fixed inset-0 z-[60] bg-white/92 dark:bg-gray-900/92 backdrop-blur-sm flex items-center justify-center p-6"
       aria-label="Dismiss micro lesson splash"
     >
       <div className="text-center max-w-lg">

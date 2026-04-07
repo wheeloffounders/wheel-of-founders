@@ -16,6 +16,7 @@ import {
   SCHEDULE_POSTPONEMENT_DAY,
   WEEKLY_INSIGHT_MIN_DAYS,
 } from '@/lib/founder-dna/unlock-schedule-config'
+import { ARCHETYPE_SNAPSHOT_REFRESH_DAYS, nextArchetypeUpdateIsoFrom } from '@/lib/founder-dna/archetype-snapshot'
 import {
   dayOffsetFromCreatedInTimeZone,
   nextIntervalInTimeZone,
@@ -38,6 +39,8 @@ export type ComputeScheduleContext = {
   profileComplete: boolean
   /** IANA timezone for next-update instants (from user_profiles.timezone) */
   userTimeZone: string
+  /** When full archetype snapshot was last computed (optional; from user_profiles.archetype_updated_at) */
+  archetypeUpdatedAt?: string | null
 }
 
 export function computeFounderDnaSchedule(ctx: ComputeScheduleContext): FounderDnaScheduleRow[] {
@@ -51,6 +54,7 @@ export function computeFounderDnaSchedule(ctx: ComputeScheduleContext): FounderD
     archetypeStatus,
     profileComplete,
     userTimeZone,
+    archetypeUpdatedAt,
   } = ctx
 
   const hasBadge = (name: string) => badges.some((b) => b.name === name)
@@ -271,10 +275,19 @@ export function computeFounderDnaSchedule(ctx: ComputeScheduleContext): FounderD
   const fullOk = hasFeature('founder_archetype_full') || archetypeStatus === 'full'
 
   let nextArchetypeFullUpdate: string | null = null
-  if (fullOk && createdAt) {
-    const fullAnchor = dayOffsetFromCreatedInTimeZone(createdAt, ARCHETYPE_FULL_MIN_DAYS, userTimeZone)
-    if (fullAnchor) {
-      nextArchetypeFullUpdate = nextIntervalInTimeZone(fullAnchor, now, 90, userTimeZone).toISOString()
+  if (fullOk) {
+    if (archetypeUpdatedAt && typeof archetypeUpdatedAt === 'string') {
+      nextArchetypeFullUpdate = nextArchetypeUpdateIsoFrom(archetypeUpdatedAt)
+    } else if (createdAt) {
+      const fullAnchor = dayOffsetFromCreatedInTimeZone(createdAt, ARCHETYPE_FULL_MIN_DAYS, userTimeZone)
+      if (fullAnchor) {
+        nextArchetypeFullUpdate = nextIntervalInTimeZone(
+          fullAnchor,
+          now,
+          ARCHETYPE_SNAPSHOT_REFRESH_DAYS,
+          userTimeZone
+        ).toISOString()
+      }
     }
   }
 
@@ -299,7 +312,7 @@ export function computeFounderDnaSchedule(ctx: ComputeScheduleContext): FounderD
     name: 'Founder Archetype (Full)',
     icon: '🔮',
     unlockSummary: `${ARCHETYPE_FULL_MIN_DAYS} days with entries`,
-    updateCadence: fullOk ? 'Every 90 days' : '',
+    updateCadence: fullOk ? `Every ${ARCHETYPE_SNAPSHOT_REFRESH_DAYS} days` : '',
     href: '/founder-dna/archetype',
     unlocked: fullOk,
     nextUpdateAt: fullOk ? nextArchetypeFullUpdate : null,

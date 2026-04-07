@@ -6,16 +6,24 @@ import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
 
 export const MORNING_USER_PROFILE_SELECT =
-  'created_at, timezone, calendar_reminder_time, calendar_reminder_type, primary_goal_text, has_seen_morning_tour, badges' as const
+  'created_at, timezone, tier, calendar_reminder_time, calendar_reminder_type, primary_goal_text, has_seen_morning_tour, badges, current_streak, struggles, trial_starts_at, trial_ends_at, stripe_subscription_status, pro_features_enabled' as const
 
 export type MorningUserProfileBundle = {
   created_at?: string | null
   timezone?: string | null
+  tier?: string | null
   calendar_reminder_time?: string | null
   calendar_reminder_type?: string | null
   primary_goal_text?: string | null
   has_seen_morning_tour?: boolean | null
   badges?: unknown
+  current_streak?: number | null
+  /** Onboarding / profile "Biggest Struggles" ids (json array). */
+  struggles?: unknown
+  trial_starts_at?: string | null
+  trial_ends_at?: string | null
+  stripe_subscription_status?: string | null
+  pro_features_enabled?: boolean | null
 }
 
 const STALE_MS = 5 * 60 * 1000

@@ -82,6 +82,7 @@ export default function ProfilePage() {
   const [undoReset, setUndoReset] = useState<{ backupId: string; expiresAt: string } | null>(null)
   const [undoInFlight, setUndoInFlight] = useState(false)
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [devResetLoading, setDevResetLoading] = useState<'idle' | 'onboarding' | 'full'>('idle')
 
   // Determine if dev tools should be visible (dev, preview, or ?dev=true)
   let shouldShowDevTools = isDevelopment || isPreview
@@ -1012,10 +1013,15 @@ export default function ProfilePage() {
           </div>
           {showDevTools && (
             <div className="mt-2 space-y-3">
-              <p className="text-xs text-red-700">⚠️ Full reset can be undone for 10 seconds only.</p>
+              <p className="text-xs text-red-700">
+                ⚠️ Full reset deletes journal rows, morning draft autosave, and related data, resets streaks and
+                onboarding flags, then hard-navigates to onboarding (clears React timers). A short server backup may
+                still exist for undo via API, but the in-page Undo banner won&apos;t show after redirect.
+              </p>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
+                  disabled={devResetLoading !== 'idle'}
                   onClick={async () => {
                     const sess = await getUserSession()
                     if (!sess?.user?.id) {
@@ -1027,96 +1033,109 @@ export default function ProfilePage() {
                       `Are you sure you want to reset all data for ${userEmail}? This action cannot be undone.`
                     )
                     if (!confirmed) return
+                    setDevResetLoading('onboarding')
                     const { data: authData } = await supabase.auth.getSession()
                     const headers: HeadersInit = { 'Content-Type': 'application/json' }
                     if (authData.session?.access_token) {
                       headers.Authorization = `Bearer ${authData.session.access_token}`
                     }
-                    const res = await fetch('/api/user/reset-onboarding', {
-                      method: 'POST',
-                      headers,
-                      body: JSON.stringify({ scope: 'onboarding' }),
-                    })
-                    const data = await res.json().catch(() => ({}))
-                    if (!res.ok) {
-                      console.error('[DevTools] Failed to reset onboarding:', data)
+                    try {
+                      const res = await fetch('/api/user/reset-onboarding', {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ scope: 'onboarding' }),
+                      })
+                      const data = await res.json().catch(() => ({}))
+                      if (!res.ok) {
+                        console.error('[DevTools] Failed to reset onboarding:', data)
+                        setMessage({
+                          type: 'error',
+                          text:
+                            typeof data?.error === 'string'
+                              ? data.error
+                              : 'Failed to reset onboarding. Check console for details.',
+                        })
+                        setDevResetLoading('idle')
+                        return
+                      }
+                      window.location.assign('/onboarding/goal')
+                    } catch (err) {
+                      console.error('[DevTools] reset onboarding fetch failed:', err)
                       setMessage({
                         type: 'error',
-                        text:
-                          typeof data?.error === 'string'
-                            ? data.error
-                            : 'Failed to reset onboarding. Check console for details.',
+                        text: 'Network error while resetting onboarding. Check console.',
                       })
-                      return
+                      setDevResetLoading('idle')
                     }
-                    setMessage({ type: 'success', text: 'Onboarding reset for this user.' })
-                    router.push('/onboarding/goal')
                   }}
-                  className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                  className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  🔄 Reset Onboarding
+                  {devResetLoading === 'onboarding' ? 'Deleting…' : '🔄 Reset Onboarding'}
                 </button>
                 <button
                   type="button"
+                  disabled={devResetLoading !== 'idle'}
                   onClick={async () => {
                     const sess = await getUserSession()
                     if (!sess?.user?.id) {
                       router.push('/auth/login')
                       return
                     }
+                    const userEmail = sess.user.email || 'this account'
+                    const confirmed = window.confirm(
+                      `Nuclear reset: delete all journal data for ${userEmail}, reset streaks and onboarding flags, then go to onboarding. Continue?`
+                    )
+                    if (!confirmed) return
+                    setDevResetLoading('full')
                     const { data: authData } = await supabase.auth.getSession()
                     const headers: HeadersInit = { 'Content-Type': 'application/json' }
                     if (authData.session?.access_token) {
                       headers.Authorization = `Bearer ${authData.session.access_token}`
                     }
-                    const res = await fetch('/api/user/reset-onboarding', {
-                      method: 'POST',
-                      headers,
-                      body: JSON.stringify({ scope: 'full' }),
-                    })
-                    const raw = await res.text()
-                    const data = (() => {
-                      if (!raw) return {}
-                      try {
-                        return JSON.parse(raw) as Record<string, unknown>
-                      } catch {
-                        return {}
+                    try {
+                      const res = await fetch('/api/user/reset-onboarding', {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ scope: 'full' }),
+                      })
+                      const raw = await res.text()
+                      const data = (() => {
+                        if (!raw) return {}
+                        try {
+                          return JSON.parse(raw) as Record<string, unknown>
+                        } catch {
+                          return {}
+                        }
+                      })()
+                      if (!res.ok) {
+                        const debugLine = `[DevTools] reset-all failed status=${res.status} ${res.statusText} body=${raw || '<empty>'}`
+                        console.error(debugLine)
+                        setMessage({
+                          type: 'error',
+                          text:
+                            typeof data?.error === 'string'
+                              ? data.error
+                              : `Failed to reset all entries (HTTP ${res.status}). ${raw ? `Server says: ${raw}` : 'No response body.'}`,
+                        })
+                        setDevResetLoading('idle')
+                        return
                       }
-                    })()
-                    if (!res.ok) {
-                      const debugLine = `[DevTools] reset-all failed status=${res.status} ${res.statusText} body=${raw || '<empty>'}`
-                      console.error(debugLine)
+                      if (typeof data?.warning === 'string' && data.warning) {
+                        console.warn('[DevTools] reset-all warning:', data.warning)
+                      }
+                      window.location.assign('/onboarding/goal')
+                    } catch (err) {
+                      console.error('[DevTools] reset-all fetch failed:', err)
                       setMessage({
                         type: 'error',
-                        text:
-                          typeof data?.error === 'string'
-                            ? data.error
-                            : `Failed to reset all entries (HTTP ${res.status}). ${raw ? `Server says: ${raw}` : 'No response body.'}`,
+                        text: 'Network error while resetting. Check console.',
                       })
-                      return
+                      setDevResetLoading('idle')
                     }
-                    if (undoTimerRef.current) {
-                      clearTimeout(undoTimerRef.current)
-                      undoTimerRef.current = null
-                    }
-                    if (typeof data?.backupId === 'string' && typeof data?.undoExpiresAt === 'string') {
-                      setUndoReset({ backupId: data.backupId, expiresAt: data.undoExpiresAt })
-                      undoTimerRef.current = setTimeout(() => {
-                        setUndoReset(null)
-                        undoTimerRef.current = null
-                      }, Math.max(0, new Date(data.undoExpiresAt).getTime() - Date.now()))
-                    }
-                    setMessage({
-                      type: 'success',
-                      text:
-                        typeof data?.warning === 'string'
-                          ? `Onboarding and all entries reset. ${data.warning}`
-                          : 'Onboarding and all entries reset for this user. Undo is available for 10 seconds.',
-                    })
                   }}
-                  className="px-3 py-1 bg-red-700 text-white text-sm rounded hover:bg-red-800"
+                  className="px-3 py-1 bg-red-700 text-white text-sm rounded hover:bg-red-800 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  🧨 Reset Onboarding + All Entries
+                  {devResetLoading === 'full' ? 'Deleting…' : '🧨 Reset Onboarding + All Entries'}
                 </button>
               </div>
             </div>
