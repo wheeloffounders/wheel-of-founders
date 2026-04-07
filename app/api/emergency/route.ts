@@ -11,9 +11,7 @@ const toDateStr = (d: Date) => d.toISOString().split('T')[0]
 export async function POST(req: NextRequest) {
   try {
     return withRateLimit(req, 'emergency', async () => {
-      const { description, severity, userId, location: locationRaw } = await req.json()
-      const location =
-        typeof locationRaw === 'string' && locationRaw.trim() ? locationRaw.trim().slice(0, 220) : null
+      const { description, severity, userId } = await req.json()
 
       let actualUserId = userId
       if (!actualUserId) {
@@ -34,9 +32,8 @@ export async function POST(req: NextRequest) {
           description,
           severity: severity || 'contained',
           resolved: false,
-          location,
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         })
         .select()
         .single()

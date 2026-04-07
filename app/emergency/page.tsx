@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { getClientAuthHeaders } from '@/lib/api/fetch-json'
 import { format, isToday, startOfMonth, subDays, addYears } from 'date-fns'
-import { Flame, AlertCircle, MapPin, Pencil, Shield, Zap } from 'lucide-react'
+import { Flame, AlertCircle, Pencil, Shield, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -64,12 +64,10 @@ interface Emergency {
   lesson_learned_raw?: string | null
   lesson_insight_text?: string | null
   lesson_saved_at?: string | null
-  /** Optional place label (manual or geocoded) at log time */
-  location?: string | null
 }
 
 const EMERGENCY_ROW_SELECT =
-  'id, description, severity, notes, resolved, created_at, updated_at, insight, triage_json, containment_plan, containment_plan_committed_at, lesson_learned_raw, lesson_insight_text, lesson_saved_at, location' as const
+  'id, description, severity, notes, resolved, created_at, updated_at, insight, triage_json, containment_plan, containment_plan_committed_at, lesson_learned_raw, lesson_insight_text, lesson_saved_at' as const
 
 const EMPTY_DAY_STATUS: Record<string, DayStatus> = {}
 
@@ -103,8 +101,6 @@ export default function EmergencyPage() {
   const [description, setDescription] = useState('')
   const [severity, setSeverity] = useState<Severity>('hot')
   const [notes, setNotes] = useState('')
-  const [fireLocation, setFireLocation] = useState('')
-  const [geoLookupLoading, setGeoLookupLoading] = useState(false)
   const [composeInsightDraft, setComposeInsightDraft] = useState<string | null>(null)
   const [sessionUserId, setSessionUserId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -132,9 +128,8 @@ export default function EmergencyPage() {
     description,
     notes,
     severity,
-    fireLocation,
   })
-  emergencySnapRef.current = { brainDump, description, notes, severity, fireLocation }
+  emergencySnapRef.current = { brainDump, description, notes, severity }
 
   const brainDumpRef = useRef(brainDump)
   const descriptionRef = useRef(description)
@@ -159,7 +154,7 @@ export default function EmergencyPage() {
     if (!session?.user?.id) return
     const date = fireDateRef.current
     const snap = emergencySnapRef.current
-    if (!snap.description.trim() && !snap.notes.trim() && !snap.brainDump.trim() && !snap.fireLocation.trim()) return
+    if (!snap.description.trim() && !snap.notes.trim() && !snap.brainDump.trim()) return
 
     const run = () =>
       supabase.from('emergency_compose_drafts').upsert(
@@ -171,7 +166,6 @@ export default function EmergencyPage() {
           notes: snap.notes,
           severity: snap.severity,
           hot_immediate_steps: '',
-          location: snap.fireLocation.trim(),
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_id,fire_date' }
@@ -210,7 +204,7 @@ export default function EmergencyPage() {
 
   useEffect(() => {
     scheduleEmergencyDraft()
-  }, [brainDump, description, notes, severity, fireLocation, fireDate, scheduleEmergencyDraft])
+  }, [brainDump, description, notes, severity, fireDate, scheduleEmergencyDraft])
 
   useEffect(() => {
     let cancelled = false
@@ -219,7 +213,7 @@ export default function EmergencyPage() {
       if (!session?.user?.id) return
       const { data } = await supabase
         .from('emergency_compose_drafts')
-        .select('brain_dump, description, notes, severity, location')
+        .select('brain_dump, description, notes, severity')
         .eq('user_id', session.user.id)
         .eq('fire_date', fireDate)
         .maybeSingle()
@@ -233,7 +227,6 @@ export default function EmergencyPage() {
         setBrainDump('')
         setDescription('')
         setNotes('')
-        setFireLocation('')
         setSeverity('warm')
         return
       }
@@ -241,7 +234,6 @@ export default function EmergencyPage() {
       setDescription(typeof data.description === 'string' ? data.description : '')
       const n = typeof data.notes === 'string' ? data.notes : ''
       setNotes(n)
-      setFireLocation(typeof (data as { location?: string }).location === 'string' ? (data as { location: string }).location : '')
       if (data.severity === 'hot' || data.severity === 'warm' || data.severity === 'contained') {
         setSeverity(data.severity)
       }
@@ -381,36 +373,6 @@ export default function EmergencyPage() {
     onProtocolNotesChange,
     { enabled: !emergencyVoiceLocked }
   )
-
-  const fillLocationFromDevice = useCallback(() => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return
-    setGeoLookupLoading(true)
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const res = await fetch('/api/geocode/reverse', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-          })
-          const data = (await res.json().catch(() => ({}))) as { label?: string | null }
-          if (res.ok && typeof data.label === 'string' && data.label.trim()) {
-            setFireLocation(data.label.trim())
-          }
-        } catch {
-          // silent — no "location unknown" messaging per product spec
-        } finally {
-          setGeoLookupLoading(false)
-        }
-      },
-      () => {
-        // permission denied or timeout — hide, no error toast
-        setGeoLookupLoading(false)
-      },
-      { enableHighAccuracy: false, timeout: 12_000, maximumAge: 300_000 }
-    )
-  }, [])
 
   const handleEmergencySortBegin = useCallback(() => setEmergencyDumpSorting(true), [])
   const handleEmergencySortCancel = useCallback(() => setEmergencyDumpSorting(false), [])
@@ -876,7 +838,6 @@ export default function EmergencyPage() {
           severity,
           notes: notesPayload,
           containment_plan: null,
-          location: fireLocation.trim() || null,
         })
         .select(EMERGENCY_ROW_SELECT)
         .single()
@@ -964,7 +925,6 @@ export default function EmergencyPage() {
       setBrainDump('')
       setDescription('')
       setNotes('')
-      setFireLocation('')
       setSeverity('warm')
       headlineUserEditedRef.current = false
     } catch (err) {
@@ -1604,32 +1564,6 @@ export default function EmergencyPage() {
               />
             </div>
 
-            <div className="mt-8">
-              <label htmlFor="emergency-location" className="mb-2 block text-sm font-medium text-gray-900 dark:text-white">
-                Where are you? <span className="font-normal text-gray-500 dark:text-gray-400">(optional)</span>
-              </label>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                <input
-                  id="emergency-location"
-                  type="text"
-                  value={fireLocation}
-                  onChange={(e) => setFireLocation(e.target.value)}
-                  placeholder="e.g. Soho, London · or use device"
-                  maxLength={220}
-                  autoComplete="address-level2"
-                  className="box-border min-h-[44px] w-full min-w-0 flex-1 rounded-xl border-2 border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/25 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-amber-500/70"
-                />
-                <button
-                  type="button"
-                  onClick={() => void fillLocationFromDevice()}
-                  disabled={geoLookupLoading}
-                  className="shrink-0 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                >
-                  {geoLookupLoading ? 'Locating…' : 'Use approximate location'}
-                </button>
-              </div>
-            </div>
-
             {error ? (
               <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200/80 bg-amber-50/50 px-3 py-2.5 text-sm text-gray-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-gray-100">
                 <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
@@ -1701,12 +1635,6 @@ export default function EmergencyPage() {
                         <p className="mt-1 text-sm leading-relaxed text-gray-900 dark:text-gray-100">
                           <span className="font-semibold">What you reported:</span> {activeHotFire.description}
                         </p>
-                        {activeHotFire.location?.trim() ? (
-                          <p className="mt-1.5 flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
-                            <span>{activeHotFire.location.trim()}</span>
-                          </p>
-                        ) : null}
                       </div>
                     </div>
 
