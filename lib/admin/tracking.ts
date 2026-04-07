@@ -285,6 +285,8 @@ export type FounderJourneyCommandCenterPayload = {
       recentPath: FlowPathStep[]
       /** True if user has an active ICS subscription and/or Google Calendar OAuth (voluntary calendar hook). */
       calendarHook: boolean
+      /** True if a row exists in `google_calendar_tokens` (Google Calendar OAuth — time-protection sync). */
+      googleCalendarLinked: boolean
       /** Minutes from profile `created_at` to first `morning_plan_commits.committed_at`; null if never saved. */
       minutesToFirstMorningSave: number | null
       /** Parsed from most recent `page_views.user_agent` (pulse batch). */
@@ -826,6 +828,7 @@ export async function buildFounderJourneyCommandCenter(
       lastAction,
       recentPath: [] as FlowPathStep[],
       calendarHook: false,
+      googleCalendarLinked: false,
       minutesToFirstMorningSave: null,
       lastDevice: 'Unknown',
       profileTimezone: 'UTC',
@@ -870,6 +873,8 @@ export async function buildFounderJourneyCommandCenter(
 
   const pulseIdsForIntent = pulsePointsWithDevice.map((p) => p.userId)
   const calendarHookUserIds = new Set<string>()
+  /** OAuth-linked Google Calendar only (`google_calendar_tokens`) — distinct from ICS feed hook. */
+  const googleCalendarLinkedUserIds = new Set<string>()
   const firstMorningCommitAt = new Map<string, string>()
   if (pulseIdsForIntent.length > 0) {
     try {
@@ -887,7 +892,10 @@ export async function buildFounderJourneyCommandCenter(
           .in('user_id', part)
         for (const r of gcal ?? []) {
           const uid = (r as { user_id?: string }).user_id
-          if (uid) calendarHookUserIds.add(uid)
+          if (uid) {
+            calendarHookUserIds.add(uid)
+            googleCalendarLinkedUserIds.add(uid)
+          }
         }
         const { data: commits } = await (db.from('morning_plan_commits') as any)
           .select('user_id, committed_at')
@@ -920,6 +928,7 @@ export async function buildFounderJourneyCommandCenter(
     return {
       ...p,
       calendarHook: calendarHookUserIds.has(p.userId),
+      googleCalendarLinked: googleCalendarLinkedUserIds.has(p.userId),
       minutesToFirstMorningSave: minutes,
       profileTimezone: tz,
       userLocalTime: formatUserLocalClock(dashboardClockAt, tz),

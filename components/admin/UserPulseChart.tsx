@@ -62,6 +62,8 @@ export type UserPulsePoint = {
   lastAction?: string
   recentPath?: FlowPathStep[]
   calendarHook?: boolean
+  /** Google OAuth only; distinct from ICS hook. */
+  googleCalendarLinked?: boolean
   minutesToFirstMorningSave?: number | null
   lastDevice?: string
   profileTimezone?: string

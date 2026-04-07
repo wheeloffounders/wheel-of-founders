@@ -462,7 +462,9 @@ export default function AdminFounderJourneyCommandCenterPage() {
                   <strong>Local time</strong> = wall clock in the user&apos;s profile timezone when you loaded this page.{' '}
                   <strong>Born (local)</strong> = signup (<code className="rounded bg-black/5 px-1 dark:bg-white/10">created_at</code>) in their zone.{' '}
                   <strong>Started (local)</strong> = first morning plan save in their zone.{' '}
-                  <strong>Hook</strong> (📅) = active ICS feed and/or Google Calendar. <strong>Velocity</strong> = minutes
+                  <strong>Calendar</strong> = Google Calendar OAuth only (
+                  <code className="rounded bg-black/5 px-1 dark:bg-white/10">google_calendar_tokens</code>
+                  ). <strong>Hook</strong> (📅) = active ICS feed and/or Google Calendar. <strong>Velocity</strong> = minutes
                   from signup to first morning save (
                   <code className="rounded bg-black/5 px-1 dark:bg-white/10">morning_plan_commits</code>).
                 </p>
@@ -560,6 +562,16 @@ export default function AdminFounderJourneyCommandCenterPage() {
                           <InfoTooltip
                             presentation="popover"
                             text="The last 5 steps + dwell time. Red rings = content was bypassed or ignored (under 5 seconds)."
+                            className="[&_svg]:h-3 [&_svg]:w-3"
+                          />
+                        </span>
+                      </th>
+                      <th className="py-1 pr-3 text-center">
+                        <span className="inline-flex items-center justify-center gap-0.5 whitespace-nowrap">
+                          Calendar
+                          <InfoTooltip
+                            presentation="popover"
+                            text="Google Calendar OAuth only: a row in google_calendar_tokens means they completed Google sync (time protection). ICS-only users show Not Linked here but may still show Hook."
                             className="[&_svg]:h-3 [&_svg]:w-3"
                           />
                         </span>
@@ -688,7 +700,25 @@ export default function AdminFounderJourneyCommandCenterPage() {
                             <span className="text-gray-400 dark:text-gray-500">—</span>
                           )}
                         </td>
-                        <td className="py-1 pr-3 text-center align-top" title="Calendar hook">
+                        <td
+                          className="py-1 pr-3 text-center align-top whitespace-nowrap"
+                          title={
+                            p.googleCalendarLinked
+                              ? 'Google Calendar OAuth linked (google_calendar_tokens)'
+                              : 'No Google Calendar OAuth row'
+                          }
+                        >
+                          {p.googleCalendarLinked ? (
+                            <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                              🟢 Active
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500">
+                              ⚪ Not Linked
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-1 pr-3 text-center align-top" title="Calendar hook (ICS and/or Google)">
                           {p.calendarHook ? (
                             <span className="text-base" aria-label="Calendar hook active">
                               📅
