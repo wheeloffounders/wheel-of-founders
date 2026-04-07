@@ -462,7 +462,9 @@ export default function AdminFounderJourneyCommandCenterPage() {
                   <strong>Local time</strong> = wall clock in the user&apos;s profile timezone when you loaded this page.{' '}
                   <strong>Born (local)</strong> = signup (<code className="rounded bg-black/5 px-1 dark:bg-white/10">created_at</code>) in their zone.{' '}
                   <strong>Started (local)</strong> = first morning plan save in their zone.{' '}
-                  <strong>Calendar</strong> = Google Calendar OAuth only (
+                  <strong>Outreach</strong> = retention emails in the last 7 days from{' '}
+                  <code className="rounded bg-black/5 px-1 dark:bg-white/10">communication_logs</code> (Resend sends +
+                  webhooks). <strong>Calendar</strong> = Google Calendar OAuth only (
                   <code className="rounded bg-black/5 px-1 dark:bg-white/10">google_calendar_tokens</code>
                   ). <strong>Hook</strong> (📅) = active ICS feed and/or Google Calendar. <strong>Velocity</strong> = minutes
                   from signup to first morning save (
@@ -568,6 +570,16 @@ export default function AdminFounderJourneyCommandCenterPage() {
                       </th>
                       <th className="py-1 pr-3 text-center">
                         <span className="inline-flex items-center justify-center gap-0.5 whitespace-nowrap">
+                          Outreach
+                          <InfoTooltip
+                            presentation="popover"
+                            text="Count of rows in communication_logs (last 7 days). 👁️ = at least one open tracked via Resend webhook. Hover tooltip = most recent send summary."
+                            className="[&_svg]:h-3 [&_svg]:w-3"
+                          />
+                        </span>
+                      </th>
+                      <th className="py-1 pr-3 text-center">
+                        <span className="inline-flex items-center justify-center gap-0.5 whitespace-nowrap">
                           Calendar
                           <InfoTooltip
                             presentation="popover"
@@ -620,6 +632,7 @@ export default function AdminFounderJourneyCommandCenterPage() {
                   </thead>
                   <tbody>
                     {data.pulse.points.slice(0, 40).map((p) => {
+                      const outreach = p.outreach7d ?? { sentCount: 0, anyOpened: false, lastLine: null }
                       const deerVerdict = generateUserStory({
                         userId: p.userId,
                         shadow: p.shadow,
@@ -699,6 +712,19 @@ export default function AdminFounderJourneyCommandCenterPage() {
                           ) : (
                             <span className="text-gray-400 dark:text-gray-500">—</span>
                           )}
+                        </td>
+                        <td
+                          className="py-1 pr-3 text-center align-top whitespace-nowrap text-gray-800 dark:text-gray-200"
+                          title={outreach.lastLine ?? 'No tracked emails in the last 7 days'}
+                        >
+                          <span className="inline-flex items-center justify-center gap-1">
+                            <span className="tabular-nums font-medium">{outreach.sentCount}</span>
+                            {outreach.sentCount > 0 && outreach.anyOpened ? (
+                              <span aria-hidden title="At least one open (Resend)">
+                                👁️
+                              </span>
+                            ) : null}
+                          </span>
                         </td>
                         <td
                           className="py-1 pr-3 text-center align-top whitespace-nowrap"

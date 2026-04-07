@@ -4,7 +4,6 @@ import { postResendWebhook } from '@/lib/email/resend-webhook-http'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-/** @deprecated Prefer `/api/webhooks/resend` for new Resend dashboard webhook URLs. */
 export async function POST(req: NextRequest) {
   return postResendWebhook(req)
 }

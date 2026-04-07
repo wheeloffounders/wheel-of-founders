@@ -3,7 +3,7 @@
  * funnel milestones, and contextual "Deer advice" for the Command Center.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { addDays, differenceInCalendarDays, format, formatDistanceToNow, subDays, subHours } from 'date-fns'
+import { addDays, differenceInCalendarDays, format, formatDistanceToNow, parseISO, subDays, subHours } from 'date-fns'
 import type { FlowPathStep } from '@/lib/admin/flow-path-tags'
 import { minutesBetweenIso } from '@/lib/admin/flow-path-tags'
 import { fetchRecentPathLabelsForUsers } from '@/lib/admin/recent-path-from-page-views'
@@ -305,6 +305,12 @@ export type FounderJourneyCommandCenterPayload = {
       firstMorningCommittedAt: string | null
       /** Profile `created_at` ISO (for overnight velocity vs ghosting). */
       profileCreatedAt: string
+      /** Resend / communication_logs: emails in last 7d and open signal (admin outreach). */
+      outreach7d: {
+        sentCount: number
+        anyOpened: boolean
+        lastLine: string | null
+      }
     }>
     shadowLegend: Array<{ shadow: ShadowArchetypeName; color: string }>
     /** Count of pulse-batch users per shadow (scatter subset; may differ from cohort shadowDistribution). */
@@ -410,6 +416,25 @@ const SHADOW_COLORS: Record<ShadowArchetypeName, string> = {
   hustler: '#ef725c',
   strategist: '#152b50',
   hybrid: '#a855f7',
+}
+
+function humanizeEmailTypeLabel(t: string): string {
+  return t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function formatOutreachLastLine(row: {
+  email_type: string
+  subject: string | null
+  sent_at: string
+  opened_at: string | null
+}): string {
+  const label = (row.subject?.trim() || humanizeEmailTypeLabel(row.email_type)).slice(0, 90)
+  const sentRel = formatDistanceToNow(parseISO(row.sent_at), { addSuffix: true })
+  const opened =
+    row.opened_at && String(row.opened_at).length > 0
+      ? `Opened ${formatDistanceToNow(parseISO(row.opened_at), { addSuffix: true })}`
+      : 'Not opened'
+  return `${label} - Sent ${sentRel} - ${opened}`
 }
 
 function firstThreeCalendarDaysFromSignup(signupIso: string): { d0: string; d1: string; d2: string } {
@@ -838,6 +863,7 @@ export async function buildFounderJourneyCommandCenter(
       signupLocalHour: null,
       firstMorningCommittedAt: null,
       profileCreatedAt: u.created_at,
+      outreach7d: { sentCount: 0, anyOpened: false, lastLine: null },
     })
   }
 
@@ -939,10 +965,57 @@ export async function buildFounderJourneyCommandCenter(
     }
   })
 
+  const sevenDaysAgoComm = subDays(new Date(), 7).toISOString()
+  type CommRow = {
+    user_id: string
+    email_type: string
+    subject: string | null
+    sent_at: string
+    opened_at: string | null
+  }
+  const outreachByUser = new Map<string, { sentCount: number; anyOpened: boolean; lastLine: string | null }>()
+  const pulseIdsForOutreach = pulsePointsFinal.map((p) => p.userId)
+  if (pulseIdsForOutreach.length > 0) {
+    const allComm: CommRow[] = []
+    for (const part of chunk(pulseIdsForOutreach, 400)) {
+      const { data, error } = await (db.from('communication_logs') as any)
+        .select('user_id, email_type, subject, sent_at, opened_at')
+        .in('user_id', part)
+        .gte('sent_at', sevenDaysAgoComm)
+      if (error) {
+        console.warn('[admin/tracking] communication_logs', error)
+        continue
+      }
+      allComm.push(...((data ?? []) as CommRow[]))
+    }
+    const grouped = new Map<string, CommRow[]>()
+    for (const r of allComm) {
+      if (!grouped.has(r.user_id)) grouped.set(r.user_id, [])
+      grouped.get(r.user_id)!.push(r)
+    }
+    for (const [uid, list] of grouped) {
+      const sentCount = list.length
+      const anyOpened = list.some((r) => r.opened_at != null && String(r.opened_at).length > 0)
+      const last = [...list].sort(
+        (a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
+      )[0]
+      outreachByUser.set(uid, {
+        sentCount,
+        anyOpened,
+        lastLine: last ? formatOutreachLastLine(last) : null,
+      })
+    }
+  }
+
+  const pulsePointsWithOutreach = pulsePointsFinal.map((p) => ({
+    ...p,
+    outreach7d: outreachByUser.get(p.userId) ?? { sentCount: 0, anyOpened: false, lastLine: null },
+  }))
+
   let handheldN = 0
   let desktopN = 0
   let unknownDeviceN = 0
-  for (const p of pulsePointsFinal) {
+  for (const p of pulsePointsWithOutreach) {
     if (p.lastDevice === 'Desktop') desktopN += 1
     else if (p.lastDevice === 'Mobile' || p.lastDevice === 'Tablet') handheldN += 1
     else unknownDeviceN += 1
@@ -967,7 +1040,7 @@ export async function buildFounderJourneyCommandCenter(
     strategist: 0,
     hybrid: 0,
   }
-  for (const p of pulsePointsFinal) {
+  for (const p of pulsePointsWithOutreach) {
     pulseShadowDistribution[p.shadow] = (pulseShadowDistribution[p.shadow] ?? 0) + 1
   }
 
@@ -977,7 +1050,7 @@ export async function buildFounderJourneyCommandCenter(
     total: 0,
     byShadow: {},
   }))
-  const pulseUserIds = pulsePointsFinal.map((p) => p.userId)
+  const pulseUserIds = pulsePointsWithOutreach.map((p) => p.userId)
   if (pulseUserIds.length > 0) {
     const allPv: Array<{ user_id: string; entered_at: string }> = []
     for (const part of chunk(pulseUserIds, 400)) {
@@ -1009,7 +1082,7 @@ export async function buildFounderJourneyCommandCenter(
     shadowDistribution: cohortShadowDistribution,
     shadowSummary,
     pulse: {
-      points: pulsePointsFinal,
+      points: pulsePointsWithOutreach,
       shadowLegend,
       shadowDistribution: pulseShadowDistribution,
       activityByHourUtc,

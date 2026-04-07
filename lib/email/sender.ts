@@ -196,6 +196,21 @@ export async function sendEmailWithTracking(
     message_id: sendRes.messageId || null,
   })
 
+  if (sendRes.messageId) {
+    try {
+      await (db.from('communication_logs') as any).insert({
+        user_id: userId,
+        email_type: emailType,
+        subject: compiledSubject.slice(0, 500),
+        resend_id: sendRes.messageId,
+        status: 'sent',
+        sent_at: new Date().toISOString(),
+      })
+    } catch (e) {
+      console.warn('[sender] communication_logs insert failed', e)
+    }
+  }
+
   return { sent: true, messageId: sendRes.messageId, emailLogId }
 }
 
