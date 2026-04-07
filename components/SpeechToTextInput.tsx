@@ -66,8 +66,8 @@ export type SpeechDictationOptions = {
 }
 
 /**
- * Dictation for a single input/textarea ref. Use with {@link SpeechTextField} when the mic
- * should sit outside the field (e.g. task card header row).
+ * Dictation for a single input/textarea ref. Only **final** transcripts are inserted (interim does not overwrite);
+ * recognition auto-restarts on `onend` until the user stops the mic.
  */
 export function useSpeechDictation(
   inputRef: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>,
@@ -78,6 +78,7 @@ export function useSpeechDictation(
   const enabled = options?.enabled !== false
   const disabled = Boolean(options?.disabled)
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
+  const userStoppedRef = useRef(false)
   const [isListening, setIsListening] = useState(false)
   const [supportsSpeech, setSupportsSpeech] = useState(false)
 
@@ -119,6 +120,7 @@ export function useSpeechDictation(
     if (!SpeechRecognition || disabled) return
 
     if (isListening) {
+      userStoppedRef.current = true
       try {
         recognitionRef.current?.stop()
       } catch {
@@ -128,6 +130,8 @@ export function useSpeechDictation(
       setIsListening(false)
       return
     }
+
+    userStoppedRef.current = false
 
     const recognition = new SpeechRecognition()
     recognition.continuous = true
@@ -149,14 +153,28 @@ export function useSpeechDictation(
 
     recognition.onerror = (event: any) => {
       if (event.error === 'not-allowed' || event.error === 'aborted') {
+        userStoppedRef.current = true
+        recognitionRef.current = null
         setIsListening(false)
       }
     }
 
     recognition.onend = () => {
-      if (recognitionRef.current === recognition) {
+      if (recognitionRef.current !== recognition) return
+      if (userStoppedRef.current) {
+        recognitionRef.current = null
         setIsListening(false)
+        return
       }
+      window.setTimeout(() => {
+        if (recognitionRef.current !== recognition || userStoppedRef.current) return
+        try {
+          recognition.start()
+        } catch {
+          recognitionRef.current = null
+          setIsListening(false)
+        }
+      }, 0)
     }
 
     recognitionRef.current = recognition
@@ -171,6 +189,7 @@ export function useSpeechDictation(
 
   useEffect(() => {
     return () => {
+      userStoppedRef.current = true
       try {
         recognitionRef.current?.stop()
       } catch {

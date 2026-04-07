@@ -438,7 +438,8 @@ export default function EmergencyPage() {
   )
 
   /**
-   * Long headline alone (no brain dump): debounced triage like before. Brain dump uses BrainDumpCard “Finish & Sort”.
+   * Long headline alone (no brain dump): debounced triage for the protocol headline field only.
+   * Brain dump → AI sort is manual (BrainDumpCard “Finish & Sort” only); this effect bails when the dump has text.
    */
   useEffect(() => {
     const bd = brainDump.trim()

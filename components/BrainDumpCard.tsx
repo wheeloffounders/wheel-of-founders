@@ -135,10 +135,16 @@ export function BrainDumpCard({
   const valueRef = useRef(value)
   valueRef.current = value
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
+  /** True after `stopListening()` / user toggle off — avoids auto-restart after intentional stop. */
+  const userRequestedMicStopRef = useRef(false)
   const [isListening, setIsListening] = useState(false)
   const [supportsSpeech, setSupportsSpeech] = useState(false)
   /** Evening / Emergency + sort: hide live transcript during sort so the dump “vanishes” into cards / form. */
   const [ghostHideFieldForSort, setGhostHideFieldForSort] = useState(false)
+  const sortLoadingRef = useRef(sortLoading)
+  const ghostHideForSortRef = useRef(ghostHideFieldForSort)
+  sortLoadingRef.current = sortLoading
+  ghostHideForSortRef.current = ghostHideFieldForSort
 
   const isGhostMode =
     (context === 'evening' || context === 'emergency' || context === 'morning') &&
@@ -191,6 +197,7 @@ export function BrainDumpCard({
   )
 
   const stopListening = useCallback(() => {
+    userRequestedMicStopRef.current = true
     try {
       recognitionRef.current?.stop()
     } catch {
@@ -238,6 +245,7 @@ export function BrainDumpCard({
     recognition.interimResults = true
     recognition.lang = 'en-US'
 
+    // interimResults=true helps the engine segment phrases; we only commit isFinal chunks so interim never overwrites text.
     recognition.onresult = (event) => {
       let final = ''
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -257,14 +265,40 @@ export function BrainDumpCard({
 
     recognition.onerror = (event) => {
       if (event.error === 'not-allowed' || event.error === 'aborted') {
+        userRequestedMicStopRef.current = true
+        recognitionRef.current = null
         setIsListening(false)
       }
     }
 
     recognition.onend = () => {
-      if (recognitionRef.current === recognition) {
+      if (recognitionRef.current !== recognition) return
+
+      if (
+        userRequestedMicStopRef.current ||
+        sortLoadingRef.current ||
+        ghostHideForSortRef.current
+      ) {
+        recognitionRef.current = null
         setIsListening(false)
+        return
       }
+
+      // Mobile often ends the session after a pause even with continuous=true — restart to keep capturing.
+      window.setTimeout(() => {
+        if (recognitionRef.current !== recognition || userRequestedMicStopRef.current) return
+        if (sortLoadingRef.current || ghostHideForSortRef.current) {
+          recognitionRef.current = null
+          setIsListening(false)
+          return
+        }
+        try {
+          recognition.start()
+        } catch {
+          recognitionRef.current = null
+          setIsListening(false)
+        }
+      }, 0)
     }
 
     recognitionRef.current = recognition
@@ -281,6 +315,7 @@ export function BrainDumpCard({
 
   useEffect(() => {
     return () => {
+      userRequestedMicStopRef.current = true
       try {
         recognitionRef.current?.stop()
       } catch {
@@ -337,13 +372,24 @@ export function BrainDumpCard({
   const hideGhostMicForSort =
     isGhostMode && enableSortIntoReview && !!onSortIntoReview && (sortLoading || ghostHideFieldForSort)
 
-  const showGhostDoneOnly =
+  /** Morning / evening / emergency ghost dump: show Finish & Sort whenever there is text or mic is active (pause ≠ lose the button). */
+  const ghostShowFinishSort =
     isGhostMode &&
     enableSortIntoReview &&
     !!onSortIntoReview &&
     !sortLoading &&
     !ghostHideFieldForSort &&
     (isListening || value.trim().length > 0)
+
+  /** Initial mic — only before any capture. After that, Finish & Sort + optional “Add more” stay available. */
+  const ghostShowStartMicOnly =
+    isGhostMode &&
+    enableSortIntoReview &&
+    !!onSortIntoReview &&
+    !sortLoading &&
+    !ghostHideFieldForSort &&
+    !isListening &&
+    value.trim().length === 0
 
   /** Dashed “ghost” region after Finish — sorting status (no live transcript). */
   const showGhostSortSlot = isGhostMode && ghostHideFieldForSort
@@ -409,9 +455,23 @@ export function BrainDumpCard({
         </p>
       ) : null}
       {isGhostMode && enableSortIntoReview && onSortIntoReview ? (
-        hideGhostMicForSort ? null : showGhostDoneOnly ? (
-          finishSortBlock
-        ) : (
+        hideGhostMicForSort ? null : ghostShowFinishSort ? (
+          <div className="flex w-full flex-col gap-3">
+            {finishSortBlock}
+            {!isListening && !sortLoading && supportsSpeech ? (
+              <button
+                type="button"
+                onClick={onBrainDumpMicClick}
+                aria-label="Add more — continue voice brain dump"
+                title="Keep going — your new words are added to what you already said."
+                className="flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 py-2.5 text-sm font-medium text-slate-600 transition-all hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-900/50"
+              >
+                <Mic className="h-5 w-5 shrink-0" strokeWidth={2.25} aria-hidden />
+                <span>Add more (voice)</span>
+              </button>
+            ) : null}
+          </div>
+        ) : ghostShowStartMicOnly ? (
           <button
             type="button"
             onClick={onBrainDumpMicClick}
@@ -430,7 +490,7 @@ export function BrainDumpCard({
             <Mic className="h-6 w-6" strokeWidth={2.25} aria-hidden />
             <span>Brain Dump</span>
           </button>
-        )
+        ) : null
       ) : isListening ? (
         <button
           type="button"

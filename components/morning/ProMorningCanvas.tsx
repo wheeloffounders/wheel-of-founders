@@ -387,6 +387,14 @@ export function ProMorningCanvas({
   const [brainDumpReviewBanner, setBrainDumpReviewBanner] = useState(false)
   const rowSpeechRecognitionRef = useRef<any>(null)
   const [rowSpeechSlot, setRowSpeechSlot] = useState<number | null>(null)
+  /** True when row dictation was stopped on purpose — blocks auto-restart after `onend`. */
+  const rowSpeechUserStopRef = useRef(false)
+  const voiceLockedForRowSpeechRef = useRef(voiceLocked)
+  const brainDumpProcessingForRowSpeechRef = useRef(brainDumpProcessing)
+  const savingForRowSpeechRef = useRef(saving)
+  voiceLockedForRowSpeechRef.current = voiceLocked
+  brainDumpProcessingForRowSpeechRef.current = brainDumpProcessing
+  savingForRowSpeechRef.current = saving
 
   const clearUndoTimer = useCallback(() => {
     if (undoTimerRef.current !== null) {
@@ -407,6 +415,7 @@ export function ProMorningCanvas({
     setBrainDumpReviewBanner(false)
     setMorningBrainDumpText('')
     setBrainDumpInterruptEpoch((n) => n + 1)
+    rowSpeechUserStopRef.current = true
     try {
       rowSpeechRecognitionRef.current?.stop()
     } catch {
@@ -746,6 +755,7 @@ export function ProMorningCanvas({
   )
 
   const stopRowSpeechRecognition = useCallback(() => {
+    rowSpeechUserStopRef.current = true
     try {
       rowSpeechRecognitionRef.current?.stop()
     } catch {
@@ -770,6 +780,8 @@ export function ProMorningCanvas({
       const Ctor = getSpeechRecognitionCtor()
       if (!Ctor) return
 
+      rowSpeechUserStopRef.current = false
+
       const recognition = new Ctor()
       recognition.continuous = true
       recognition.interimResults = true
@@ -785,15 +797,48 @@ export function ProMorningCanvas({
         if (chunk) appendToRowDescription(index, chunk)
       }
 
-      recognition.onerror = () => {
+      recognition.onerror = (event: { error?: string }) => {
+        if (event.error === 'not-allowed' || event.error === 'aborted') {
+          rowSpeechUserStopRef.current = true
+        }
+        rowSpeechRecognitionRef.current = null
         setRowSpeechSlot(null)
+        exclusiveSpeechStopRef.current = null
       }
 
       recognition.onend = () => {
         if (rowSpeechRecognitionRef.current !== recognition) return
-        rowSpeechRecognitionRef.current = null
-        setRowSpeechSlot(null)
-        exclusiveSpeechStopRef.current = null
+        if (
+          rowSpeechUserStopRef.current ||
+          voiceLockedForRowSpeechRef.current ||
+          brainDumpProcessingForRowSpeechRef.current ||
+          savingForRowSpeechRef.current
+        ) {
+          rowSpeechRecognitionRef.current = null
+          setRowSpeechSlot(null)
+          exclusiveSpeechStopRef.current = null
+          return
+        }
+        window.setTimeout(() => {
+          if (rowSpeechRecognitionRef.current !== recognition || rowSpeechUserStopRef.current) return
+          if (
+            voiceLockedForRowSpeechRef.current ||
+            brainDumpProcessingForRowSpeechRef.current ||
+            savingForRowSpeechRef.current
+          ) {
+            rowSpeechRecognitionRef.current = null
+            setRowSpeechSlot(null)
+            exclusiveSpeechStopRef.current = null
+            return
+          }
+          try {
+            recognition.start()
+          } catch {
+            rowSpeechRecognitionRef.current = null
+            setRowSpeechSlot(null)
+            exclusiveSpeechStopRef.current = null
+          }
+        }, 0)
       }
 
       rowSpeechRecognitionRef.current = recognition

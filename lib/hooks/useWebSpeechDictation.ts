@@ -9,13 +9,15 @@ function getSpeechRecognition(): (new () => any) | null {
 }
 
 /**
- * Continuous browser dictation (Web Speech API). Accumulates final segments only.
+ * Continuous browser dictation (Web Speech API). Commits **final** segments only (interim never replaces text);
+ * restarts recognition after `onend` while listening unless {@link stop} was called.
  */
 export function useWebSpeechDictation() {
   const [isListening, setIsListening] = useState(false)
   const [supportsSpeech, setSupportsSpeech] = useState(false)
   const recognitionRef = useRef<any>(null)
   const transcriptRef = useRef('')
+  const userStoppedRef = useRef(false)
 
   useEffect(() => {
     setSupportsSpeech(getSpeechRecognition() !== null)
@@ -28,6 +30,7 @@ export function useWebSpeechDictation() {
   const getTranscript = useCallback(() => transcriptRef.current.trim(), [])
 
   const stop = useCallback(() => {
+    userStoppedRef.current = true
     try {
       recognitionRef.current?.stop()
     } catch {
@@ -45,6 +48,8 @@ export function useWebSpeechDictation() {
       stop()
       return
     }
+
+    userStoppedRef.current = false
 
     const recognition = new Ctor()
     recognition.continuous = true
@@ -69,15 +74,28 @@ export function useWebSpeechDictation() {
 
     recognition.onerror = (event: { error: string }) => {
       if (event.error === 'not-allowed' || event.error === 'aborted') {
+        userStoppedRef.current = true
+        recognitionRef.current = null
         setIsListening(false)
       }
     }
 
     recognition.onend = () => {
-      if (recognitionRef.current === recognition) {
-        setIsListening(false)
+      if (recognitionRef.current !== recognition) return
+      if (userStoppedRef.current) {
         recognitionRef.current = null
+        setIsListening(false)
+        return
       }
+      window.setTimeout(() => {
+        if (recognitionRef.current !== recognition || userStoppedRef.current) return
+        try {
+          recognition.start()
+        } catch {
+          recognitionRef.current = null
+          setIsListening(false)
+        }
+      }, 0)
     }
 
     recognitionRef.current = recognition
@@ -92,6 +110,7 @@ export function useWebSpeechDictation() {
 
   useEffect(() => {
     return () => {
+      userStoppedRef.current = true
       try {
         recognitionRef.current?.stop()
       } catch {
