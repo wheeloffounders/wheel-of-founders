@@ -46,7 +46,7 @@ import { isNewOnboardingEnabled } from '@/lib/feature-flags'
 import { getClientAuthHeaders } from '@/lib/api/fetch-json'
 import { trackErrorSync } from '@/lib/error-tracker'
 import { getEffectiveUserTier, type TierProfileInput } from '@/lib/auth/tier-logic'
-import { isBetaModeEnabled, resolveProEntitlement } from '@/lib/auth/is-pro'
+import { resolveProEntitlement } from '@/lib/auth/is-pro'
 import { getTrialStatus } from '@/lib/auth/trial-status'
 import { isTrialExpirySimulationEnabled } from '@/lib/trial-simulation'
 import { ProMorningCanvas } from '@/components/morning/ProMorningCanvas'
@@ -444,13 +444,6 @@ export default function MorningPage() {
     () => tierAllowsPostMorningInsight && trialUx.status !== 'expired',
     [tierAllowsPostMorningInsight, trialUx.status]
   )
-
-  const tutorialWelcomeTone = useMemo((): 'beta' | 'trial' | 'default' | undefined => {
-    if (!isTutorial && !isFirstTime) return undefined
-    if (isBetaModeEnabled()) return 'beta'
-    if (morningEntitlement.source === 'trial') return 'trial'
-    return 'default'
-  }, [isTutorial, isFirstTime, morningEntitlement.source])
 
   /** Tutorial-only mood/energy when the check-in card is shown (non-streamlined). */
   const [tutorialCheckInMood, setTutorialCheckInMood] = useState<number | null>(3)
@@ -2485,7 +2478,6 @@ export default function MorningPage() {
             founderStruggleIds={founderStruggleIds}
             freemiumUser={freemiumUserStrategic}
             tutorialMode={isTutorial || isFirstTime}
-            tutorialWelcomeTone={tutorialWelcomeTone}
             tutorialCheckInMood={tutorialCheckInMood}
             tutorialCheckInEnergy={tutorialCheckInEnergy}
             onTutorialCheckInMoodChange={setTutorialCheckInMood}
@@ -2740,7 +2732,6 @@ export default function MorningPage() {
             founderStruggleIds={founderStruggleIds}
             freemiumUser={freemiumUserStrategic}
             tutorialMode={isTutorial}
-            tutorialWelcomeTone={tutorialWelcomeTone}
             tutorialCheckInMood={tutorialCheckInMood}
             tutorialCheckInEnergy={tutorialCheckInEnergy}
             onTutorialCheckInMoodChange={setTutorialCheckInMood}

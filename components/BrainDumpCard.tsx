@@ -21,7 +21,8 @@ const TEXTAREA_EMERGENCY_CLASSES =
   'w-full rounded-lg border-2 border-gray-200 bg-white/90 px-3 py-2 text-base leading-relaxed text-gray-900 placeholder:text-gray-400 focus:outline-none dark:bg-gray-800 dark:text-white dark:border-gray-600 border-l-4 border-l-transparent focus:border-l-red-500 focus:border-red-500/80 focus:ring-2 focus:ring-red-500/20'
 
 const CONTEXT_PLACEHOLDER: Record<BrainDumpContext, string> = {
-  morning: 'Start typing or tap the mic to clear your head...',
+  morning:
+    "Speak or type everything on your mind. Don't worry about grammar—Mrs. Deer will sort the threads.",
   evening:
     "What's still rattling around? Worries, half-thoughts, things you don't want carrying into sleep...",
   emergency: "Get it all out. What's the immediate noise? Don't worry about grammar, just dump it.",
@@ -35,8 +36,9 @@ const EVENING_SORT_PLACEHOLDER =
 const EMERGENCY_SORT_PLACEHOLDER =
   "Speaking is active... Name the fire, what's at stake, and what you need next."
 
-/** Morning + sort: clear the path before priorities. */
-const MORNING_SORT_PLACEHOLDER = 'Start typing or tap the mic to clear your head...'
+/** Morning + sort: hints live in the field, not the header. */
+const MORNING_SORT_PLACEHOLDER =
+  "Speak or type everything on your mind. Don't worry about grammar—Mrs. Deer will sort the threads."
 
 const HELPER_COPY: Record<BrainDumpContext, string> = {
   morning:
@@ -585,7 +587,7 @@ export function BrainDumpCard({
           : 'space-y-3',
         cockpitVisual &&
           isGhostVoiceBlock &&
-          'rounded-none border-2 border-gray-200 bg-white p-4 shadow-[0_4px_20px_rgba(0,0,0,0.07)] dark:border-gray-700 dark:bg-gray-800 dark:shadow-[0_4px_24px_rgba(0,0,0,0.35)]',
+          'rounded-none border-2 border-gray-200 bg-white px-4 py-2 shadow-[0_4px_20px_rgba(0,0,0,0.07)] dark:border-gray-700 dark:bg-gray-800 dark:shadow-[0_4px_24px_rgba(0,0,0,0.35)]',
         className
       )}
       data-brain-dump-context={context}
@@ -608,7 +610,7 @@ export function BrainDumpCard({
             <p
               className={
                 isGhostVoiceBlock
-                  ? 'mb-4 mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground'
+                  ? 'mb-2 mt-1.5 max-w-prose text-sm leading-relaxed text-muted-foreground'
                   : 'mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-300'
               }
             >

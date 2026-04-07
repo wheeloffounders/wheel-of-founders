@@ -46,6 +46,7 @@ import {
   sanitizeOverflowLine,
 } from '@/lib/morning/morning-brain-dump-merge'
 import { BrainDumpCard } from '@/components/BrainDumpCard'
+import { MorningSaveProcessingOverlay } from '@/components/morning/MorningSaveProcessingOverlay'
 import {
   dedupeRedundantWhyLines,
   sanitizeAiCardLabelText,
@@ -103,8 +104,6 @@ export type ProMorningCanvasProps = {
   freemiumUser?: UserProfile | null
   /** Onboarding tutorial: Pro shell + static welcome, no brain dump / oracle AI. */
   tutorialMode?: boolean
-  /** Beta vs trial vs default welcome copy (from `resolveProEntitlement` + env). */
-  tutorialWelcomeTone?: 'beta' | 'trial' | 'default'
   tutorialCheckInMood?: number | null
   tutorialCheckInEnergy?: number | null
   onTutorialCheckInMoodChange?: (v: number) => void
@@ -273,7 +272,6 @@ export function ProMorningCanvas({
   founderStruggleIds = null,
   freemiumUser = null,
   tutorialMode = false,
-  tutorialWelcomeTone = 'default',
   tutorialCheckInMood = null,
   tutorialCheckInEnergy = null,
   onTutorialCheckInMoodChange,
@@ -395,6 +393,11 @@ export function ProMorningCanvas({
   voiceLockedForRowSpeechRef.current = voiceLocked
   brainDumpProcessingForRowSpeechRef.current = brainDumpProcessing
   savingForRowSpeechRef.current = saving
+
+  const [saveProcessingOverlayDismissed, setSaveProcessingOverlayDismissed] = useState(false)
+  useEffect(() => {
+    if (!saving) setSaveProcessingOverlayDismissed(false)
+  }, [saving])
 
   const clearUndoTimer = useCallback(() => {
     if (undoTimerRef.current !== null) {
@@ -1744,23 +1747,15 @@ export function ProMorningCanvas({
     suggestLoading &&
     (traySuggestions === null || traySuggestions.length === 0)
 
-  const welcomeToneResolved = tutorialWelcomeTone ?? 'default'
-  const streamlinedIntro = welcomeToneResolved === 'beta' ? (
+  const morningActionBlurb = (
     <>
-      Welcome, Founder. As a Beta member, I&apos;ve unlocked my <strong>Full Strategic Toolkit</strong> for you.
-      Let&apos;s start with what matters today.
-    </>
-  ) : welcomeToneResolved === 'trial' ? (
-    <>
-      Welcome, Founder. I&apos;ve unlocked a <strong>7-Day Pro Pass</strong> for you. Let&apos;s align your day with
-      your biggest goals.
-    </>
-  ) : (
-    <>
-      Welcome, Founder. Let&apos;s capture what&apos;s on your mind, then lock in your priorities—same flow you&apos;ll
-      use every morning.
+      Capture your thoughts. Speak or type freely, then Mrs. Deer will help distill your{' '}
+      <span className="font-medium text-indigo-600 dark:text-indigo-400">Core Objective</span> and{' '}
+      <span className="font-medium text-orange-600 dark:text-orange-400">{baseStreamSlots} Needle Movers</span>.
     </>
   )
+
+  const brainDumpSubtitle = `Capture your thoughts. Speak or type freely, then Mrs. Deer will help distill your Core Objective and ${baseStreamSlots} Needle Movers.`
 
   const morningBrainDumpBlock = voiceLocked ? null : (
     <div
@@ -1770,26 +1765,13 @@ export function ProMorningCanvas({
       {cockpitOnboarding ? (
         <>
           <div
-            className={`mb-6 p-4 md:p-5 ${DASHBOARD_MORNING_CARD} border-l-4 border-indigo-500 bg-white dark:bg-gray-800`}
+            className={`mb-4 py-2 px-4 md:py-2.5 md:px-5 ${DASHBOARD_MORNING_CARD} border-l-4 border-indigo-500 bg-white dark:bg-gray-800`}
           >
-            <p className="text-sm font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Start here
-            </p>
-            <h2 className="mt-1 flex flex-wrap items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
+            <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
               <Brain className="h-5 w-5 shrink-0 text-[#152b50] dark:text-sky-200" aria-hidden />
-              Clear the path
+              Clear the Path
             </h2>
-            <p className="mt-3 text-sm leading-relaxed text-gray-700 dark:text-gray-200">{streamlinedIntro}</p>
-            <p className="mt-4 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
-              <span className="font-medium text-gray-900 dark:text-gray-100">Clear the fog:</span>{' '}
-              Speak or type everything on your mind—then distill it into your{' '}
-              <span className="font-medium text-indigo-600 dark:text-indigo-400">Core Objective</span> and{' '}
-              <span className="font-medium text-orange-600 dark:text-orange-400">
-                {baseStreamSlots} Needle Movers
-              </span>
-              . Mrs. Deer will listen, sort the threads, and draft the &apos;How&apos; so you can focus on the
-              &apos;What&apos;.
-            </p>
+            <p className="mt-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">{morningActionBlurb}</p>
           </div>
           <BrainDumpCard
             context="morning"
@@ -1816,12 +1798,8 @@ export function ProMorningCanvas({
       ) : (
         <BrainDumpCard
           context="morning"
-          title={tutorialMode ? 'Start here: Clear the path' : 'Clear the Path: Morning brain dump'}
-          subtitle={
-            tutorialMode
-              ? `Clear the fog first — speak or type everything on your mind, then Finish & Sort into your Core Objective and ${baseStreamSlots} needle movers. Same flow every morning.`
-              : `Clear the fog: dump the noise, then Finish & Sort into your Core Objective and top ${baseStreamSlots} ${streamTasksPhrase} — Mrs. Deer drafts the “How,” you own the “What.”`
-          }
+          title="Clear the Path"
+          subtitle={brainDumpSubtitle}
           value={morningBrainDumpText}
           onChange={setMorningBrainDumpText}
           accent="sage"
@@ -1843,6 +1821,12 @@ export function ProMorningCanvas({
 
   return (
     <>
+      <MorningSaveProcessingOverlay
+        open={saving && !saveProcessingOverlayDismissed}
+        brainDumpPreview={morningBrainDumpText}
+        coreObjectivePreview={decision.decision}
+        onDismiss={() => setSaveProcessingOverlayDismissed(true)}
+      />
       {brainDumpPriorityModal ? (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
@@ -2087,11 +2071,7 @@ export function ProMorningCanvas({
               document.querySelector<HTMLInputElement>('[data-pro-task-slot="0"]')?.focus()
             }
           }}
-          placeholder={
-            !decision.decision.trim()
-              ? "What's your focus today? You can type freely — or tap “Stuck?” above for strategy cards."
-              : 'What is the one decision that defines today?'
-          }
+          placeholder="What is the ONE thing that must happen today?"
           rows={5}
           className={`min-h-[7.5rem] w-full resize-y border-2 px-4 py-3 text-base leading-relaxed text-gray-900 placeholder:text-gray-400 focus:outline-none dark:text-white dark:placeholder:text-gray-500 ${
             decisionHighlightFromBrainDump
@@ -2602,9 +2582,7 @@ export function ProMorningCanvas({
                             }}
                             onKeyDown={(e) => onRowKeyDown(e, index)}
                             placeholder={
-                              cockpitOnboarding && index < baseStreamSlots
-                                ? `Needle mover ${index + 1}`
-                                : `Task ${index + 1}`
+                              index < baseStreamSlots ? `Action ${index + 1}...` : `Task ${index + 1}`
                             }
                             disabled={rowBrainDumpBusy}
                             minRows={1}
