@@ -5,6 +5,7 @@ import { ALL_RETENTION_EMAIL_TYPES, type RetentionEmailType } from '@/lib/email/
 import { getUserEmailPreferencesV1 } from '@/lib/email/preferences-v1'
 import { renderEmailTemplate } from '@/lib/email/templates'
 import { buildPersonalizedEmailContext } from '@/lib/email/personalization'
+import { isEmailRetentionV1Enabled } from '@/lib/email/retention-flag'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest) {
     }[prefs.frequency]
 
     const reason =
-      process.env.EMAIL_RETENTION_V1 !== 'true'
+      !isEmailRetentionV1Enabled()
         ? 'feature_flag_off'
         : prefs.unsubscribedAt
           ? 'unsubscribed'

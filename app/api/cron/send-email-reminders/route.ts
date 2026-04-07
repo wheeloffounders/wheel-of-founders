@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/server-supabase'
-import { sendEmailWithTracking } from '@/lib/email/sender'
-import { renderEmailTemplate } from '@/lib/email/templates'
-import { buildPersonalizedEmailContext } from '@/lib/email/personalization'
-import { fetchRecentReminderVariationIds, logReminderVariationUsed } from '@/lib/email/reminder-variation-log'
-import { pickReminderVariationId, buildReminderVariationEmailParts } from '@/lib/email/reminder-variations'
 import { getOptimizedReminderTimes } from '@/lib/email/send-time-optimizer'
 import { authorizeCronRequest } from '@/lib/cron-auth'
+import { describeSilentReminderSkip } from '@/lib/email/reminder-skip-reason'
+import { sendEveningReminderShard, sendMorningReminderShard } from '@/lib/email/send-reminder-cron-shards'
+import { isEmailRetentionV1Enabled } from '@/lib/email/retention-flag'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+
+/**
+ * Daily morning / evening reminder emails (5‑minute local windows).
+ *
+ * Gates (see loop): retention off only if `EMAIL_RETENTION_V1=false`, unsubscribe, bounce list, then
+ * **`user_profiles.last_email_open_at`** — if set and older than 90 days, skip (new users with NULL
+ * are not skipped). Evening nudge does **not** require morning tasks complete.
+ */
 
 function dateInTimezone(now: Date, tz: string): Date {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -49,12 +55,31 @@ function isWithinWindow(localNow: Date, hhmm: string, minutes = 5): boolean {
   return Math.abs(nowMin - target) <= minutes
 }
 
+type ReminderResult = {
+  userId: string
+  type?: string
+  sent: boolean
+  reason?: string
+  scheduledAt?: string
+  smart?: boolean
+  silentCode?: string
+  silentDetail?: string
+}
+
+function logDebug(userId: string, debugUserId: string | null, msg: string, extra?: Record<string, unknown>) {
+  if (!debugUserId || userId !== debugUserId) return
+  console.log(`[cron/send-email-reminders] User ID: ${userId} | ${msg}`, extra ?? '')
+}
+
 export async function GET(req: NextRequest) {
   try {
     const auth = authorizeCronRequest(req)
     if (!auth.ok) return NextResponse.json({ error: 'Unauthorized', reason: auth.reason }, { status: 401 })
 
-    if (process.env.EMAIL_RETENTION_V1 !== 'true') {
+    const debugUserId = req.nextUrl.searchParams.get('debugUserId')
+    const verboseSilent = req.nextUrl.searchParams.get('verboseSilent') === '1'
+
+    if (!isEmailRetentionV1Enabled()) {
       return NextResponse.json({ success: true, sent: 0, skipped: 0, reason: 'feature_flag_off' })
     }
 
@@ -99,14 +124,7 @@ export async function GET(req: NextRequest) {
 
     let sent = 0
     let skipped = 0
-    const results: Array<{
-      userId: string
-      type?: string
-      sent: boolean
-      reason?: string
-      scheduledAt?: string
-      smart?: boolean
-    }> = []
+    const results: ReminderResult[] = []
 
     for (const row of (settingsRows || []) as Array<{
       user_id: string
@@ -120,11 +138,13 @@ export async function GET(req: NextRequest) {
       const timezone = profile?.timezone || 'UTC'
       if (row.email_unsubscribed_at) {
         skipped++
+        logDebug(userId, debugUserId, 'Skip Reason: unsubscribed')
         results.push({ userId, sent: false, reason: 'unsubscribed' })
         continue
       }
       if (bouncedUsers.has(userId)) {
         skipped++
+        logDebug(userId, debugUserId, 'Skip Reason: bounced')
         results.push({ userId, sent: false, reason: 'bounced' })
         continue
       }
@@ -137,6 +157,9 @@ export async function GET(req: NextRequest) {
         (profileEngagement as { last_email_open_at?: string | null } | null)?.last_email_open_at || null
       if (!lastOpenAt || Date.now() - new Date(lastOpenAt).getTime() > 90 * 24 * 60 * 60 * 1000) {
         skipped++
+        logDebug(userId, debugUserId, 'Skip Reason: no recent email open (last_email_open_at within 90d required)', {
+          lastOpenAt,
+        })
         results.push({ userId, sent: false, reason: 'unengaged_90d' })
         continue
       }
@@ -171,134 +194,94 @@ export async function GET(req: NextRequest) {
       const morningTime = optimized.morningTime
       const eveningTime = optimized.eveningTime
 
+      const iteration: ReminderResult[] = []
+
       if (isWithinWindow(localNow, morningTime) && !morningCompleted) {
-        const user = await db.auth.admin.getUserById(userId)
-        const authUser = user.data.user
-        const ctx = await buildPersonalizedEmailContext(userId, { planDate, authUser })
-        const blockedMorning = await fetchRecentReminderVariationIds(db, userId, 'morning_reminder')
-        const hasRecentTheme = Boolean(ctx.recentThemeSnippet && ctx.recentThemeSnippet.length >= 12)
-        const hasRecentIntention = Boolean(
-          ctx.todaysIntentionSnippet && ctx.todaysIntentionSnippet.length >= 8
-        )
-        const morningVariationId = pickReminderVariationId({
-          kind: 'morning',
-          streak: ctx.streak,
-          hasRecentTheme,
-          hasRecentIntention,
-          dayOfWeek: localNow.getUTCDay(),
-          blocked: blockedMorning,
-          random: Math.random,
-        })
-        const morningParts = buildReminderVariationEmailParts({
-          kind: 'morning',
-          variationId: morningVariationId,
-          params: {
-            displayName: ctx.userName,
-            streak: ctx.streak,
-            recentTheme: ctx.recentThemeSnippet,
-            recentIntention: ctx.todaysIntentionSnippet,
-          },
-        })
-        const morningTemplateData = {
-          ...(ctx as unknown as Record<string, unknown>),
-          reminderVariationId: morningParts.variationId,
-          reminderSubject: morningParts.subject,
-          reminderPreheader: morningParts.preheader,
-          reminderOpeningHtml: `<p style="margin:0 0 16px 0;line-height:1.65;">${morningParts.openingParagraph}</p>`,
-          reminderOpeningPlain: morningParts.openingParagraph,
-        }
-        const rendered = renderEmailTemplate(
-          'morning_reminder',
-          { name: ctx.userName, email: authUser?.email, login_count: ctx.loginCount },
-          morningTemplateData
-        )
-        const res = await sendEmailWithTracking({
+        const res = await sendMorningReminderShard({
+          db,
           userId,
-          emailType: 'morning_reminder',
-          dateKey: planDate,
-          templateData: morningTemplateData,
-          ...rendered,
+          planDate,
+          morningTime,
+          usedSmartMorning: optimized.usedSmartMorning,
+          localNow,
         })
         if (res.sent) {
           sent++
-          await logReminderVariationUsed(db, userId, 'morning_reminder', morningParts.variationId)
         } else skipped++
-        results.push({
+        iteration.push({
           userId,
           type: 'morning_reminder',
           sent: res.sent,
           reason: res.reason,
-          // debug fields are intentionally lightweight for cron auditability
           scheduledAt: morningTime,
-          smart: optimized.usedSmartMorning,
+          smart: res.smart,
         })
       }
 
-      if (isWithinWindow(localNow, eveningTime) && morningCompleted && !eveningCompleted) {
-        const user = await db.auth.admin.getUserById(userId)
-        const authUser = user.data.user
-        const ctx = await buildPersonalizedEmailContext(userId, { planDate, authUser })
-        const blockedEvening = await fetchRecentReminderVariationIds(db, userId, 'evening_reminder')
-        const hasRecentTheme = Boolean(ctx.recentThemeSnippet && ctx.recentThemeSnippet.length >= 12)
-        const hasRecentIntention = Boolean(ctx.todaysIntentionSnippet && ctx.todaysIntentionSnippet.length >= 8)
-        const eveningVariationId = pickReminderVariationId({
-          kind: 'evening',
-          streak: ctx.streak,
-          hasRecentTheme,
-          hasRecentIntention,
-          dayOfWeek: localNow.getUTCDay(),
-          blocked: blockedEvening,
-          random: Math.random,
-        })
-        const eveningParts = buildReminderVariationEmailParts({
-          kind: 'evening',
-          variationId: eveningVariationId,
-          params: {
-            displayName: ctx.userName,
-            streak: ctx.streak,
-            recentTheme: ctx.recentThemeSnippet,
-            recentIntention: ctx.todaysIntentionSnippet,
-          },
-        })
-        const eveningTemplateData = {
-          ...(ctx as unknown as Record<string, unknown>),
-          reminderVariationId: eveningParts.variationId,
-          reminderSubject: eveningParts.subject,
-          reminderPreheader: eveningParts.preheader,
-          reminderOpeningHtml: `<p style="margin:0 0 16px 0;line-height:1.65;">${eveningParts.openingParagraph}</p>`,
-          reminderOpeningPlain: eveningParts.openingParagraph,
-        }
-        const rendered = renderEmailTemplate(
-          'evening_reminder',
-          { name: ctx.userName, email: authUser?.email, login_count: ctx.loginCount },
-          eveningTemplateData
-        )
-        const res = await sendEmailWithTracking({
+      if (isWithinWindow(localNow, eveningTime) && !eveningCompleted) {
+        const res = await sendEveningReminderShard({
+          db,
           userId,
-          emailType: 'evening_reminder',
-          dateKey: planDate,
-          templateData: eveningTemplateData,
-          ...rendered,
+          planDate,
+          eveningTime,
+          usedSmartEvening: optimized.usedSmartEvening,
+          localNow,
         })
         if (res.sent) {
           sent++
-          await logReminderVariationUsed(db, userId, 'evening_reminder', eveningParts.variationId)
         } else skipped++
-        results.push({
+        iteration.push({
           userId,
           type: 'evening_reminder',
           sent: res.sent,
           reason: res.reason,
           scheduledAt: eveningTime,
-          smart: optimized.usedSmartEvening,
+          smart: res.smart,
         })
+      }
+
+      if (iteration.length === 0) {
+        const silent = describeSilentReminderSkip({
+          localNow,
+          morningTime,
+          eveningTime,
+          morningCompleted,
+          eveningCompleted,
+          timezone,
+          isWithinWindow,
+        })
+        const row: ReminderResult = {
+          userId,
+          sent: false,
+          reason: 'silent_skip',
+          silentCode: silent.code,
+          silentDetail: silent.detail,
+        }
+        results.push(row)
+        if (verboseSilent || (debugUserId && userId === debugUserId)) {
+          console.log(
+            `[cron/send-email-reminders] User ID: ${userId} | Skip Reason: ${silent.code} — ${silent.detail}`
+          )
+        }
+      } else {
+        results.push(...iteration)
+        if (debugUserId && userId === debugUserId) {
+          console.log(`[cron/send-email-reminders] User ID: ${userId} | attempts`, iteration)
+        }
       }
     }
 
-    return NextResponse.json({ success: true, sent, skipped, processed: results.length, results: results.slice(0, 100) })
+    return NextResponse.json({
+      success: true,
+      sent,
+      skipped,
+      processed: results.length,
+      results: results.slice(0, 100),
+      hint:
+        'Add ?debugUserId=<uuid> for console logs for one user; ?verboseSilent=1 logs every silent_skip (noisy).',
+    })
   } catch (err) {
     console.error('[cron/send-email-reminders] error', err)
     return NextResponse.json({ error: 'Failed to send email reminders' }, { status: 500 })
   }
 }
-

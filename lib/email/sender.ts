@@ -7,6 +7,7 @@ import { getVariantForUser } from './ab-testing'
 import { buildPersonalizedEmailContext } from './personalization'
 import { unsubscribeUrl } from './templates/layout'
 import { getActiveEmailCapture } from '@/lib/email/email-capture-context'
+import { isEmailRetentionV1Enabled } from '@/lib/email/retention-flag'
 
 export interface SendEmailWithTrackingOptions {
   userId: string
@@ -73,7 +74,7 @@ export async function sendEmailWithTracking(
     }
   }
 
-  if (process.env.EMAIL_RETENTION_V1 !== 'true' && !force) {
+  if (!isEmailRetentionV1Enabled() && !force) {
     return { sent: false, reason: 'feature_flag_off' }
   }
 
