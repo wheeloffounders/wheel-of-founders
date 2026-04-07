@@ -60,8 +60,6 @@ import { isMorningInsightsUnlocked } from '@/lib/founder-dna/unlock-schedule-con
 import { morningTasksOrFilterForPlanDate, isTaskShowingAsMovedToTomorrow } from '@/lib/morning-tasks-plan-date-query'
 import { getUserDaysActiveCalendar, getUserTimezoneFromProfile } from '@/lib/timezone'
 import { FirstBadgeCelebration } from '@/components/founder-dna/FirstBadgeCelebration'
-import { FirstDayBadgeModal } from '@/components/onboarding/FirstDayBadgeModal'
-import { ReminderSetupScreen } from '@/components/onboarding/ReminderSetupScreen'
 import {
   WOF_SESSION_INTENTION_PULSE_KEY,
   WOF_SESSION_MRS_DEER_HOOK_KEY,
@@ -356,12 +354,9 @@ export default function MorningPage() {
   const [suggestionsError, setSuggestionsError] = useState<string | null>(null)
   const [decisionCategory, setDecisionCategory] = useState<string>('other')
   const [showFirstTimeModal, setShowFirstTimeModal] = useState(false)
-  const [showFirstTimeInsightCTA, setShowFirstTimeInsightCTA] = useState(false)
   const [showCalendarReminderModal, setShowCalendarReminderModal] = useState(false)
   const [calendarReminderTime, setCalendarReminderTime] = useState('20:00')
   const [calendarReminderType, setCalendarReminderType] = useState<CalendarReminderType | null>(null)
-  const [showFirstDayBadgeModal, setShowFirstDayBadgeModal] = useState(false)
-  const [showPostMorningReminderSetup, setShowPostMorningReminderSetup] = useState(false)
   /** Account-age days since signup (calendar); still used for analytics / display where relevant. */
   const [accountDaysActive, setAccountDaysActive] = useState<number | null>(null)
   /** Days-with-entries + evening count — gates Mrs. Deer morning / post-morning AI (matches journey). */
@@ -652,7 +647,6 @@ export default function MorningPage() {
       decision: decision?.decision?.slice(0, 30),
       planDate,
       saving,
-      showFirstTimeInsightCTA,
     })
   }, [])
   useEffect(() => {
@@ -1226,11 +1220,9 @@ export default function MorningPage() {
     const showSaveButton = editingTasks || editingDecision || !hasPlan
     const branch = loading
       ? 'loading'
-      : isFirstTime && !hasPlan && showFirstTimeInsightCTA
-        ? 'firstTime_insightWait'
-        : isFirstTime && !hasPlan
-          ? 'firstTime_form'
-          : 'main'
+      : isFirstTime && !hasPlan
+        ? 'firstTime_form'
+        : 'main'
     const saveHiddenReason =
       showSaveButton || branch !== 'main'
         ? null
@@ -1256,7 +1248,6 @@ export default function MorningPage() {
     morningInsight,
     loading,
     isFirstTime,
-    showFirstTimeInsightCTA,
     isTutorial,
   ])
 
@@ -1969,6 +1960,9 @@ export default function MorningPage() {
       return
     }
 
+    /** First plan save on onboarding: unified overlay + redirect to dashboard after insight stream. */
+    const redirectToDashboardAfterSave = !isTutorial && isFirstTime && !hasPlan
+
     try {
       const isProMorningSave = morningPlanView === 'pro'
       // Database allows unlimited tasks (migration 002). Tasks marked moved-to-tomorrow stay on their
@@ -2129,10 +2123,7 @@ export default function MorningPage() {
       }
       if (finalizePostponedError) throw finalizePostponedError
 
-      // For first-time flow, don't set hasPlan yet — stay in simplified view until insight/modal
-      if (!isFirstTime) {
-        setHasPlan(true)
-      }
+      setHasPlan(true)
       setEditingTasks(false)
       setEditingDecision(false)
 
@@ -2182,12 +2173,10 @@ export default function MorningPage() {
         return
       }
 
-      // First-time flow: show success modal after save (with or without AI insight)
       if (isFirstTime) {
         await (supabase.from('user_profiles') as any)
           .update({ onboarding_step: 2, updated_at: new Date().toISOString() })
           .eq('id', session.user.id)
-        setShowFirstTimeInsightCTA(true)
       }
 
       // Funnel step 3: plan complete
@@ -2254,6 +2243,25 @@ export default function MorningPage() {
         )
         setFirstSparkCelebration(true)
       }
+
+      if (redirectToDashboardAfterSave) {
+        try {
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem(WOF_SESSION_INTENTION_PULSE_KEY, '1')
+            const focus =
+              decision.decision?.trim() ||
+              tasks.find((t) => t.description.trim())?.description.trim() ||
+              ''
+            if (focus) {
+              const payload: MrsDeerDashboardHookPayload = { focus }
+              sessionStorage.setItem(WOF_SESSION_MRS_DEER_HOOK_KEY, JSON.stringify(payload))
+            }
+          }
+        } catch {
+          /* non-blocking */
+        }
+        router.push('/dashboard?discovery=1')
+      }
     } catch (err) {
       const maybeMessage =
         err && typeof err === 'object' && 'message' in err ? (err as { message?: string }).message : undefined
@@ -2278,12 +2286,6 @@ export default function MorningPage() {
   useEffect(() => {
     savePlanRef.current = savePlan
   })
-
-  useEffect(() => {
-    if (!(isFirstTime && !hasPlan && showFirstTimeInsightCTA)) return
-    if (typeof window === 'undefined') return
-    window.scrollTo(0, 0)
-  }, [isFirstTime, hasPlan, showFirstTimeInsightCTA])
 
   const showMicroLessonToast = useCallback(async (fallback: string) => {
     try {
@@ -2352,96 +2354,9 @@ export default function MorningPage() {
 
   // Simplified first-time flow: minimal form, no advanced options
   if (isFirstTime && !hasPlan) {
-    // After save, show Mrs. Deer insight CTA while waiting for insight (or modal when ready)
-    if (showFirstTimeInsightCTA) {
-      return (
-        <div className="min-h-[100svh] md:min-h-[100dvh] overflow-y-auto">
-          <div
-            className="mx-auto w-full max-w-2xl px-4 md:px-5 py-4 sm:py-6 flex items-start justify-center"
-            style={{ paddingTop: spacing['xl'] }}
-          >
-            <div className="w-full p-4 sm:p-6 rounded-xl border-l-4 border-[#ef725c] bg-[#152b50]/5 dark:bg-[#152b50]/20">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                🦌 Mrs. Deer is reading your tasks...
-              </h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                She&apos;s looking for:
-              </p>
-              <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1 mb-4 list-disc list-inside">
-                <li>What themes are emerging today</li>
-                <li>Where your energy naturally wants to go</li>
-                <li>One question to ask you tomorrow</li>
-              </ul>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                This takes just a moment.
-              </p>
-              {postMorningInsight ? (
-                <button
-                  type="button"
-                  onClick={() => setShowFirstDayBadgeModal(true)}
-                  className="px-4 py-2 rounded-lg font-medium text-white hover:opacity-90 transition"
-                  style={{ backgroundColor: colors.coral.DEFAULT }}
-                >
-                  See what she noticed →
-                </button>
-              ) : (
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                  <span className="inline-block w-4 h-4 rounded-full border-2 border-[#ef725c] border-t-transparent animate-spin" />
-                  Generating your insight...
-                </div>
-              )}
-            </div>
-          </div>
-          {!isFirstTime && (
-            <FirstTimeSuccessModal
-              isOpen={showFirstTimeModal}
-              onClose={() => setShowFirstTimeModal(false)}
-              insight={postMorningInsight}
-            />
-          )}
-          <FirstDayBadgeModal
-            isOpen={showFirstDayBadgeModal}
-            onClose={() => setShowFirstDayBadgeModal(false)}
-            onContinue={() => {
-              setShowFirstDayBadgeModal(false)
-              setShowPostMorningReminderSetup(true)
-            }}
-            insight={postMorningInsight}
-          />
-          <ReminderSetupScreen
-            isOpen={showPostMorningReminderSetup}
-            onComplete={() => {
-              setShowPostMorningReminderSetup(false)
-              try {
-                if (typeof window !== 'undefined') {
-                  sessionStorage.setItem(WOF_SESSION_INTENTION_PULSE_KEY, '1')
-                  const focus =
-                    decision.decision?.trim() ||
-                    tasks.find((t) => t.description.trim())?.description.trim() ||
-                    ''
-                  if (focus) {
-                    const payload: MrsDeerDashboardHookPayload = { focus }
-                    sessionStorage.setItem(WOF_SESSION_MRS_DEER_HOOK_KEY, JSON.stringify(payload))
-                  }
-                }
-              } catch {
-                // non-blocking
-              }
-              router.push('/dashboard?discovery=1')
-            }}
-            personalizationHint={
-              tasks.find((t) => t.description.trim())?.description.trim() ||
-              (decision.decision.trim() ? decision.decision.trim() : null) ||
-              null
-            }
-          />
-        </div>
-      )
-    }
-
     return (
       <div
-        className="min-h-[100svh] overflow-y-auto max-w-3xl mx-auto px-4 md:px-5 pt-2 pb-44 max-lg:pb-48 md:pb-40"
+        className="min-h-[100svh] overflow-y-auto max-w-3xl mx-auto px-4 md:px-5 pt-2 pb-24 md:pb-28"
         style={{ paddingTop: spacing['xl'] }}
       >
         {morningBrainDumpListening ? (
@@ -2484,7 +2399,6 @@ export default function MorningPage() {
             onTutorialCheckInEnergyChange={setTutorialCheckInEnergy}
             strategicProLocked={trialUx.status === 'expired'}
             streamlinedOnboarding
-            stickySaveBar={streamlinedMorningOnboarding}
           />
         </div>
 
@@ -2543,8 +2457,8 @@ export default function MorningPage() {
       <div
         className={
           isDesktopSidebar
-            ? 'flex min-h-0 min-h-screen flex-1 flex-col overflow-y-auto bg-gray-50 pb-40 dark:bg-gray-950'
-            : 'max-w-3xl mx-auto px-4 pb-40 pt-2 transition-all duration-200 md:px-5'
+            ? 'flex min-h-0 min-h-screen flex-1 flex-col overflow-y-auto bg-gray-50 pb-24 md:pb-28 dark:bg-gray-950'
+            : 'max-w-3xl mx-auto px-4 pb-24 md:pb-28 pt-2 transition-all duration-200 md:px-5'
         }
       >
         {morningBrainDumpListening ? (
@@ -2553,7 +2467,7 @@ export default function MorningPage() {
             aria-hidden
           />
         ) : null}
-        <div className={isDesktopSidebar ? 'mx-auto max-w-3xl px-4 pb-40 pt-2 md:px-5' : 'contents'}>
+        <div className={isDesktopSidebar ? 'mx-auto max-w-3xl px-4 pb-24 md:pb-28 pt-2 md:px-5' : 'contents'}>
       {showFreemiumAuditLinks && showFreemiumMorningLink ? (
         <div className="mb-1 flex justify-end">
           <Link
@@ -2738,7 +2652,6 @@ export default function MorningPage() {
             onTutorialCheckInEnergyChange={setTutorialCheckInEnergy}
             strategicProLocked={trialUx.status === 'expired'}
             streamlinedOnboarding={streamlinedMorningOnboarding}
-            stickySaveBar={streamlinedMorningOnboarding}
           />
         </div>
 
