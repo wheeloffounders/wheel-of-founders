@@ -117,6 +117,8 @@ export type ProMorningCanvasProps = {
   streamlinedOnboarding?: boolean
   /** Day-1 / URL tutorial: fixed save bar on small screens so CTA stays visible */
   stickySaveBar?: boolean
+  /** First non-tutorial save: overlay stays until parent finishes AI + min delay (no dismiss). */
+  saveOverlayMasterGate?: boolean
 }
 
 function highlightStreakPhrases(text: string): ReactNode[] {
@@ -279,6 +281,7 @@ export function ProMorningCanvas({
   strategicProLocked = false,
   streamlinedOnboarding = false,
   stickySaveBar = false,
+  saveOverlayMasterGate = false,
 }: ProMorningCanvasProps) {
   const cockpitOnboarding = tutorialMode || streamlinedOnboarding
   const router = useRouter()
@@ -1825,6 +1828,7 @@ export function ProMorningCanvas({
         open={saving && !saveProcessingOverlayDismissed}
         brainDumpPreview={morningBrainDumpText}
         coreObjectivePreview={decision.decision}
+        masterGate={saveOverlayMasterGate}
         onDismiss={() => setSaveProcessingOverlayDismissed(true)}
       />
       {brainDumpPriorityModal ? (

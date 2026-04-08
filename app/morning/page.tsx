@@ -356,7 +356,7 @@ export default function MorningPage() {
   const [suggestionsError, setSuggestionsError] = useState<string | null>(null)
   const [decisionCategory, setDecisionCategory] = useState<string>('other')
   const [showFirstTimeModal, setShowFirstTimeModal] = useState(false)
-  const [showFirstTimeInsightCTA, setShowFirstTimeInsightCTA] = useState(false)
+  const firstSaveMasterGateStartRef = useRef(0)
   const [showCalendarReminderModal, setShowCalendarReminderModal] = useState(false)
   const [calendarReminderTime, setCalendarReminderTime] = useState('20:00')
   const [calendarReminderType, setCalendarReminderType] = useState<CalendarReminderType | null>(null)
@@ -652,7 +652,6 @@ export default function MorningPage() {
       decision: decision?.decision?.slice(0, 30),
       planDate,
       saving,
-      showFirstTimeInsightCTA,
     })
   }, [])
   useEffect(() => {
@@ -1226,8 +1225,8 @@ export default function MorningPage() {
     const showSaveButton = editingTasks || editingDecision || !hasPlan
     const branch = loading
       ? 'loading'
-      : isFirstTime && !hasPlan && showFirstTimeInsightCTA
-        ? 'firstTime_insightWait'
+      : isFirstTime && !hasPlan && saving
+        ? 'firstTime_saving'
         : isFirstTime && !hasPlan
           ? 'firstTime_form'
           : 'main'
@@ -1256,7 +1255,6 @@ export default function MorningPage() {
     morningInsight,
     loading,
     isFirstTime,
-    showFirstTimeInsightCTA,
     isTutorial,
   ])
 
@@ -1868,6 +1866,9 @@ export default function MorningPage() {
 
     setDebugSaveAttempted(true)
     setSaving(true)
+    if (isFirstTime && !isTutorial) {
+      firstSaveMasterGateStartRef.current = performance.now()
+    }
     setError(null)
     await new Promise((r) => setTimeout(r, 0))
 
@@ -2155,17 +2156,48 @@ export default function MorningPage() {
         console.warn('[MORNING SAVE] insightActivityGate refresh failed:', gateErr)
       }
 
-      // Post-morning stream: gated by tier (dailyPostMorningPrompt), not journey unlock.
-      // Journey gate only affects onboarding copy + morning prompt load; it was blocking Pro users with 0 evenings.
-      if (!isTutorial && features.dailyPostMorningPrompt) {
+      // First non-tutorial save: master gate = min 8s on overlay + post-morning stream done, then badge modal.
+      const firstSaveMasterGate = isFirstTime && !isTutorial
+      if (firstSaveMasterGate) {
+        let insightPromise: Promise<unknown> = Promise.resolve()
+        if (features.dailyPostMorningPrompt) {
+          setPostMorningInsightFetchFailed(false)
+          insightPromise = generateFreshPostMorningInsight({ celebrateFirstTime: true })
+        }
+        const minWaitMs = 8000
+        const minWait = new Promise<void>((resolve) => {
+          const start = firstSaveMasterGateStartRef.current || performance.now()
+          const elapsed = performance.now() - start
+          const remaining = Math.max(0, minWaitMs - elapsed)
+          window.setTimeout(resolve, remaining)
+        })
+        await Promise.all([insightPromise, minWait])
+
+        if (!features.dailyPostMorningPrompt || !postMorningInsightUnlocked) {
+          setPostMorningInsight(
+            "You're focusing on what matters today. That's not random — it's where your energy wants to go."
+          )
+          setFirstSparkCelebration(true)
+        }
+
+        await (supabase.from('user_profiles') as any)
+          .update({ onboarding_step: 2, updated_at: new Date().toISOString() })
+          .eq('id', session.user.id)
+
+        flushSync(() => {
+          setShowFirstDayBadgeModal(true)
+        })
+        setSaving(false)
+      } else if (!isTutorial && features.dailyPostMorningPrompt) {
         setPostMorningInsightFetchFailed(false)
         await generateFreshPostMorningInsight({ celebrateFirstTime: isFirstTime })
       } else if (!isTutorial && !features.dailyPostMorningPrompt) {
         console.log('[MORNING SAVE] Post-morning insight skipped — dailyPostMorningPrompt false for tier')
       }
 
-      // Calendar reminder nudge (first 3 times only) unless already set in profile
-      maybeShowCalendarReminder(session.user.id)
+      if (!firstSaveMasterGate) {
+        maybeShowCalendarReminder(session.user.id)
+      }
 
       // Tutorial mode: stay on morning page, show insight area step, then completion modal (no live AI)
       if (isTutorial) {
@@ -2180,14 +2212,6 @@ export default function MorningPage() {
         )
         setSaving(false)
         return
-      }
-
-      // First-time flow: show success modal after save (with or without AI insight)
-      if (isFirstTime) {
-        await (supabase.from('user_profiles') as any)
-          .update({ onboarding_step: 2, updated_at: new Date().toISOString() })
-          .eq('id', session.user.id)
-        setShowFirstTimeInsightCTA(true)
       }
 
       // Funnel step 3: plan complete
@@ -2237,23 +2261,6 @@ export default function MorningPage() {
       trackJourneyStep('saved_morning', { task_count: filteredTasks.length })
 
       console.log('[MORNING PLAN SAVE] dailyPostMorningPrompt:', features.dailyPostMorningPrompt)
-      if (isFirstTime && (!features.dailyPostMorningPrompt || !postMorningInsightUnlocked)) {
-        console.log('[DEBUG] Entering First Time Branch (canned "safety net" — AI branch skipped)', {
-          reason: !features.dailyPostMorningPrompt
-            ? 'dailyPostMorningPrompt is false'
-            : !postMorningInsightUnlocked
-              ? 'postMorningInsightUnlocked is false'
-              : 'unexpected',
-          dailyPostMorningPrompt: features.dailyPostMorningPrompt,
-          postMorningInsightUnlocked,
-          morningInsightsReady,
-          isFirstTime,
-        })
-        setPostMorningInsight(
-          "You're focusing on what matters today. That's not random — it's where your energy wants to go."
-        )
-        setFirstSparkCelebration(true)
-      }
     } catch (err) {
       const maybeMessage =
         err && typeof err === 'object' && 'message' in err ? (err as { message?: string }).message : undefined
@@ -2280,10 +2287,10 @@ export default function MorningPage() {
   })
 
   useEffect(() => {
-    if (!(isFirstTime && !hasPlan && showFirstTimeInsightCTA)) return
+    if (!(isFirstTime && !hasPlan && showFirstDayBadgeModal)) return
     if (typeof window === 'undefined') return
     window.scrollTo(0, 0)
-  }, [isFirstTime, hasPlan, showFirstTimeInsightCTA])
+  }, [isFirstTime, hasPlan, showFirstDayBadgeModal])
 
   const showMicroLessonToast = useCallback(async (fallback: string) => {
     try {
@@ -2352,93 +2359,6 @@ export default function MorningPage() {
 
   // Simplified first-time flow: minimal form, no advanced options
   if (isFirstTime && !hasPlan) {
-    // After save, show Mrs. Deer insight CTA while waiting for insight (or modal when ready)
-    if (showFirstTimeInsightCTA) {
-      return (
-        <div className="min-h-[100svh] md:min-h-[100dvh] overflow-y-auto">
-          <div
-            className="mx-auto w-full max-w-2xl px-4 md:px-5 py-4 sm:py-6 flex items-start justify-center"
-            style={{ paddingTop: spacing['xl'] }}
-          >
-            <div className="w-full p-4 sm:p-6 rounded-xl border-l-4 border-[#ef725c] bg-[#152b50]/5 dark:bg-[#152b50]/20">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                🦌 Mrs. Deer is reading your tasks...
-              </h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                She&apos;s looking for:
-              </p>
-              <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1 mb-4 list-disc list-inside">
-                <li>What themes are emerging today</li>
-                <li>Where your energy naturally wants to go</li>
-                <li>One question to ask you tomorrow</li>
-              </ul>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                This takes just a moment.
-              </p>
-              {postMorningInsight ? (
-                <button
-                  type="button"
-                  onClick={() => setShowFirstDayBadgeModal(true)}
-                  className="px-4 py-2 rounded-lg font-medium text-white hover:opacity-90 transition"
-                  style={{ backgroundColor: colors.coral.DEFAULT }}
-                >
-                  See what she noticed →
-                </button>
-              ) : (
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                  <span className="inline-block w-4 h-4 rounded-full border-2 border-[#ef725c] border-t-transparent animate-spin" />
-                  Generating your insight...
-                </div>
-              )}
-            </div>
-          </div>
-          {!isFirstTime && (
-            <FirstTimeSuccessModal
-              isOpen={showFirstTimeModal}
-              onClose={() => setShowFirstTimeModal(false)}
-              insight={postMorningInsight}
-            />
-          )}
-          <FirstDayBadgeModal
-            isOpen={showFirstDayBadgeModal}
-            onClose={() => setShowFirstDayBadgeModal(false)}
-            onContinue={() => {
-              setShowFirstDayBadgeModal(false)
-              setShowPostMorningReminderSetup(true)
-            }}
-            insight={postMorningInsight}
-          />
-          <ReminderSetupScreen
-            isOpen={showPostMorningReminderSetup}
-            onComplete={() => {
-              setShowPostMorningReminderSetup(false)
-              try {
-                if (typeof window !== 'undefined') {
-                  sessionStorage.setItem(WOF_SESSION_INTENTION_PULSE_KEY, '1')
-                  const focus =
-                    decision.decision?.trim() ||
-                    tasks.find((t) => t.description.trim())?.description.trim() ||
-                    ''
-                  if (focus) {
-                    const payload: MrsDeerDashboardHookPayload = { focus }
-                    sessionStorage.setItem(WOF_SESSION_MRS_DEER_HOOK_KEY, JSON.stringify(payload))
-                  }
-                }
-              } catch {
-                // non-blocking
-              }
-              router.push('/dashboard?discovery=1')
-            }}
-            personalizationHint={
-              tasks.find((t) => t.description.trim())?.description.trim() ||
-              (decision.decision.trim() ? decision.decision.trim() : null) ||
-              null
-            }
-          />
-        </div>
-      )
-    }
-
     return (
       <div
         className="min-h-[100svh] overflow-y-auto max-w-3xl mx-auto px-4 md:px-5 pt-2 pb-44 max-lg:pb-48 md:pb-40"
@@ -2485,6 +2405,7 @@ export default function MorningPage() {
             strategicProLocked={trialUx.status === 'expired'}
             streamlinedOnboarding
             stickySaveBar={streamlinedMorningOnboarding}
+            saveOverlayMasterGate={isFirstTime && !isTutorial}
           />
         </div>
 
@@ -2502,6 +2423,43 @@ export default function MorningPage() {
             insight={postMorningInsight}
           />
         )}
+
+        <FirstDayBadgeModal
+          isOpen={showFirstDayBadgeModal}
+          onClose={() => setShowFirstDayBadgeModal(false)}
+          onContinue={() => {
+            setShowFirstDayBadgeModal(false)
+            setShowPostMorningReminderSetup(true)
+          }}
+          insight={postMorningInsight}
+        />
+        <ReminderSetupScreen
+          isOpen={showPostMorningReminderSetup}
+          onComplete={() => {
+            setShowPostMorningReminderSetup(false)
+            try {
+              if (typeof window !== 'undefined') {
+                sessionStorage.setItem(WOF_SESSION_INTENTION_PULSE_KEY, '1')
+                const focus =
+                  decision.decision?.trim() ||
+                  tasks.find((t) => t.description.trim())?.description.trim() ||
+                  ''
+                if (focus) {
+                  const payload: MrsDeerDashboardHookPayload = { focus }
+                  sessionStorage.setItem(WOF_SESSION_MRS_DEER_HOOK_KEY, JSON.stringify(payload))
+                }
+              }
+            } catch {
+              // non-blocking
+            }
+            router.push('/dashboard?discovery=1')
+          }}
+          personalizationHint={
+            tasks.find((t) => t.description.trim())?.description.trim() ||
+            (decision.decision.trim() ? decision.decision.trim() : null) ||
+            null
+          }
+        />
       </div>
     )
   }
