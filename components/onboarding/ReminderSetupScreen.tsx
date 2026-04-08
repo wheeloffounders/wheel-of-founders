@@ -128,7 +128,7 @@ export function ReminderSetupScreen({
         }).catch(() => {})
         setSyncSuccess('google')
         await new Promise((r) => setTimeout(r, GOOGLE_SUCCESS_READ_MS))
-        await startGoogleCalendarOAuth('/onboarding/personalization')
+        await startGoogleCalendarOAuth('/settings?tab=notifications')
       } catch {
         setSyncSuccess(null)
       } finally {
@@ -173,9 +173,9 @@ export function ReminderSetupScreen({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
       <div
-        className="w-full max-w-lg rounded-xl bg-white dark:bg-gray-800 p-6 shadow-2xl"
+        className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-xl bg-white dark:bg-gray-800 p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">📅 Calendar reminders</h2>

@@ -12,7 +12,7 @@ export async function startGoogleCalendarOAuth(nextPath: string): Promise<void> 
       scopes: 'openid email profile https://www.googleapis.com/auth/calendar',
       queryParams: {
         access_type: 'offline',
-        prompt: 'consent',
+        prompt: 'select_account consent',
       },
     },
   })

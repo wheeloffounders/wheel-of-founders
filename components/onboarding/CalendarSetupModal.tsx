@@ -154,7 +154,7 @@ export function CalendarSetupModal({
         try {
           setSyncSuccess('google')
           await new Promise((r) => setTimeout(r, GOOGLE_SUCCESS_READ_MS))
-          await startGoogleCalendarOAuth('/dashboard')
+          await startGoogleCalendarOAuth('/settings?tab=notifications')
         } finally {
           setGoogleBusy(false)
         }
@@ -183,8 +183,8 @@ export function CalendarSetupModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[95] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={handleSkip}>
-      <div className="w-full max-w-lg rounded-xl bg-white dark:bg-gray-800 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={handleSkip}>
+      <div className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-xl bg-white dark:bg-gray-800 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Set up reminders in one tap</h2>
         <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
           Stay in your rhythm with automatic calendar reminders for morning, evening, and weekly insights.
