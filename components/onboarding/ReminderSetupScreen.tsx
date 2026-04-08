@@ -128,7 +128,7 @@ export function ReminderSetupScreen({
         }).catch(() => {})
         setSyncSuccess('google')
         await new Promise((r) => setTimeout(r, GOOGLE_SUCCESS_READ_MS))
-        await startGoogleCalendarOAuth('/settings?tab=notifications')
+        await startGoogleCalendarOAuth()
       } catch {
         setSyncSuccess(null)
       } finally {

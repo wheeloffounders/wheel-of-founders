@@ -19,7 +19,7 @@ export default function PostHogProvider() {
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
+      if (session?.user?.id) {
         const { data: profile } = await supabase
           .from('user_profiles')
           .select('tier, created_at')
@@ -38,7 +38,7 @@ export default function PostHogProvider() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         resetAnalytics()
-      } else if (session?.user) {
+      } else if (session?.user?.id) {
         supabase
           .from('user_profiles')
           .select('tier, created_at')

@@ -28,6 +28,10 @@ const nextConfig: NextConfig = {
               ? "public, max-age=0, must-revalidate"
               : "no-cache, no-store, must-revalidate",
           },
+          {
+            key: "Cross-Origin-Opener-Policy",
+            value: "same-origin-allow-popups",
+          },
         ],
       },
       // Static assets: immutable in production for long-term caching

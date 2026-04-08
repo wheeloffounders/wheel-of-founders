@@ -20,7 +20,7 @@ export function useNewInsights() {
 
   const checkNewInsights = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user?.id) return
 
     const now = new Date()
     const weekStart = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd')
@@ -31,7 +31,7 @@ export function useNewInsights() {
       .from('user_profiles')
       .select('last_viewed_weekly, last_viewed_monthly, last_viewed_quarterly')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
     const [weeklyRes, monthlyRes, quarterlyRes] = await Promise.all([
       supabase
@@ -79,7 +79,7 @@ export function useNewInsights() {
 
   const markAsViewed = useCallback(async (type: 'weekly' | 'monthly' | 'quarterly') => {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user?.id) return
 
     await supabase
       .from('user_profiles')

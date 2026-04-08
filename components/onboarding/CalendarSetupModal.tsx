@@ -154,7 +154,7 @@ export function CalendarSetupModal({
         try {
           setSyncSuccess('google')
           await new Promise((r) => setTimeout(r, GOOGLE_SUCCESS_READ_MS))
-          await startGoogleCalendarOAuth('/settings?tab=notifications')
+          await startGoogleCalendarOAuth()
         } finally {
           setGoogleBusy(false)
         }

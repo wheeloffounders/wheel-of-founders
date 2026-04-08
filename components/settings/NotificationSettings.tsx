@@ -214,7 +214,7 @@ export function NotificationSettings() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ source: 'google' }),
         }).catch(() => {})
-        await startGoogleCalendarOAuth('/settings?tab=notifications')
+        await startGoogleCalendarOAuth()
       } catch (err) {
         setCalendarLinkMessage(err instanceof Error ? err.message : 'Could not start Google Calendar connection.')
       } finally {

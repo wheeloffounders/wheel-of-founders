@@ -24,7 +24,7 @@ export function useUserProfile() {
     const fetchProfile = async () => {
       try {
         const session = await getUserSession()
-        if (!session) {
+        if (!session?.user?.id) {
           setLoading(false)
           return
         }
@@ -68,7 +68,7 @@ export function useUserProfile() {
   const updateProfile = async (updates: Partial<UserProfile>) => {
     try {
       const session = await getUserSession()
-      if (!session) {
+      if (!session?.user?.id) {
         throw new Error('Not authenticated')
       }
 

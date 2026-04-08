@@ -30,6 +30,7 @@ import { PullToRefresh } from '@/components/PullToRefresh'
 import { SafeAreaDebugOverlay } from '@/components/SafeAreaDebugOverlay'
 import { SessionSourceCapture } from '@/components/analytics/SessionSourceCapture'
 import { EmergencyModeProvider, EmergencyShell } from '@/components/emergency/EmergencyModeProvider'
+import { SupabaseAuthDebugListener } from '@/components/SupabaseAuthDebugListener'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -108,6 +109,7 @@ export default async function RootLayout({
         <GlobalErrorHandlers />
         <DevModeBadge />
         <PostHogProvider />
+        <SupabaseAuthDebugListener />
         <PageViewTracker />
         <ServiceWorkerRegister />
         <InstallPrompt />

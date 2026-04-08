@@ -26,6 +26,23 @@ const ONBOARDING_PUBLIC_PATHS = [
  * Must live in `middleware.ts` at the project root (single edge entry).
  */
 export async function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith('/auth')) {
+    console.log(
+      '[MIDDLEWARE DEBUG] Path:',
+      request.nextUrl.pathname,
+      'Has Code:',
+      request.nextUrl.searchParams.has('code'),
+    )
+  }
+
+  // OAuth `code` is exchanged on `/auth/callback` only; we forward the request unchanged (no strip/redirect).
+  // `/auth/calendar-popup-done` is the post-exchange redirect target and has no `code` — still under `/auth` public paths.
+  if (request.nextUrl.searchParams.has('code') && request.nextUrl.pathname.startsWith('/auth')) {
+    return NextResponse.next({
+      request: { headers: request.headers },
+    })
+  }
+
   if (request.nextUrl.pathname === '/sw.js') {
     return NextResponse.next({
       request: { headers: request.headers },

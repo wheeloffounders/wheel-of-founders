@@ -25,7 +25,7 @@ export function DashboardHeader({ tierLabel }: DashboardHeaderProps) {
     const run = async () => {
       const { data: auth } = await supabase.auth.getUser()
       const user = auth.user
-      if (!user) return
+      if (!user?.id) return
       const { data } = await supabase
         .from('user_profiles')
         .select('preferred_name, name')
