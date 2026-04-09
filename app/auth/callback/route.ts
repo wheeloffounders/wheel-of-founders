@@ -1,3 +1,5 @@
+// Auth & Integration - Google Calendar Redirects & Scopes Finalized - 2026-04-09 23:38 HKT
+
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
