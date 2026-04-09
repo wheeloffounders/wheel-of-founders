@@ -11,7 +11,7 @@ function withSyncSuccess(returnPath: string): string {
     u.searchParams.set('sync', 'success')
     return `${u.pathname}${u.search}${u.hash}`
   } catch {
-    return '/settings?sync=success'
+    return '/settings/notifications?sync=success'
   }
 }
 
@@ -36,7 +36,7 @@ function postMessageToOpener(returnTo: string): boolean {
 
 function CalendarPopupDoneInner() {
   const searchParams = useSearchParams()
-  const returnTo = searchParams?.get('returnTo') || '/settings?tab=notifications'
+  const returnTo = searchParams?.get('returnTo') || '/settings/notifications'
   const fallbackUrl = withSyncSuccess(returnTo)
   const [showCloseButton, setShowCloseButton] = useState(false)
 

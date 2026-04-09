@@ -7,6 +7,7 @@ import {
   type CalendarUserSegment,
 } from '@/lib/analytics/calendar-events'
 import { CalendarMrsDeerReminderNote } from '@/components/CalendarMrsDeerReminderNote'
+import { notifyGoogleCalendarConnectionIfNeeded } from '@/lib/calendar/google-reminder-sync-client'
 import { startGoogleCalendarOAuth } from '@/lib/google-calendar-oauth'
 import {
   buildCalendarPersonalSuccessLine,
@@ -14,6 +15,7 @@ import {
   mrsDeerLineForEveningHour,
   mrsDeerLineForMorningHour,
 } from '@/lib/calendar-reminder-feedback'
+import { getBrowserIanaTimeZone } from '@/lib/browser-timezone'
 import { Loader2 } from 'lucide-react'
 
 type Provider = 'google' | 'apple'
@@ -87,7 +89,9 @@ export function CalendarSetupModal({
         const subJson = (await subRes.json().catch(() => ({}))) as { links?: CalendarLinks }
         if (subJson.links) setLinks(subJson.links)
         const googleJson = (await googleRes.json().catch(() => ({}))) as { connected?: boolean }
-        setGoogleConnected(Boolean(googleJson.connected))
+        const gCal = Boolean(googleJson.connected)
+        setGoogleConnected(gCal)
+        notifyGoogleCalendarConnectionIfNeeded(gCal)
       } catch {
         // ignore
       }
@@ -99,6 +103,7 @@ export function CalendarSetupModal({
   if (!isOpen) return null
 
   const saveTimes = async () => {
+    const browserTz = getBrowserIanaTimeZone()
     await fetch('/api/user/notification-settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -111,6 +116,7 @@ export function CalendarSetupModal({
         weeklyInsights: true,
         emailMorningReminderTime: morningTime,
         emailEveningReminderTime: eveningTime,
+        ...(browserTz ? { timeZone: browserTz } : {}),
       }),
     })
   }

@@ -5,6 +5,8 @@ import { getUserSession } from '@/lib/auth'
 import { fetchEmailPreferences, updateEmailPreferences, type EmailPreferences } from '@/lib/email/preferences'
 import { PreferenceToggle } from '@/components/ui/preference-toggle'
 import { CalendarMrsDeerReminderNote } from '@/components/CalendarMrsDeerReminderNote'
+import { notifyGoogleCalendarConnectionIfNeeded } from '@/lib/calendar/google-reminder-sync-client'
+import { getBrowserIanaTimeZone } from '@/lib/browser-timezone'
 import { startGoogleCalendarOAuth } from '@/lib/google-calendar-oauth'
 import { colors } from '@/lib/design-tokens'
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
@@ -70,7 +72,9 @@ export function NotificationSettings() {
         if (cm) setCalMorning(cm)
         if (cv) setCalEvening(cv)
         if (s?.weeklyInsights !== undefined) setCalendarWeeklyInsight(s.weeklyInsights)
-        setGoogleConnected(Boolean(s?.googleCalendarConnected))
+        const gCal = Boolean(s?.googleCalendarConnected)
+        setGoogleConnected(gCal)
+        notifyGoogleCalendarConnectionIfNeeded(gCal)
 
         const prefs = await fetchEmailPreferences()
         setEmailPrefs(prefs)
@@ -95,6 +99,7 @@ export function NotificationSettings() {
 
   const persistNotificationSettings = async (): Promise<boolean> => {
     try {
+      const browserTz = getBrowserIanaTimeZone()
       const res = await fetch('/api/user/notification-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -106,6 +111,7 @@ export function NotificationSettings() {
           eveningTime: calEvening,
           emailFrequency,
           weeklyInsights: calendarWeeklyInsight,
+          ...(browserTz ? { timeZone: browserTz } : {}),
         }),
       })
       return res.ok
@@ -126,6 +132,7 @@ export function NotificationSettings() {
     setEmailScheduleSaving(true)
     setEmailPrefsMessage(null)
     try {
+      const browserTz = getBrowserIanaTimeZone()
       const res = await fetch('/api/user/notification-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -137,6 +144,7 @@ export function NotificationSettings() {
           eveningTime: calEvening,
           emailFrequency,
           weeklyInsights: calendarWeeklyInsight,
+          ...(browserTz ? { timeZone: browserTz } : {}),
         }),
       })
       if (!res.ok) {
@@ -244,6 +252,7 @@ export function NotificationSettings() {
       })
       if (!res.ok) throw new Error('Failed to disconnect Google Calendar')
       setGoogleConnected(false)
+      notifyGoogleCalendarConnectionIfNeeded(false)
       setCalendarLinkMessage('Disconnected from Google Calendar.')
     } catch (err) {
       setCalendarLinkMessage(err instanceof Error ? err.message : 'Could not disconnect Google Calendar.')

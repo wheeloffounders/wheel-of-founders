@@ -1,5 +1,66 @@
-import { formatInTimeZone } from 'date-fns-tz'
+// Verified Sync Logic - Versioned ID + Summary Cleanup + Timezone Explicit - 2026-04-09 17:59 HKT
+import { createHash } from 'node:crypto'
+import { addMinutes } from 'date-fns'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { getUpcomingMondayAnchorInTimeZone } from '@/lib/calendar/upcoming-anchor'
+import { isValidIanaTimeZone } from '@/lib/iana-timezone'
+import { getLogTimestamp } from '@/lib/server-log-timestamp'
 import { getServerSupabase } from '@/lib/server-supabase'
+
+/** Default when profile timezone is missing, UTC-shaped, or invalid (product default). */
+const DEFAULT_USER_TIMEZONE = 'Asia/Hong_Kong'
+
+export type SyncGoogleCalendarOptions = {
+  /** IANA id from client (browser); wins over profile when valid and not plain UTC */
+  requestTimeZone?: string | null
+}
+
+function resolveUserTimezoneForSync(
+  userId: string,
+  requestTimeZone: string | null | undefined,
+  profileTimeZone: string | null | undefined
+): string {
+  const pick = (z: string | null | undefined, source: string): string | null => {
+    const s = String(z ?? '').trim()
+    if (!s) return null
+    if (s.toUpperCase() === 'UTC') {
+      return null
+    }
+    if (!isValidIanaTimeZone(s)) {
+      return null
+    }
+    return s
+  }
+
+  const fromReq = pick(requestTimeZone, 'request')
+  if (fromReq) return fromReq
+  const fromProfile = pick(profileTimeZone, 'profile')
+  if (fromProfile) return fromProfile
+  return DEFAULT_USER_TIMEZONE
+}
+
+/**
+ * Google Calendar custom `id` must be base32hex-like: only `0-9` and `a-f` (hex) are valid.
+ * Stable per user + kind so re-sync replaces the same logical event after cleanup.
+ */
+function googleStableEventId(kind: 'morning' | 'evening' | 'weekly', userId: string): string {
+  return createHash('sha256')
+    .update(`wof:gcal:v3:${kind}:${userId}`)
+    .digest('hex')
+    .slice(0, 32)
+}
+
+/** Versioned event id to bypass stale Google custom-id index locks. */
+function googleVersionedEventId(
+  kind: 'morning' | 'evening' | 'weekly',
+  userId: string,
+  version: string
+): string {
+  return createHash('sha256')
+    .update(`wof:gcal:v4:${kind}:${userId}:${version}`)
+    .digest('hex')
+    .slice(0, 32)
+}
 
 type GoogleTokenRow = {
   refresh_token?: string | null
@@ -51,24 +112,54 @@ async function refreshGoogleAccessToken(refreshToken: string): Promise<{ accessT
   return { accessToken: json.access_token, expiresAt }
 }
 
-function buildRecurringEvent(params: {
+/**
+ * Wall-clock anchor: interpret `anchorYmd` + `hh:mm` in IANA `tz`, never `new Date(iso)` on the server
+ * (that would apply the machine timezone). Use fromZonedTime + formatInTimeZone for RFC3339 local strings without `Z`.
+ */
+function wallClockStartEnd(
+  anchorYmd: string,
+  hhmm: string,
+  tz: string,
+  durationMinutes: number,
+  label: string
+): { startDateTime: string; endDateTime: string } {
+  const parts = hhmm.split(':')
+  const h = String(parts[0] ?? '09').padStart(2, '0')
+  const m = String(parts[1] ?? '00').padStart(2, '0')
+  const localWall = `${anchorYmd}T${h}:${m}:00`
+  const startInstant = fromZonedTime(localWall, tz)
+  const endInstant = addMinutes(startInstant, durationMinutes)
+  const startDateTime = formatInTimeZone(startInstant, tz, "yyyy-MM-dd'T'HH:mm:ss")
+  const endDateTime = formatInTimeZone(endInstant, tz, "yyyy-MM-dd'T'HH:mm:ss")
+  return { startDateTime, endDateTime }
+}
+
+function buildRecurringEventBody(params: {
   userId: string
   kind: 'morning' | 'evening' | 'weekly'
   timezone: string
   title: string
   description: string
   path: string
+  anchorYmd: string
   hhmm: string
   rrule: string
+  durationMinutes: number
+  debugLabel: string
 }) {
-  const [h, m] = params.hhmm.split(':')
-  const ymd = formatInTimeZone(new Date(), params.timezone, 'yyyy-MM-dd')
-  const start = `${ymd}T${h}:${m}:00`
+  const { startDateTime, endDateTime } = wallClockStartEnd(
+    params.anchorYmd,
+    params.hhmm,
+    params.timezone,
+    params.durationMinutes,
+    params.debugLabel
+  )
+  const tz = params.timezone
   return {
     summary: params.title,
     description: `${params.description}\n\nhttps://wheeloffounders.com${params.path}?utm_source=calendar`,
-    start: { dateTime: start, timeZone: params.timezone },
-    end: { dateTime: start, timeZone: params.timezone },
+    start: { dateTime: startDateTime, timeZone: tz },
+    end: { dateTime: endDateTime, timeZone: tz },
     recurrence: [params.rrule],
     reminders: { useDefault: true },
     extendedProperties: {
@@ -80,64 +171,201 @@ function buildRecurringEvent(params: {
   }
 }
 
-async function upsertEvent(
+/** Paginate and delete every event we created (private extended property). */
+async function deleteAllWofEvents(accessToken: string, calendarId: string, userId: string): Promise<void> {
+  const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`
+  let pageToken: string | undefined
+  let deleted = 0
+  do {
+    const u = new URL(base)
+    u.searchParams.set('privateExtendedProperty', `wof_user_id=${userId}`)
+    u.searchParams.set('maxResults', '250')
+    u.searchParams.set('singleEvents', 'false')
+    if (pageToken) u.searchParams.set('pageToken', pageToken)
+    const listRes = await fetch(u.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    const listJson = (await listRes.json().catch(() => ({}))) as {
+      items?: Array<{ id?: string }>
+      nextPageToken?: string
+      error?: { message?: string }
+    }
+    if (!listRes.ok) {
+      throw new Error(listJson.error?.message || `Calendar list (cleanup) failed (${listRes.status})`)
+    }
+    const items = listJson.items ?? []
+    for (const ev of items) {
+      const id = ev.id
+      if (!id) continue
+      const delRes = await fetch(`${base}/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (!delRes.ok && delRes.status !== 404) {
+        const errBody = (await delRes.json().catch(() => ({}))) as { error?: { message?: string } }
+        throw new Error(errBody.error?.message || `DELETE event failed (${delRes.status})`)
+      }
+      deleted += 1
+    }
+    pageToken = listJson.nextPageToken
+  } while (pageToken)
+
+  console.log(`${getLogTimestamp()} [google-calendar] cleanup deleted ${deleted} prior WOF event(s) for user ${userId}`)
+}
+
+/**
+ * Fallback cleanup by title text (actual ids from list response), useful when prior rows
+ * were created with versioned ids we no longer know upfront.
+ */
+async function deleteWofEventsBySummaries(
   accessToken: string,
   calendarId: string,
-  userId: string,
-  kind: 'morning' | 'evening' | 'weekly',
-  eventPayload: Record<string, unknown>
-) {
-  const listUrl =
-    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events` +
-    `?maxResults=10&singleEvents=true&privateExtendedProperty=${encodeURIComponent(`wof_user_id=${userId}`)}` +
-    `&privateExtendedProperty=${encodeURIComponent(`wof_kind=${kind}`)}`
-  const listRes = await fetch(listUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
-  const listJson = (await listRes.json().catch(() => ({}))) as {
-    items?: Array<{ id?: string }>
-    error?: { message?: string }
-  }
-  if (!listRes.ok) {
-    throw new Error(listJson.error?.message || `Calendar list failed (${listRes.status})`)
-  }
-  const existingId = listJson.items?.[0]?.id
+  summaries: string[]
+): Promise<void> {
   const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`
+  let deleted = 0
+  for (const summary of summaries) {
+    const u = new URL(base)
+    u.searchParams.set('singleEvents', 'false')
+    u.searchParams.set('maxResults', '250')
+    u.searchParams.set('q', summary)
+    const listRes = await fetch(u.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    const listJson = (await listRes.json().catch(() => ({}))) as {
+      items?: Array<{ id?: string; summary?: string }>
+      error?: { message?: string }
+    }
+    if (!listRes.ok) {
+      throw new Error(listJson.error?.message || `Calendar list by summary failed (${listRes.status})`)
+    }
+    for (const ev of listJson.items ?? []) {
+      const id = ev.id
+      if (!id) continue
+      const delRes = await fetch(`${base}/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (!delRes.ok && delRes.status !== 404) {
+        const errBody = (await delRes.json().catch(() => ({}))) as { error?: { message?: string } }
+        throw new Error(errBody.error?.message || `DELETE summary-matched event failed (${delRes.status})`)
+      }
+      deleted += 1
+    }
+  }
+  console.log(`${getLogTimestamp()} [google-calendar] summary cleanup deleted ${deleted} event(s)`)
+}
 
-  if (existingId) {
-    const patchRes = await fetch(`${base}/${encodeURIComponent(existingId)}`, {
-      method: 'PATCH',
+/**
+ * Deletes master events at our deterministic IDs (`googleStableEventId`), in case list-by-property
+ * missed them (e.g. missing extended props on an older row).
+ */
+async function deleteStableWofEventIds(accessToken: string, calendarId: string, userId: string): Promise<void> {
+  const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`
+  const kinds: Array<'morning' | 'evening' | 'weekly'> = ['morning', 'evening', 'weekly']
+  let removed = 0
+  const isAlreadyDeletedMessage = (msg: string | undefined): boolean =>
+    String(msg ?? '').toLowerCase().includes('resource has been deleted')
+  for (const kind of kinds) {
+    const id = googleStableEventId(kind, userId)
+    const delRes = await fetch(`${base}/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (delRes.ok) removed += 1
+    if (!delRes.ok && delRes.status !== 404) {
+      const errBody = (await delRes.json().catch(() => ({}))) as { error?: { message?: string } }
+      if (isAlreadyDeletedMessage(errBody.error?.message)) {
+        continue
+      }
+      throw new Error(errBody.error?.message || `DELETE stable event ${id} failed (${delRes.status})`)
+    }
+  }
+  console.log(`${getLogTimestamp()} [google-calendar] stable-id cleanup removed ${removed} event(s) for user ${userId}`)
+}
+
+/** Let Google’s backend settle after DELETE before reusing the same custom `id` on POST. */
+const GOOGLE_EVENT_CREATE_AFTER_DELETE_MS = 500
+/** Extra wait when Google still reports id conflict after a delete. */
+const GOOGLE_EVENT_ID_CONFLICT_RETRY_WAIT_MS = 2000
+
+/**
+ * Force a clean slate for this stable `id`: DELETE (ignore 404), brief delay, then POST.
+ * Avoids 409 "The requested identifier already exists" when an old row still held the id.
+ */
+async function upsertRecurringEvent(
+  accessToken: string,
+  calendarId: string,
+  _userId: string,
+  _kind: 'morning' | 'evening' | 'weekly',
+  eventId: string,
+  eventPayload: Record<string, unknown>
+): Promise<void> {
+  const encodedCal = encodeURIComponent(calendarId)
+  const encodedId = encodeURIComponent(eventId)
+  const eventUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodedCal}/events/${encodedId}`
+  const insertUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodedCal}/events`
+  const isAlreadyDeletedMessage = (msg: string | undefined): boolean =>
+    String(msg ?? '').toLowerCase().includes('resource has been deleted')
+  const isIdentifierConflict = (msg: string | undefined): boolean =>
+    String(msg ?? '').toLowerCase().includes('the requested identifier already exists')
+
+  const deleteIfPresent = async (): Promise<void> => {
+    const delRes = await fetch(eventUrl, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (!delRes.ok && delRes.status !== 404) {
+      const errBody = (await delRes.json().catch(() => ({}))) as { error?: { message?: string } }
+      if (isAlreadyDeletedMessage(errBody.error?.message)) {
+        return
+      }
+      throw new Error(errBody.error?.message || `Calendar DELETE failed (${delRes.status})`)
+    }
+  }
+
+  const postCreate = async (): Promise<{ ok: boolean; message?: string; status: number }> => {
+    const body = { id: eventId, ...eventPayload }
+    const postRes = await fetch(insertUrl, {
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(eventPayload),
+      body: JSON.stringify(body),
     })
-    const patchJson = (await patchRes.json().catch(() => ({}))) as { error?: { message?: string } }
-    if (!patchRes.ok) {
-      throw new Error(patchJson.error?.message || `Calendar PATCH failed (${patchRes.status})`)
-    }
-    return
+    const postJson = (await postRes.json().catch(() => ({}))) as { error?: { message?: string; code?: number } }
+    if (postRes.ok) return { ok: true, status: postRes.status }
+    return { ok: false, status: postRes.status, message: postJson.error?.message || `Calendar POST failed (${postRes.status})` }
   }
-  const postRes = await fetch(base, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(eventPayload),
-  })
-  const postJson = (await postRes.json().catch(() => ({}))) as { error?: { message?: string } }
-  if (!postRes.ok) {
-    throw new Error(postJson.error?.message || `Calendar POST failed (${postRes.status})`)
+
+  await deleteIfPresent()
+
+  await new Promise<void>((resolve) => setTimeout(resolve, GOOGLE_EVENT_CREATE_AFTER_DELETE_MS))
+
+  const firstCreate = await postCreate()
+  if (firstCreate.ok) return
+
+  if (firstCreate.status === 409 && isIdentifierConflict(firstCreate.message)) {
+    await new Promise<void>((resolve) => setTimeout(resolve, GOOGLE_EVENT_ID_CONFLICT_RETRY_WAIT_MS))
+    await deleteIfPresent()
+    await new Promise<void>((resolve) => setTimeout(resolve, GOOGLE_EVENT_CREATE_AFTER_DELETE_MS))
+    const secondCreate = await postCreate()
+    if (secondCreate.ok) return
+    throw new Error(secondCreate.message || `Calendar POST failed (${secondCreate.status})`)
   }
+
+  throw new Error(firstCreate.message || `Calendar POST failed (${firstCreate.status})`)
 }
 
 /**
- * Creates/updates recurring Wheel of Founders events in the user's Google Calendar.
- * @returns `true` if a connection existed and sync ran; `false` if no stored refresh token.
+ * Syncs Wheel of Founders events in Google Calendar: deletes prior WOF-tagged events + stable-ID rows,
+ * then for each reminder DELETEs that stable id (404 OK), waits, and POSTs a fresh recurring series.
  */
-export async function syncRemindersToGoogleCalendar(userId: string): Promise<boolean> {
+export async function syncRemindersToGoogleCalendar(
+  userId: string,
+  options?: SyncGoogleCalendarOptions
+): Promise<boolean> {
   const db = getServerSupabase()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- new table
   const { data: tokenRowData } = await (db.from('google_calendar_tokens') as any)
@@ -157,8 +385,21 @@ export async function syncRemindersToGoogleCalendar(userId: string): Promise<boo
     (db.from('user_profiles') as any).select('timezone').eq('id', userId).maybeSingle(),
   ])
   const settings = (settingsData as ReminderSettingsRow | null) ?? null
-  const tz = String((profileData as { timezone?: string | null } | null)?.timezone || 'UTC')
+  const tz = resolveUserTimezoneForSync(
+    userId,
+    options?.requestTimeZone,
+    (profileData as { timezone?: string | null } | null)?.timezone
+  )
   const calendarId = tokenRow.calendar_id || 'primary'
+
+  console.log(`${getLogTimestamp()} [google-calendar] syncRemindersToGoogleCalendar`, {
+    userId,
+    timezone: tz,
+    morning: hm(settings?.morning_time, '09:00'),
+    evening: hm(settings?.evening_time, '20:00'),
+    rawMorning: settings?.morning_time,
+    rawEvening: settings?.evening_time,
+  })
 
   let accessToken = tokenRow.access_token || null
   const expiresTs = tokenRow.expires_at ? new Date(tokenRow.expires_at).getTime() : 0
@@ -177,67 +418,83 @@ export async function syncRemindersToGoogleCalendar(userId: string): Promise<boo
 
   if (!accessToken) return false
 
+  // Version seed changes each sync; IDs remain valid custom ids (hex chars only).
+  const idVersion = createHash('sha256')
+    .update(`${Date.now()}:${userId}`)
+    .digest('hex')
+    .slice(0, 4)
+
+  await deleteAllWofEvents(accessToken, calendarId, userId)
+  await deleteWofEventsBySummaries(accessToken, calendarId, [
+    'Morning plan with Mrs. Deer',
+    'Evening reflection with Mrs. Deer',
+    'Weekly Insight Ready',
+  ])
+  /** Same `googleStableEventId` values as upsert — catches masters the property-list missed. */
+  await deleteStableWofEventIds(accessToken, calendarId, userId)
+
   const morningOn = (settings?.morning_enabled ?? true) === true
   const eveningOn = (settings?.evening_enabled ?? true) === true
   const weeklyOn = (settings?.weekly_insights_enabled ?? true) === true
   const morningTime = hm(settings?.morning_time, '09:00')
   const eveningTime = hm(settings?.evening_time, '20:00')
 
+  const todayYmd = formatInTimeZone(new Date(), tz, 'yyyy-MM-dd')
+  const mondayAnchor = getUpcomingMondayAnchorInTimeZone(tz, new Date())
+  const weeklyAnchorYmd = formatInTimeZone(mondayAnchor, tz, 'yyyy-MM-dd')
+
   if (morningOn) {
-    await upsertEvent(
-      accessToken,
-      calendarId,
+    const id = googleVersionedEventId('morning', userId, idVersion)
+    const payload = buildRecurringEventBody({
       userId,
-      'morning',
-      buildRecurringEvent({
-        userId,
-        kind: 'morning',
-        timezone: tz,
-        title: '🌅 Morning plan with Mrs. Deer',
-        description: 'Set your top priorities and start the day with clarity.',
-        path: '/morning',
-        hhmm: morningTime,
-        rrule: 'RRULE:FREQ=DAILY',
-      })
-    )
+      kind: 'morning',
+      timezone: tz,
+      title: '🌅 Morning plan with Mrs. Deer',
+      description: 'Set your top priorities and start the day with clarity.',
+      path: '/morning',
+      anchorYmd: todayYmd,
+      hhmm: morningTime,
+      rrule: 'RRULE:FREQ=DAILY',
+      durationMinutes: 60,
+      debugLabel: 'morning',
+    })
+    await upsertRecurringEvent(accessToken, calendarId, userId, 'morning', id, payload)
   }
 
   if (eveningOn) {
-    await upsertEvent(
-      accessToken,
-      calendarId,
+    const id = googleVersionedEventId('evening', userId, idVersion)
+    const payload = buildRecurringEventBody({
       userId,
-      'evening',
-      buildRecurringEvent({
-        userId,
-        kind: 'evening',
-        timezone: tz,
-        title: '🌙 Evening reflection with Mrs. Deer',
-        description: 'Close your daily loop and capture wins, lessons, and patterns.',
-        path: '/evening',
-        hhmm: eveningTime,
-        rrule: 'RRULE:FREQ=DAILY',
-      })
-    )
+      kind: 'evening',
+      timezone: tz,
+      title: '🌙 Evening reflection with Mrs. Deer',
+      description: 'Close your daily loop and capture wins, lessons, and patterns.',
+      path: '/evening',
+      anchorYmd: todayYmd,
+      hhmm: eveningTime,
+      rrule: 'RRULE:FREQ=DAILY',
+      durationMinutes: 60,
+      debugLabel: 'evening',
+    })
+    await upsertRecurringEvent(accessToken, calendarId, userId, 'evening', id, payload)
   }
 
   if (weeklyOn) {
-    await upsertEvent(
-      accessToken,
-      calendarId,
+    const id = googleVersionedEventId('weekly', userId, idVersion)
+    const payload = buildRecurringEventBody({
       userId,
-      'weekly',
-      buildRecurringEvent({
-        userId,
-        kind: 'weekly',
-        timezone: tz,
-        title: 'Weekly Insight Ready',
-        description: 'Your weekly founder insight is available.',
-        path: '/weekly',
-        hhmm: '09:00',
-        rrule: 'RRULE:FREQ=WEEKLY;BYDAY=MO',
-      })
-    )
+      kind: 'weekly',
+      timezone: tz,
+      title: 'Weekly Insight Ready',
+      description: 'Your weekly founder insight is available.',
+      path: '/weekly',
+      anchorYmd: weeklyAnchorYmd,
+      hhmm: '09:00',
+      rrule: 'RRULE:FREQ=WEEKLY;BYDAY=MO',
+      durationMinutes: 60,
+      debugLabel: 'weekly',
+    })
+    await upsertRecurringEvent(accessToken, calendarId, userId, 'weekly', id, payload)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- new table

@@ -10,6 +10,7 @@ import {
   recordCalendarFeedRequest,
   touchCalendarSubscriptionLastSync,
 } from '@/lib/analytics/calendar-subscription-tracking'
+import { getLogTimestamp } from '@/lib/server-log-timestamp'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -174,7 +175,7 @@ async function buildFeedResult(req: NextRequest): Promise<FeedBuildResult> {
     includeVtimezone: true,
   })
 
-  console.info('[calendar/feed] built', {
+  console.info(`${getLogTimestamp()} [calendar/feed] built`, {
     userId: row.id,
     eventCount: events.length,
     timezone,
@@ -219,7 +220,7 @@ export async function HEAD(req: NextRequest) {
       },
     })
   } catch (err) {
-    console.error('[calendar/feed] HEAD error', err)
+    console.error(`${getLogTimestamp()} [calendar/feed] HEAD error`, err)
     return new NextResponse(null, { status: 500 })
   }
 }

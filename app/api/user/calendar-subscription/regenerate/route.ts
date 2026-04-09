@@ -10,6 +10,7 @@ import {
   deactivateCalendarSubscriptionsForUser,
   upsertCalendarSubscriptionByToken,
 } from '@/lib/analytics/calendar-subscription-tracking'
+import { getLogTimestamp } from '@/lib/server-log-timestamp'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
       .eq('id', session.user.id)
 
     if (error) {
-      console.error('[calendar-subscription/regenerate] update error', error)
+      console.error(`${getLogTimestamp()} [calendar-subscription/regenerate] update error`, error)
       return NextResponse.json({ error: 'Failed to update calendar token' }, { status: 500 })
     }
 
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
       webcalUrl: links.webcalUrl,
     })
   } catch (err) {
-    console.error('[calendar-subscription/regenerate]', err)
+    console.error(`${getLogTimestamp()} [calendar-subscription/regenerate]`, err)
     return NextResponse.json({ error: 'Failed to regenerate calendar subscription' }, { status: 500 })
   }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { syncRemindersToGoogleCalendar } from '@/lib/google-calendar'
+import { persistUserProfileTimeZoneIfValid } from '@/lib/user-profile-timezone-persist'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -116,6 +117,9 @@ export async function POST(req: NextRequest) {
       emailEveningReminderTime?: string
       emailFrequency?: 'daily' | 'weekly_only' | 'achievements_only' | 'none'
       emailUnsubscribed?: boolean
+      /** Browser IANA zone e.g. Asia/Hong_Kong */
+      timeZone?: string
+      timezone?: string
     }
 
     const frequency = body.emailFrequency ?? 'daily'
@@ -161,6 +165,9 @@ export async function POST(req: NextRequest) {
     }
 
     const db = getServerSupabase()
+    const timeZoneFromBody = body.timeZone ?? body.timezone
+    await persistUserProfileTimeZoneIfValid(db, session.user.id, timeZoneFromBody)
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generated types lag notification settings columns
     const { error } = await (db.from('user_notification_settings') as any).upsert(
       {
@@ -197,7 +204,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Keep connected Google Calendar events in sync with latest reminder settings.
-    void syncRemindersToGoogleCalendar(session.user.id).catch((err) => {
+    void syncRemindersToGoogleCalendar(session.user.id, {
+      requestTimeZone: typeof timeZoneFromBody === 'string' ? timeZoneFromBody : undefined,
+    }).catch((err) => {
       console.error('[notification-settings] google calendar sync failed', err)
     })
 

@@ -11,6 +11,13 @@ let calendarOAuthUiRefreshInFlight = false
 
 const CALENDAR_OAUTH_PENDING_TTL_MS = 15 * 60 * 1000
 
+/** Identity/session updates that can mean Google calendar linking finished (not only SIGNED_IN). */
+const CALENDAR_OAUTH_AUTH_EVENTS = new Set([
+  'SIGNED_IN',
+  'TOKEN_REFRESHED',
+  'USER_UPDATED',
+])
+
 function clearCalendarOAuthPending() {
   try {
     localStorage.removeItem(CALENDAR_OAUTH_PENDING_KEY)
@@ -67,15 +74,29 @@ function shouldRunSessionObserver(
   event: string,
   session: { user?: { id?: string } } | null,
 ): session is NonNullable<typeof session> & { user: { id: string } } {
+  if (!CALENDAR_OAUTH_AUTH_EVENTS.has(event)) return false
   if (!session?.user?.id) return false
   if (typeof window !== 'undefined' && window.opener != null) return false
-  if (event === 'INITIAL_SESSION') return false
   if (!isCalendarOAuthPendingFresh()) return false
   return true
 }
 
+async function tryAggressiveSyncFromFocus() {
+  if (typeof window !== 'undefined' && window.opener != null) return
+  if (!isCalendarOAuthPendingFresh()) return
+
+  const { data, error } = await supabase.auth.getUser()
+  console.log('[OAUTH DEBUG] focus + pending — getUser', {
+    error: error?.message ?? null,
+    userId: data.user?.id ?? null,
+  })
+  if (!data.user?.id) return
+
+  void completeCalendarOAuthUi('aggressive_sync')
+}
+
 /**
- * Calendar OAuth completion: localStorage pending + live session (source of truth), with postMessage as a hint.
+ * Calendar OAuth completion: localStorage pending + live session (source of truth), postMessage, focus.
  */
 export function SupabaseAuthDebugListener() {
   useEffect(() => {
@@ -93,6 +114,11 @@ export function SupabaseAuthDebugListener() {
     }
     window.addEventListener('message', onMessage)
 
+    const onFocus = () => {
+      void tryAggressiveSyncFromFocus()
+    }
+    window.addEventListener('focus', onFocus)
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
@@ -100,12 +126,13 @@ export function SupabaseAuthDebugListener() {
 
       if (!shouldRunSessionObserver(event, session)) return
 
-      console.log('[OAUTH DEBUG] Session + calendar OAuth pending — refreshing UI (auth observer)', { event })
-      void completeCalendarOAuthUi('auth_session_observer')
+      console.log('[OAUTH DEBUG] Session + calendar OAuth pending — refreshing UI', { event })
+      void completeCalendarOAuthUi('aggressive_sync')
     })
 
     return () => {
       window.removeEventListener('message', onMessage)
+      window.removeEventListener('focus', onFocus)
       subscription.unsubscribe()
     }
   }, [])

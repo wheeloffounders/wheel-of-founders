@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+import { getLogTimestamp } from '@/lib/server-log-timestamp'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
       lastSynced: row.updated_at ?? null,
     })
   } catch (e) {
-    console.error('[api/user/google-calendar/status]', e)
+    console.error(`${getLogTimestamp()} [api/user/google-calendar/status]`, e)
     return NextResponse.json({ error: 'Failed' }, { status: 500 })
   }
 }

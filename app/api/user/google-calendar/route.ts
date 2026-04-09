@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
+import { getLogTimestamp } from '@/lib/server-log-timestamp'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -35,12 +36,12 @@ export async function DELETE(req: NextRequest) {
       .delete()
       .eq('user_id', session.user.id)
     if (error) {
-      console.error('[user/google-calendar] DELETE', error)
+      console.error(`${getLogTimestamp()} [user/google-calendar] DELETE`, error)
       return NextResponse.json({ error: 'Failed to disconnect' }, { status: 500 })
     }
     return NextResponse.json({ success: true })
   } catch (e) {
-    console.error('[user/google-calendar] DELETE', e)
+    console.error(`${getLogTimestamp()} [user/google-calendar] DELETE`, e)
     return NextResponse.json({ error: 'Failed' }, { status: 500 })
   }
 }

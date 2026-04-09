@@ -5,6 +5,11 @@ import { supabase } from '@/lib/supabase'
 
 const POPUP_NAME = 'wof_google_calendar_oauth'
 
+/**
+ * OAuth redirect must stay on the **current** host (e.g. localhost:3000 vs production).
+ * Never use NEXT_PUBLIC_APP_URL here — that forces the wrong origin in dev.
+ * Shape: `${origin}/auth/callback?next=...&calendar_oauth=1`
+ */
 function buildCalendarRedirectTo(origin: string, nextPath: string, usePopup: boolean): string {
   const postOAuthPath = usePopup
     ? `/auth/calendar-popup-done?returnTo=${encodeURIComponent(nextPath)}`
@@ -24,11 +29,14 @@ function openOAuthPopup(url: string): Window | null {
  * Completion is signaled via postMessage, localStorage pending + session observer (see SupabaseAuthDebugListener).
  */
 export async function startGoogleCalendarOAuth(
-  nextPath = '/settings?tab=notifications',
+  nextPath = '/settings/notifications',
   opts?: { usePopup?: boolean },
 ): Promise<void> {
   const usePopup = opts?.usePopup !== false
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  if (!origin) {
+    throw new Error('Google Calendar OAuth must run in the browser (window.location.origin missing)')
+  }
   const redirectTo = buildCalendarRedirectTo(origin, nextPath, usePopup)
 
   const baseOptions = {

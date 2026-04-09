@@ -9,6 +9,7 @@ import {
   mrsDeerLineForEveningHour,
   mrsDeerLineForMorningHour,
 } from '@/lib/calendar-reminder-feedback'
+import { getBrowserIanaTimeZone } from '@/lib/browser-timezone'
 import { Loader2 } from 'lucide-react'
 
 export type ReminderSetupScreenProps = {
@@ -37,6 +38,7 @@ async function syncBrowserTimezone(): Promise<void> {
 
 async function saveNotificationSettings(morningTime: string, eveningTime: string): Promise<boolean> {
   try {
+    const browserTz = getBrowserIanaTimeZone()
     const res = await fetch('/api/user/notification-settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -48,6 +50,7 @@ async function saveNotificationSettings(morningTime: string, eveningTime: string
         eveningTime,
         morning: true,
         evening: true,
+        ...(browserTz ? { timeZone: browserTz } : {}),
       }),
     })
     return res.ok
