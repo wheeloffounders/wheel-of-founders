@@ -262,9 +262,9 @@ export function NotificationSettings() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       {/* Email: times + digest / badges + frequency + more toggles */}
-      <div className="card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+      <div className="card min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800 sm:p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">📧 Email reminders</h3>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
           Choose when we email you. This is separate from calendar subscriptions below.
@@ -403,7 +403,7 @@ export function NotificationSettings() {
       </div>
 
       {/* Calendar: separate wall times + weekly insight in feed + provider buttons */}
-      <div className="card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+      <div className="card min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800 sm:p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">📅 Calendar reminders</h3>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
           Subscribed calendars use these times only — not your email schedule above.
@@ -419,7 +419,7 @@ export function NotificationSettings() {
             <div className="space-y-3 mb-4">
               <label className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Morning</span>
-                <span className="flex items-center gap-2">
+                <span className="flex min-w-0 items-center gap-2">
                   <input
                     type="time"
                     value={calMorning}
@@ -431,9 +431,9 @@ export function NotificationSettings() {
                   </span>
                 </span>
               </label>
-              <label className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <label className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Evening</span>
-                <span className="flex items-center gap-2">
+                <span className="flex min-w-0 items-center gap-2">
                   <input
                     type="time"
                     value={calEvening}
@@ -447,14 +447,14 @@ export function NotificationSettings() {
               </label>
             </div>
 
-            <label className="flex items-start gap-3 cursor-pointer text-sm text-gray-800 dark:text-gray-200 mb-4">
+            <label className="mb-4 flex min-w-0 cursor-pointer items-start gap-3 text-sm text-gray-800 dark:text-gray-200">
               <input
                 type="checkbox"
                 className="mt-1 rounded border-gray-300"
                 checked={calendarWeeklyInsight}
                 onChange={() => setCalendarWeeklyInsight((v) => !v)}
               />
-              <span>
+              <span className="min-w-0 flex-1">
                 <span className="font-medium">Weekly insight</span>
                 <span className="text-gray-600 dark:text-gray-400"> — Monday event in your subscribed calendar</span>
               </span>
@@ -463,7 +463,7 @@ export function NotificationSettings() {
             <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">Add to your calendar:</p>
 
             {calendarLinks?.feedUrl ? (
-              <div className="mb-4 space-y-2">
+              <div className="mb-4 min-w-0 space-y-2">
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   Feed URL (manual subscribe)
                 </label>
@@ -508,20 +508,20 @@ export function NotificationSettings() {
               <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">{calendarLinkMessage}</p>
             ) : null}
 
-            <div className="flex flex-col sm:flex-row flex-wrap gap-2">
+            <div className="flex min-w-0 flex-col flex-wrap gap-2 sm:flex-row">
               <button
                 type="button"
                 disabled={googleBusy || openingProvider !== null}
                 onClick={() => void openCalendarProvider('google')}
-                className="inline-flex justify-center items-center px-4 py-2.5 rounded-lg bg-[#ef725c] text-white text-sm font-medium hover:opacity-90 disabled:opacity-40"
+                className="inline-flex min-w-0 w-full justify-center items-center whitespace-normal rounded-lg bg-[#ef725c] px-4 py-2.5 text-center text-sm font-medium text-white hover:opacity-90 disabled:opacity-40 sm:w-auto"
               >
                 {googleBusy ? (
                   <span className="inline-flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
                     Connecting...
                   </span>
                 ) : googleConnected ? (
-                  '✓ Connected to Google Calendar'
+                  <span className="px-0.5 leading-snug">✓ Connected to Google Calendar</span>
                 ) : (
                   'Connect Google Calendar'
                 )}
@@ -531,7 +531,7 @@ export function NotificationSettings() {
                   type="button"
                   disabled={googleBusy || openingProvider !== null}
                   onClick={() => void handleDisconnectGoogle()}
-                  className="inline-flex justify-center items-center px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
+                  className="inline-flex min-w-0 w-full justify-center items-center rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-800 sm:w-auto"
                 >
                   Disconnect
                 </button>
@@ -540,7 +540,7 @@ export function NotificationSettings() {
                 type="button"
                 disabled={!calendarLinks?.apple || openingProvider !== null}
                 onClick={() => void openCalendarProvider('apple')}
-                className="inline-flex justify-center items-center px-4 py-2.5 rounded-lg bg-[#152b50] text-white text-sm font-medium hover:opacity-90 disabled:opacity-40"
+                className="inline-flex min-w-0 w-full justify-center items-center rounded-lg bg-[#152b50] px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40 sm:w-auto"
               >
                 {openingProvider === 'apple' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apple Calendar'}
               </button>
@@ -548,7 +548,7 @@ export function NotificationSettings() {
                 type="button"
                 disabled={!calendarLinks?.outlook || openingProvider !== null}
                 onClick={() => void openCalendarProvider('outlook')}
-                className="inline-flex justify-center items-center px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40"
+                className="inline-flex min-w-0 w-full justify-center items-center rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-800 sm:w-auto"
               >
                 {openingProvider === 'outlook' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Outlook'}
               </button>
@@ -561,7 +561,7 @@ export function NotificationSettings() {
         )}
       </div>
 
-      <div className="card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+      <div className="card min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800 sm:p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Push notifications coming soon</h3>
         <p className="text-sm text-gray-700 dark:text-gray-300">
           We&apos;re temporarily pausing in-app push notifications while we explore a native app or PWA wrapper. Your

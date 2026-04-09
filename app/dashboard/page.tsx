@@ -1,5 +1,8 @@
 'use client'
 
+// Production Fix - Resolved Checklist Invisibility & SQL Syntax Errors - 2026-04-09 22:59 HKT
+// UI Feature - Active Emergency Checklist on Dashboard - 2026-04-09 20:24 HKT
+
 import { Suspense, useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getUserSession } from '@/lib/auth'
@@ -19,6 +22,7 @@ import {
   TaskWidget,
   SocialProofFooter,
   EmergencySafetySeal,
+  ActiveEmergencyChecklistDashboard,
   TrialExpiryBanner,
   TrialWeekWrapupCard,
   isTrialWrapupDismissed,
@@ -49,6 +53,9 @@ function DashboardContent() {
   const onResolutionCommandCenterChange = useCallback((active: boolean) => {
     setResolutionCommandCenter(active)
   }, [])
+  const [showRestRecover, setShowRestRecover] = useState(false)
+  const [emergencyStripRefresh, setEmergencyStripRefresh] = useState(0)
+  const bumpEmergencyStrip = useCallback(() => setEmergencyStripRefresh((k) => k + 1), [])
   const [loading, setLoading] = useState(true)
   const [userTier, setUserTier] = useState<string>('beta')
   const [showWelcome, setShowWelcome] = useState(false)
@@ -293,7 +300,12 @@ function DashboardContent() {
         <>
           <ProfileReminderBanner />
 
-          <EmergencySafetySeal onActiveResolutionChange={onResolutionCommandCenterChange} />
+          <EmergencySafetySeal
+            onActiveResolutionChange={onResolutionCommandCenterChange}
+            showRestRecover={showRestRecover}
+            setShowRestRecover={setShowRestRecover}
+            refreshKey={emergencyStripRefresh}
+          />
 
           <TourPopUp />
 
@@ -301,6 +313,11 @@ function DashboardContent() {
           <div className="space-y-4 lg:space-y-3">
             <div className="space-y-3">
               <DashboardHeader tierLabel={userTier === 'beta' ? 'Beta' : userTier} />
+              <ActiveEmergencyChecklistDashboard
+                setShowRestRecover={setShowRestRecover}
+                refreshKey={emergencyStripRefresh}
+                onResolutionSettled={bumpEmergencyStrip}
+              />
               {showTrialWrapup && wrapupStats && trialEndsForWrapup && dashboardUserId ? (
                 <TrialWeekWrapupCard
                   stats={wrapupStats}

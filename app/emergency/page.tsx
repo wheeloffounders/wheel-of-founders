@@ -1,5 +1,8 @@
 'use client'
 
+// UI Logic Update - Gated Emergency Checklist (Commit to Reveal) - 2026-04-09 19:28 HKT
+// UI Update - Auto-Expanding Emergency Inputs - 2026-04-09 20:11 HKT
+
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { getClientAuthHeaders } from '@/lib/api/fetch-json'
 import { format, isToday, startOfMonth, subDays, addYears } from 'date-fns'
@@ -37,14 +40,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { processEmergencyVent } from '@/lib/emergency/process-emergency-vent'
 import { EMERGENCY_VENT_MIN_CHARS } from '@/lib/emergency/parse-emergency'
 import { heuristicEmergencySeverity } from '@/lib/emergency/heuristic-severity'
-import {
-  getDynamicPlaceholder,
-  getTacticalHint,
-  parseContainmentSteps,
-} from '@/lib/emergency-containment-prompt'
+import { getDynamicPlaceholder, getTacticalHint } from '@/lib/emergency-containment-prompt'
+import { usePersistedEmergencyChecklist } from '@/lib/hooks/usePersistedEmergencyChecklist'
 
-/** Long primary text → allow AI to fill notes in the background (user can open “Add details” to edit). */
-const EMERGENCY_LONG_TEXT_NOTES_CHARS = 200
 const COMPOSE_INSIGHT_MIN_CHARS = 28
 type Severity = 'hot' | 'warm' | 'contained'
 
@@ -119,6 +117,8 @@ export default function EmergencyPage() {
   const [commandCenterDraft, setCommandCenterDraft] = useState('')
   const commandCenterDraftRef = useRef(commandCenterDraft)
   commandCenterDraftRef.current = commandCenterDraft
+  /** Yellow checklist: hidden until user commits plan (or reloads a fire that was already committed). */
+  const [isPlanCommitted, setIsPlanCommitted] = useState(false)
   const { insight: streamingInsight, isStreaming, error: streamingError, startStream } = useStreamingInsight()
   const isMobile = useMediaQuery('(max-width: 768px)')
   const fireDateRef = useRef(fireDate)
@@ -416,9 +416,6 @@ export default function EmergencyPage() {
         if (shouldFillHeadline && data.title.trim()) {
           setDescription(data.title)
         }
-        if (vent.length >= EMERGENCY_LONG_TEXT_NOTES_CHARS && !notesTouchedRef.current) {
-          setNotes(data.notes)
-        }
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : 'Sort failed'
         if (/pro|trial|403/i.test(msg)) {
@@ -440,6 +437,7 @@ export default function EmergencyPage() {
   /**
    * Long headline alone (no brain dump): debounced triage for the protocol headline field only.
    * Brain dump → AI sort is manual (BrainDumpCard “Finish & Sort” only); this effect bails when the dump has text.
+   * Does not auto-fill Notes — that field is only user-edited (or loaded from draft).
    */
   useEffect(() => {
     const bd = brainDump.trim()
@@ -507,12 +505,6 @@ export default function EmergencyPage() {
           (snapshotBrain.length >= EMERGENCY_VENT_MIN_CHARS || !descriptionRef.current.trim())
         if (shouldFillHeadline && data.title.trim()) {
           setDescription(data.title)
-        }
-        if (
-          snapshotVent.length >= EMERGENCY_LONG_TEXT_NOTES_CHARS &&
-          !notesTouchedRef.current
-        ) {
-          setNotes(data.notes)
         }
         setIntelStatus('idle')
       } catch (e: unknown) {
@@ -606,6 +598,14 @@ export default function EmergencyPage() {
     }
     setCommandCenterDraft(activeHotFire.containment_plan ?? '')
   }, [activeHotFire?.id])
+
+  useEffect(() => {
+    if (!activeHotFire) {
+      setIsPlanCommitted(false)
+      return
+    }
+    setIsPlanCommitted(Boolean(activeHotFire.containment_plan_committed_at))
+  }, [activeHotFire?.id, activeHotFire?.containment_plan_committed_at])
 
   const runTriageIfNeeded = useCallback(
     async (emergencyId: string, description: string, fd: string) => {
@@ -1091,6 +1091,7 @@ export default function EmergencyPage() {
             : e
         )
       )
+      setIsPlanCommitted(true)
       window.dispatchEvent(
         new CustomEvent('toast', {
           detail: { message: 'Plan committed — mark resolved when you’ve carried it out.', type: 'success' },
@@ -1122,6 +1123,7 @@ export default function EmergencyPage() {
       if (updateError) throw updateError
 
       setTodayFires((prev) => prev.map((e) => (e.id === id ? { ...e, resolved: true } : e)))
+      setIsPlanCommitted(false)
       dispatchEmergencyModeRefresh()
       window.dispatchEvent(
         new CustomEvent('toast', {
@@ -1185,31 +1187,16 @@ export default function EmergencyPage() {
     [activeHotTriage?.strategy, activeHotFire?.description]
   )
 
-  const containmentStepsForList = useMemo(
-    () =>
-      parseContainmentSteps(
-        commandCenterDraft.trim() || (activeHotFire?.containment_plan ?? '').trim()
-      ),
+  const containmentPlanTextForChecklist = useMemo(
+    () => commandCenterDraft.trim() || (activeHotFire?.containment_plan ?? '').trim(),
     [commandCenterDraft, activeHotFire?.containment_plan]
   )
-
-  /** Local-only checklist checkoffs (not persisted; clears when parsed steps change). */
-  const checklistSourceKey = useMemo(
-    () => containmentStepsForList.join('\u0001'),
-    [containmentStepsForList]
-  )
-  const [checklistCompletedByIndex, setChecklistCompletedByIndex] = useState<Record<number, boolean>>({})
-
-  useEffect(() => {
-    setChecklistCompletedByIndex({})
-  }, [checklistSourceKey])
-
-  const toggleChecklistRow = useCallback((index: number) => {
-    setChecklistCompletedByIndex((prev) => ({
-      ...prev,
-      [index]: !prev[index],
-    }))
-  }, [])
+  const {
+    steps: checklistSteps,
+    completedByIndex: checklistCompletedByIndex,
+    toggleRow: toggleChecklistRow,
+    sourceKey: checklistStorageSourceKey,
+  } = usePersistedEmergencyChecklist(activeHotFire?.id ?? null, containmentPlanTextForChecklist)
 
   const firefighterReflection = useMemo(() => {
     if (activeHotFire?.id) {
@@ -1508,15 +1495,14 @@ export default function EmergencyPage() {
                 ref={protocolDescInputRef}
                 as="textarea"
                 id="emergency-desc"
-                rows={1}
+                rows={2}
                 value={description}
                 onChange={onProtocolDescriptionChange}
                 placeholder="Short headline — what went wrong?"
                 compactEmptyAutosize
-                compactEmptyMinPx={60}
+                compactEmptyMinPx={80}
                 hideSpeechButton
-                className="box-border w-full min-w-0 max-w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-base leading-relaxed text-gray-900 placeholder:text-gray-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/25 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-amber-500/70 dark:focus:ring-amber-500/25"
-                style={{ minHeight: 60, height: 'auto', maxHeight: 200 }}
+                className="box-border w-full min-w-0 max-w-full resize-none overflow-hidden rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-base leading-relaxed text-gray-900 placeholder:text-gray-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/25 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-amber-500/70 dark:focus:ring-amber-500/25"
               />
             </div>
 
@@ -1553,15 +1539,14 @@ export default function EmergencyPage() {
                 ref={protocolNotesInputRef}
                 as="textarea"
                 id="emergency-notes"
-                rows={1}
+                rows={2}
                 value={notes}
                 onChange={onProtocolNotesChange}
                 placeholder="Context, stakeholders, constraints…"
                 compactEmptyAutosize
-                compactEmptyMinPx={60}
+                compactEmptyMinPx={80}
                 hideSpeechButton
-                className="box-border w-full min-w-0 max-w-full rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-base leading-relaxed text-gray-900 placeholder:text-gray-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/25 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-amber-500/70 dark:focus:ring-amber-500/25"
-                style={{ minHeight: 60, height: 'auto', maxHeight: 220 }}
+                className="box-border w-full min-w-0 max-w-full resize-none overflow-hidden rounded-xl border-2 border-gray-200 bg-white px-3 py-2.5 text-base leading-relaxed text-gray-900 placeholder:text-gray-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/25 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500 dark:focus:border-amber-500/70 dark:focus:ring-amber-500/25"
               />
             </div>
 
@@ -1740,44 +1725,46 @@ export default function EmergencyPage() {
                       aria-label="Your containment notes"
                     />
 
-                    <div className="rounded-lg border-2 border-amber-200 bg-amber-50/90 p-3 dark:border-amber-600/60 dark:bg-amber-950/25">
-                      <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-900/90 dark:text-amber-200/90">
-                        Your checklist
-                      </p>
-                      {containmentStepsForList.length > 0 ? (
-                        <ul className="mt-2 space-y-2.5" role="list">
-                          {containmentStepsForList.map((step, i) => {
-                            const done = Boolean(checklistCompletedByIndex[i])
-                            return (
-                              <li key={`${checklistSourceKey}-${i}`}>
-                                <label className="flex cursor-pointer items-start gap-2.5 text-sm font-medium leading-snug">
-                                  <input
-                                    type="checkbox"
-                                    checked={done}
-                                    onChange={() => toggleChecklistRow(i)}
-                                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-700/80 text-amber-600 focus:ring-2 focus:ring-amber-500 focus:ring-offset-0 dark:border-amber-500 dark:bg-gray-900 dark:text-amber-500"
-                                    aria-label={`Checklist: ${step.slice(0, 80)}${step.length > 80 ? '…' : ''}`}
-                                  />
-                                  <span
-                                    className={
-                                      done
-                                        ? 'text-slate-400 line-through dark:text-slate-500'
-                                        : 'text-gray-900 dark:text-gray-100'
-                                    }
-                                  >
-                                    {step}
-                                  </span>
-                                </label>
-                              </li>
-                            )
-                          })}
-                        </ul>
-                      ) : (
-                        <p className="mt-2 text-sm italic text-amber-900/70 dark:text-amber-200/70">
-                          Draft 2–3 moves above—one per line—to see your checklist here.
+                    {isPlanCommitted ? (
+                      <div className="rounded-lg border-2 border-amber-200 bg-amber-50/90 p-3 dark:border-amber-600/60 dark:bg-amber-950/25">
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-900/90 dark:text-amber-200/90">
+                          Your checklist
                         </p>
-                      )}
-                    </div>
+                        {checklistSteps.length > 0 ? (
+                          <ul className="mt-2 space-y-2.5" role="list">
+                            {checklistSteps.map((step, i) => {
+                              const done = Boolean(checklistCompletedByIndex[i])
+                              return (
+                                <li key={`${checklistStorageSourceKey}-${i}`}>
+                                  <label className="flex cursor-pointer items-start gap-2.5 text-sm font-medium leading-snug">
+                                    <input
+                                      type="checkbox"
+                                      checked={done}
+                                      onChange={() => toggleChecklistRow(i)}
+                                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-700/80 text-amber-600 focus:ring-2 focus:ring-amber-500 focus:ring-offset-0 dark:border-amber-500 dark:bg-gray-900 dark:text-amber-500"
+                                      aria-label={`Checklist: ${step.slice(0, 80)}${step.length > 80 ? '…' : ''}`}
+                                    />
+                                    <span
+                                      className={
+                                        done
+                                          ? 'text-slate-400 line-through dark:text-slate-500'
+                                          : 'text-gray-900 dark:text-gray-100'
+                                      }
+                                    >
+                                      {step}
+                                    </span>
+                                  </label>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        ) : (
+                          <p className="mt-2 text-sm italic text-amber-900/70 dark:text-amber-200/70">
+                            Draft 2–3 moves above—one per line—to see your checklist here.
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="border-t border-red-200/60 pt-4 dark:border-red-900/40">

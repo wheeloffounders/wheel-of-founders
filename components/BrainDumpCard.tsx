@@ -599,13 +599,22 @@ export function BrainDumpCard({
         </h2>
       ) : (
         <header className={isGhostVoiceBlock ? 'shrink-0' : undefined}>
-          <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
-            <Brain className="h-5 w-5 shrink-0" style={{ color: borderAccent }} aria-hidden />
-            {title}
-            {saveHint ? (
-              <span className="text-xs font-normal text-gray-500 dark:text-gray-400">{saveHint}</span>
-            ) : null}
+          <h2
+            id={`${id}-heading`}
+            className="text-xl font-semibold leading-none text-gray-900 dark:text-white sm:text-2xl"
+          >
+            <span className="flex items-center gap-2">
+              <Brain
+                className="h-5 w-5 shrink-0 sm:h-6 sm:w-6"
+                style={{ color: borderAccent }}
+                aria-hidden
+              />
+              <span className="min-w-0 leading-tight">{title}</span>
+            </span>
           </h2>
+          {saveHint ? (
+            <p className="mt-1.5 text-xs font-normal text-gray-500 dark:text-gray-400">{saveHint}</p>
+          ) : null}
           {subtitle ? (
             <p
               className={

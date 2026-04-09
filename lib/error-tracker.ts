@@ -10,6 +10,37 @@ const isDev = process.env.NODE_ENV === 'development'
  * Coerce any thrown/rejected value into an Error with a readable message.
  * Avoids `[object Object]` when libraries reject with plain objects or `{}`.
  */
+/**
+ * In-flight requests aborted on navigation/unmount (e.g. Supabase auth-js, fetch + AbortController).
+ * Not actionable; logging them as “CODE SCARY” creates false alarms in dev.
+ */
+export function isBenignAbortReason(reason: unknown): boolean {
+  if (reason == null) return false
+  if (typeof DOMException !== 'undefined' && reason instanceof DOMException && reason.name === 'AbortError') {
+    return true
+  }
+  if (reason instanceof Error && reason.name === 'AbortError') return true
+  if (typeof reason === 'object' && reason !== null && 'name' in reason) {
+    const n = (reason as { name?: unknown }).name
+    if (n === 'AbortError') return true
+  }
+  const msg =
+    reason instanceof Error
+      ? reason.message
+      : typeof reason === 'string'
+        ? reason
+        : typeof reason === 'object' &&
+            reason !== null &&
+            'message' in reason &&
+            typeof (reason as { message: unknown }).message === 'string'
+          ? (reason as { message: string }).message
+          : ''
+  if (typeof msg === 'string' && /signal is aborted|AbortError|aborted without reason/i.test(msg)) {
+    return true
+  }
+  return false
+}
+
 export function toTrackedError(input: unknown): Error {
   if (input instanceof Error) return input
   if (typeof input === 'string') return new Error(input)

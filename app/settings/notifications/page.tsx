@@ -21,7 +21,7 @@ export default function NotificationSettingsPage() {
   }, [router])
 
   return (
-    <div className="max-w-2xl mx-auto px-4 md:px-5 py-8">
+    <div className="mx-auto min-w-0 max-w-2xl px-4 py-8 md:px-5">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 dark:text-white flex items-center gap-3">
           <Bell className="w-8 h-8 text-[#ef725c]" />

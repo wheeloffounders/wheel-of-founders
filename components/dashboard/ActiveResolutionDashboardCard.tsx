@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import confetti from 'canvas-confetti'
 import { MapPin, Shield } from 'lucide-react'
@@ -9,7 +9,7 @@ import { getUserSession, refreshSessionForWrite, isRlsOrAuthPermissionError } fr
 import { getClientAuthHeaders } from '@/lib/api/fetch-json'
 import { Button } from '@/components/ui/button'
 import { colors } from '@/lib/design-tokens'
-import { parseContainmentSteps } from '@/lib/emergency-containment-prompt'
+import { usePersistedEmergencyChecklist } from '@/lib/hooks/usePersistedEmergencyChecklist'
 import { dispatchEmergencyModeRefresh } from '@/components/emergency/EmergencyModeProvider'
 
 function fireResolutionConfetti() {
@@ -41,12 +41,7 @@ export function ActiveResolutionDashboardCard({
   onRestorationPrompt,
 }: ActiveResolutionDashboardCardProps) {
   const [resolving, setResolving] = useState(false)
-  const steps = useMemo(() => parseContainmentSteps(containmentPlan.trim()), [containmentPlan])
-  const [stepDone, setStepDone] = useState<Record<number, boolean>>({})
-
-  useEffect(() => {
-    setStepDone({})
-  }, [emergencyId, containmentPlan])
+  const { steps, completedByIndex, toggleRow } = usePersistedEmergencyChecklist(emergencyId, containmentPlan)
 
   const handleMarkResolved = async () => {
     setResolving(true)
@@ -140,28 +135,39 @@ export function ActiveResolutionDashboardCard({
         </div>
       </div>
 
-      <div className="mt-4 border-t border-amber-100 pt-4 dark:border-amber-900/40">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Your plan</p>
-        <ul className="mt-3 space-y-3" role="list">
+      <div className="mt-4 rounded-lg border-2 border-amber-200 bg-amber-50/90 p-3 dark:border-amber-600/60 dark:bg-amber-950/25">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-900/90 dark:text-amber-200/90">
+          Your checklist
+        </p>
+        <ul className="mt-2 space-y-2.5" role="list">
           {steps.length > 0 ? (
             steps.map((step, i) => {
-              const done = Boolean(stepDone[i])
+              const done = Boolean(completedByIndex[i])
               return (
                 <li key={`${i}-${step.slice(0, 32)}`}>
-                  <label className="flex cursor-pointer gap-3 text-sm leading-snug text-gray-900 dark:text-gray-100">
+                  <label className="flex cursor-pointer items-start gap-2.5 text-sm font-medium leading-snug text-gray-900 dark:text-gray-100">
                     <input
                       type="checkbox"
                       checked={done}
-                      onChange={() => setStepDone((prev) => ({ ...prev, [i]: !prev[i] }))}
-                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-400 text-amber-600 focus:ring-amber-500 dark:border-amber-600 dark:bg-gray-900 dark:text-amber-500"
+                      onChange={() => toggleRow(i)}
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-700/80 text-amber-600 focus:ring-2 focus:ring-amber-500 focus:ring-offset-0 dark:border-amber-500 dark:bg-gray-900 dark:text-amber-500"
+                      aria-label={`Checklist: ${step.slice(0, 80)}${step.length > 80 ? '…' : ''}`}
                     />
-                    <span className={done ? 'text-gray-500 line-through dark:text-gray-500' : ''}>{step}</span>
+                    <span
+                      className={
+                        done ? 'text-slate-400 line-through dark:text-slate-500' : 'text-gray-900 dark:text-gray-100'
+                      }
+                    >
+                      {step}
+                    </span>
                   </label>
                 </li>
               )
             })
           ) : (
-            <li className="text-sm text-gray-600 dark:text-gray-400">Open the emergency workspace to finish your plan.</li>
+            <li className="text-sm italic text-amber-900/70 dark:text-amber-200/70">
+              Open the emergency workspace to add 2–3 moves to your plan.
+            </li>
           )}
         </ul>
       </div>

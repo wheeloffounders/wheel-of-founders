@@ -271,6 +271,7 @@ export const SpeechTextField = forwardRef<
       if (compactEmptyAutosize) {
         el.style.minHeight = ''
       }
+      // Collapse first so scrollHeight matches current content (shrinks when user deletes text).
       el.style.height = 'auto'
       const sh = el.scrollHeight
       const minH = compactEmptyAutosize ? floor : 0

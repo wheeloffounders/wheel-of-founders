@@ -29,6 +29,7 @@ import { useNewInsights } from '@/lib/hooks/useNewInsights'
 import { useWhatsNew } from '@/lib/hooks/useWhatsNew'
 import { useHasSeenMorningTour } from '@/lib/hooks/useHasSeenMorningTour'
 import { supabase } from '@/lib/supabase'
+import { logSupabaseQueryError } from '@/lib/supabase/log-query-error'
 import { resetAnalytics } from '@/lib/analytics'
 import { colors } from '@/lib/design-tokens'
 import { useProgress } from '@/lib/hooks/useProgress'
@@ -134,16 +135,14 @@ export function BottomNav() {
         if (!cancelled) setEmergencyHref('/emergency')
         return
       }
-      const [{ data: emData }, { data: profile }] = await Promise.all([
+      const [{ data: emRows, error: emError }, { data: profile }] = await Promise.all([
         supabase
           .from('emergencies')
-          .select('id')
+          .select('id, containment_plan')
           .eq('user_id', session.user.id)
           .eq('resolved', false)
-          .not('containment_plan_committed_at', 'is', null)
           .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
+          .limit(12),
         supabase
           .from('user_profiles')
           .select(
@@ -172,6 +171,18 @@ export function BottomNav() {
       }
       const expired =
         getTrialStatus(trialProfile, { simulateExpired: isTrialExpirySimulationEnabled() }).status === 'expired'
+      if (emError) {
+        logSupabaseQueryError('[BottomNav] Supabase emergencies query failed', emError)
+      }
+      const emList = Array.isArray(emRows) ? emRows : []
+      const emData =
+        emList.find(
+          (r) =>
+            r &&
+            typeof r.id === 'string' &&
+            typeof r.containment_plan === 'string' &&
+            r.containment_plan.trim().length > 0
+        ) ?? null
       if (!cancelled) {
         if (expired) {
           setEmergencyHref('/emergency?focus=resolution')

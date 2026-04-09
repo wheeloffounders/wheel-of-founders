@@ -164,7 +164,7 @@ export function EmergencyCard({
     <>
       <li
         id={`emergency-fire-${emergency.id}`}
-        className={`relative overflow-hidden rounded-lg border p-4 ${
+        className={`relative overflow-hidden rounded-lg border px-4 py-4 sm:px-5 sm:py-4 ${
           emergency.resolved
             ? 'border-emerald-200/80 bg-emerald-50/40 dark:border-emerald-900/40 dark:bg-emerald-950/20'
             : 'border-amber-200 bg-[#f8f4f0] dark:border-amber-700 dark:bg-amber-900/20'
@@ -177,11 +177,11 @@ export function EmergencyCard({
             aria-hidden
           />
         ) : null}
-        <div className="relative z-0 flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="mb-1 flex flex-wrap items-center gap-2">
+        <div className="relative z-0 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0 w-full flex-1 pr-0 sm:pr-1">
+            <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1.5">
               {emergency.resolved ? (
-                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">
+                <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
                   Resolved
                 </span>
@@ -207,9 +207,11 @@ export function EmergencyCard({
               ) : null}
             </div>
             {emergency.resolved ? (
-              <p className="text-sm leading-relaxed text-gray-900 opacity-50 dark:text-gray-100">{emergency.description}</p>
+              <p className="text-sm leading-relaxed text-gray-900 opacity-50 dark:text-gray-100 break-words">
+                {emergency.description}
+              </p>
             ) : (
-              <p className="text-sm leading-relaxed text-gray-900 dark:text-gray-100">{emergency.description}</p>
+              <p className="text-sm leading-relaxed text-gray-900 break-words dark:text-gray-100">{emergency.description}</p>
             )}
             {emergency.resolved ? (
               <p className="mt-1 text-xs text-emerald-800/90 dark:text-emerald-300/90">
@@ -291,13 +293,19 @@ export function EmergencyCard({
               </div>
             ) : null}
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div
+            className={`flex w-full shrink-0 items-center justify-end gap-2 border-t pt-3 sm:w-auto sm:border-t-0 sm:justify-start sm:pt-0 ${
+              emergency.resolved
+                ? 'border-emerald-200/70 dark:border-emerald-900/40'
+                : 'border-amber-200/80 dark:border-amber-800/40'
+            }`}
+          >
             {emergency.resolved ? (
               <button
                 type="button"
                 onClick={() => setReopenOpen(true)}
                 disabled={reopening || !onReopenFire}
-                className="rounded px-2 py-1 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-50"
+                className="rounded px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-50"
               >
                 Reopen
               </button>
@@ -305,7 +313,7 @@ export function EmergencyCard({
               <button
                 type="button"
                 onClick={() => onToggleResolved(emergency.id, true)}
-                className="rounded bg-green-100 px-2 py-1 text-sm font-medium text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-800/40"
+                className="rounded bg-green-100 px-3 py-1.5 text-sm font-medium text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-800/40"
               >
                 Resolved
               </button>
