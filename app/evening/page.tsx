@@ -1,5 +1,7 @@
 'use client'
 
+// UX Refinement - Suppressed Analysis Modal for Non-Onboarding Flows - 2026-04-10 00:16 HKT
+
 import { useState, useEffect, useCallback, useRef, useMemo, type MutableRefObject } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -348,6 +350,8 @@ export default function EveningPage() {
   const [snoozeTaskQueue, setSnoozeTaskQueue] = useState<Task[]>([])
   const [snoozeModalOpen, setSnoozeModalOpen] = useState(false)
   const postEveningStreamStartedRef = useRef(false)
+  /** Mirrors last save: show “Mrs. Deer is reading…” only on first-ever evening (retry must match). */
+  const postEveningReadingOverlayRef = useRef(false)
   /** Pro post-evening: Morning-aligned reading overlay → badge modal (null = inline insight or idle). */
   const [eveningInsightFlow, setEveningInsightFlow] = useState<null | 'reading' | 'modal'>(null)
   const [eveningFirstGlimpseBadge, setEveningFirstGlimpseBadge] = useState(false)
@@ -525,7 +529,7 @@ export default function EveningPage() {
     }
   }, [isRetrying, isStreaming])
 
-  /** Reading overlay → badge modal when post-evening stream completes (Pro completion flow). */
+  /** First-ever evening only: reading overlay → completion modal when stream finishes. Returning users stay on inline insight (flow null). */
   useEffect(() => {
     if (eveningInsightFlow !== 'reading') return
     if (isStreaming) return
@@ -551,7 +555,7 @@ export default function EveningPage() {
     if (!features.dailyPostEveningPrompt) return
 
     eveningInsightPostSaveActiveRef.current = true
-    setEveningInsightFlow('reading')
+    setEveningInsightFlow(postEveningReadingOverlayRef.current ? 'reading' : null)
     setAiCoachMessage(null)
     setIsRetrying(true)
     const winsForApi = wins.filter((w) => w.trim()).length > 0 ? JSON.stringify(wins.filter((w) => w.trim())) : null
@@ -1531,8 +1535,9 @@ export default function EveningPage() {
 
       if (features.dailyPostEveningPrompt) {
         eveningInsightPostSaveActiveRef.current = true
+        postEveningReadingOverlayRef.current = isFirstEverEvening
         setEveningFirstGlimpseBadge(isFirstEverEvening)
-        setEveningInsightFlow('reading')
+        setEveningInsightFlow(isFirstEverEvening ? 'reading' : null)
         setAiCoachTrigger('evening_after')
         setAiCoachMessage(null)
         setTimeout(() => {
@@ -2541,7 +2546,7 @@ export default function EveningPage() {
         }}
       />
 
-      {/* Pro save: “badge logic” transition (hook → modal). Container is this page; there is no separate EveningReview.tsx. */}
+      {/* Pro · first-ever evening only: reading placeholder before completion modal. Returning users skip this (flow stays null → inline insight). */}
       {eveningInsightFlow === 'reading' ? <EveningMrsDeerReadingOverlay /> : null}
       <EveningInsightCompletionModal
         isOpen={eveningInsightFlow === 'modal'}

@@ -115,7 +115,7 @@ export type ProMorningCanvasProps = {
    * minimal footer copy.
    */
   streamlinedOnboarding?: boolean
-  /** Day-1 / URL tutorial: fixed save bar on small screens so CTA stays visible */
+  /** Day-1 / streamlined onboarding: extra bottom padding on small screens so the in-flow save CTA clears the fixed Bottom Nav + home indicator (no overlapping fixed bar). */
   stickySaveBar?: boolean
   /** First non-tutorial save: overlay stays until parent finishes AI + min delay (no dismiss). */
   saveOverlayMasterGate?: boolean
@@ -1899,7 +1899,11 @@ export function ProMorningCanvas({
             )
         : null}
     <div
-      className={`mb-8 space-y-8 ${stickySaveBar ? 'max-lg:pb-[calc(6.5rem+5.5rem+env(safe-area-inset-bottom,0px))]' : ''}`}
+      className={
+        stickySaveBar
+          ? 'mb-8 space-y-8 max-lg:pb-[max(8rem,calc(5.5rem+env(safe-area-inset-bottom,0px)))]'
+          : 'mb-8 space-y-8'
+      }
       aria-label="Pro morning strategic canvas"
     >
       <StrategicProLockOverlay active={lockStrategicUx} variant="morning_prism">
@@ -3149,10 +3153,8 @@ export function ProMorningCanvas({
       <div
         className={
           cockpitOnboarding
-            ? `p-4 md:p-5 ${DASHBOARD_MORNING_CARD} ${stickySaveBar ? 'hidden lg:block' : ''}`
-            : `rounded-xl border-2 border-dashed border-gray-300 bg-gray-50/50 p-4 dark:border-gray-600 dark:bg-gray-900/30 ${
-                stickySaveBar ? 'hidden lg:block' : ''
-              }`
+            ? `p-4 md:p-5 ${DASHBOARD_MORNING_CARD}`
+            : 'rounded-xl border-2 border-dashed border-gray-300 bg-gray-50/50 p-4 dark:border-gray-600 dark:bg-gray-900/30'
         }
       >
         {!cockpitOnboarding ? (
@@ -3207,37 +3209,6 @@ export function ProMorningCanvas({
           </Button>
         )}
       </div>
-
-      {stickySaveBar ? (
-        <div className="lg:hidden">
-          <div
-            className="fixed left-0 right-0 z-[70] border-t-2 border-gray-200 bg-white/98 px-4 py-3 shadow-[0_-12px_40px_rgba(15,23,42,0.1)] backdrop-blur-md dark:border-gray-700 dark:bg-gray-950/98"
-            style={{
-              bottom: 'calc(6.5rem + env(safe-area-inset-bottom, 0px))',
-              paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
-            }}
-          >
-            <div className="mx-auto w-full max-w-3xl px-0">
-              <button
-                type="button"
-                disabled={saving}
-                data-tutorial={tutorialMode ? 'save-morning' : undefined}
-                onClick={() => void Promise.resolve(commitPlanWithRefineFlush())}
-                className={COCKPIT_SAVE_BUTTON_CLASS}
-              >
-                {saving ? (
-                  <span className="inline-flex items-center justify-center gap-2">
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                    Saving…
-                  </span>
-                ) : (
-                  <>Save & Start My Day</>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
 
       {blueprintUpgradeOpen ? (
