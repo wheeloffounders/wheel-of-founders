@@ -1,6 +1,6 @@
 /**
  * Server-side auth helper for API routes.
- * Uses createServerClient with cookies and getUser() for JWT verification.
+ * Uses createServerClient with cookies and auth.getUser() for JWT verification (not getSession()).
  */
 import { cookies } from 'next/headers'
 import { createClient } from '@supabase/supabase-js'
@@ -61,16 +61,18 @@ async function getServerSessionFromCookiesOnly(): Promise<ServerSession | null> 
     }
   )
   const {
-    data: { session },
-  } = await authClient.auth.getSession()
-  if (session?.user?.id) return { user: { id: session.user.id, email: session.user.email ?? undefined } }
+    data: { user },
+    error,
+  } = await authClient.auth.getUser()
+  if (user?.id) return { user: { id: user.id, email: user.email ?? undefined } }
+  if (error) console.warn('[server-auth] getServerSessionFromCookiesOnly getUser', error.message)
   return null
 }
 
 /**
  * Get authenticated session from request cookies.
  * Uses getUser() for JWT verification (more reliable than getSession).
- * On network failure talking to Supabase Auth, falls back to getSession() from cookies so dev/local
+ * On network failure talking to Supabase Auth, falls back to getUser() from cookies so dev/local
  * does not 500 when the auth API is slow or briefly unreachable.
  */
 export async function getServerSession(): Promise<ServerSession | null> {
@@ -93,8 +95,8 @@ export async function getServerSession(): Promise<ServerSession | null> {
   )
 
   const sessionFromCookies = async (): Promise<ServerSession | null> => {
-    const { data: { session } } = await authClient.auth.getSession()
-    if (session?.user?.id) return { user: { id: session.user.id, email: session.user.email ?? undefined } }
+    const { data: { user } } = await authClient.auth.getUser()
+    if (user?.id) return { user: { id: user.id, email: user.email ?? undefined } }
     return null
   }
 

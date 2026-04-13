@@ -13,9 +13,17 @@ export type UnlockedFeatureJson = {
 }
 
 export function parseUnlockedFeatures(raw: unknown): UnlockedFeatureJson[] {
-  if (!Array.isArray(raw)) return []
+  let data: unknown = raw
+  if (typeof raw === 'string') {
+    try {
+      data = JSON.parse(raw) as unknown
+    } catch {
+      return []
+    }
+  }
+  if (!Array.isArray(data)) return []
   const out: UnlockedFeatureJson[] = []
-  for (const f of raw) {
+  for (const f of data) {
     if (!f || typeof f !== 'object') continue
     const o = f as Record<string, unknown>
     if (typeof o.name !== 'string') continue

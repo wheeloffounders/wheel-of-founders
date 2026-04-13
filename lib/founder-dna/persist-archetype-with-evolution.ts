@@ -58,11 +58,11 @@ export async function persistFullArchetypeWithEvolution(params: {
   })
 
   try {
+    // Omit `archetype_evolution_history`: not all DBs have migration 139 yet; evolution is still returned in the API response.
     await (db.from('user_profiles') as any)
       .update({
         archetype_snapshot: persistable,
         archetype_updated_at: nowIso,
-        archetype_evolution_history: evolutionHistory,
         updated_at: nowIso,
       })
       .eq('id', userId)

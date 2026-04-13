@@ -381,7 +381,7 @@ export function FounderArchetypeCard() {
 
   return (
     <>
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4 w-full max-w-3xl">
+      <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/40 p-5 md:p-8 w-full max-w-3xl shadow-md shadow-gray-900/[0.07] dark:shadow-black/40 ring-1 ring-gray-200/90 dark:ring-gray-600/50">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between mb-2">
           <div className="min-w-0 w-full flex-1">
             <div className="flex flex-col sm:flex-row sm:items-start gap-3">
