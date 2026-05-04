@@ -14,6 +14,8 @@ const ONBOARDING_PUBLIC_PATHS = [
   '/auth/reset-password',
   '/login',
   '/pricing',
+  '/blog',
+  '/templates',
   '/help',
   '/privacy',
   '/terms',
@@ -77,7 +79,7 @@ export async function middleware(request: NextRequest) {
   response.headers.set('x-pathname', request.nextUrl.pathname)
 
   const path = request.nextUrl.pathname
-  const isPublicPath = ONBOARDING_PUBLIC_PATHS.some((prefix) => path.startsWith(prefix))
+  const isPublicPath = path === '/' || ONBOARDING_PUBLIC_PATHS.some((prefix) => path.startsWith(prefix))
 
   if (session && !isPublicPath) {
     const { data: profile } = await supabase
