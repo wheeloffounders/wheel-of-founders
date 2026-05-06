@@ -4,6 +4,7 @@ import { Lora } from 'next/font/google'
 import type { ImgHTMLAttributes } from 'react'
 import { compileMDX } from 'next-mdx-remote/rsc'
 import { BlogCTA } from '@/components/blog/BlogCTA'
+import { DecisionParserWidget } from '@/components/DecisionParserWidget'
 import { BlogArticleJsonLd, buildBlogArticleMetadata } from '@/lib/blog/blog-seo'
 import { getBlogSlugs, loadBlogPostFile } from '@/lib/blog/load-blog-post'
 import type { BlogFrontmatter } from '@/lib/blog/types'
@@ -49,7 +50,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
 
   const { content } = await compileMDX<BlogFrontmatter>({
     source: file.raw,
-    components: { BlogCTA, img: blogMdxImg(slug) },
+    components: { BlogCTA, DecisionParserWidget, img: blogMdxImg(slug) },
     options: { parseFrontmatter: true },
   })
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -13,7 +13,18 @@ export default function SignUpPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [hasPendingDecision, setHasPendingDecision] = useState(false)
   const router = useRouter()
+
+  useEffect(() => {
+    const pending = localStorage.getItem('wof_pending_decision_parser')
+    const hasPending = Boolean(pending)
+    setHasPendingDecision(hasPending)
+    if (hasPending) {
+      // One-time onboarding bypass for high-intent Decision Parser conversions.
+      document.cookie = 'skip_initial_onboarding=true; Path=/; Max-Age=1800; SameSite=Lax'
+    }
+  }, [])
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -42,8 +53,8 @@ export default function SignUpPage() {
 
       // When email confirmation is disabled in Supabase, user is auto-confirmed and gets a session
       if (data.session || data.user.email_confirmed_at) {
-        // User is logged in - redirect to onboarding (proxy will enforce goal → personalization → dashboard)
-        window.location.href = '/onboarding/goal'
+        const pending = localStorage.getItem('wof_pending_decision_parser')
+        window.location.href = pending ? '/today?context=decision' : '/onboarding/goal'
         return
       }
 
@@ -59,10 +70,15 @@ export default function SignUpPage() {
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center p-4">
       <div className="max-w-md w-full">
-        <Link href="/auth" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 mb-6">
-          <ArrowLeft className="w-4 h-4" />
-          Back to login options
-        </Link>
+        <div className="mb-6 flex items-center justify-between gap-4 text-sm">
+          <Link href="/" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Home
+          </Link>
+          <Link href="/auth" className="text-[#ef725c] hover:underline">
+            Login options
+          </Link>
+        </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8">
           <div className="flex justify-center mb-4">
@@ -79,6 +95,11 @@ export default function SignUpPage() {
           <p className="text-gray-600 dark:text-gray-400 mb-6">
             Start your founder journey with Mrs. Deer
           </p>
+          {hasPendingDecision ? (
+            <div className="mb-6 rounded-lg border border-[#f3cfc6] bg-[#fff3ef] p-3 text-sm text-[#7e3f2f]">
+              Mrs. Deer has your decision saved. Finish signup to add it to your permanent Decision Log.
+            </div>
+          ) : null}
 
           <form onSubmit={handleSignUp} className="space-y-4">
             <div>

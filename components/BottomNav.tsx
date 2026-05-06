@@ -36,6 +36,8 @@ import { useProgress } from '@/lib/hooks/useProgress'
 import { useFounderJourney } from '@/lib/hooks/useFounderJourney'
 import { ProgressCircle } from '@/components/ProgressCircle'
 import { ProAccessBadge } from '@/components/ProAccessBadge'
+import { GuestPreviewModal } from '@/components/GuestPreviewModal'
+import { trackEvent } from '@/lib/analytics/preview-events'
 import { getTrialStatus } from '@/lib/auth/trial-status'
 import type { ProEntitlementProfile } from '@/lib/auth/is-pro'
 import { isTrialExpirySimulationEnabled } from '@/lib/trial-simulation'
@@ -45,6 +47,7 @@ import {
   QUARTERLY_INSIGHT_MIN_DAYS,
 } from '@/lib/founder-dna/unlock-schedule-config'
 import { ARCHETYPE_PREVIEW_MIN_DAYS } from '@/lib/founder-dna/archetype-timing'
+import { pauseOnboardingForThisSession } from '@/lib/onboarding-session-guard'
 
 const insightsItems = [
   {
@@ -212,6 +215,13 @@ export function BottomNav() {
   const [profileOpen, setProfileOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [guestPreview, setGuestPreview] = useState<null | {
+    feature: 'dashboard' | 'insights' | 'today' | 'profile' | 'settings'
+    title: string
+    description: string
+    ctaLabel: string
+    targetUrl: string
+  }>(null)
   const insightsRef = useRef<HTMLDivElement>(null)
   const todayRef = useRef<HTMLDivElement>(null)
   const profileRef = useRef<HTMLDivElement>(null)
@@ -306,6 +316,49 @@ export function BottomNav() {
     setSettingsOpen(false)
   }
 
+  const openGuestPreview = (feature: 'dashboard' | 'insights' | 'today' | 'profile' | 'settings') => {
+    closeAll()
+    const copy: Record<typeof feature, { title: string; description: string; ctaLabel: string; targetUrl: string }> = {
+      dashboard: {
+        title: 'Your Founder Dashboard',
+        description:
+          'See your daily rhythm at a glance: what matters now, what needs your decision, and what can wait.',
+        ctaLabel: 'Enter the App',
+        targetUrl: '/auth/login',
+      },
+      insights: {
+        title: 'Insights Preview',
+        description:
+          'Mrs. Deer is ready to run your Energy Audit. Start your first log to unlock trend-based insights and spot burnout before it happens.',
+        ctaLabel: 'Enter the App',
+        targetUrl: '/auth/signup',
+      },
+      today: {
+        title: 'Today’s Needle Movers',
+        description:
+          'Your daily needle movers live here. Ready to close the loop on today and avoid 2 AM mental loops?',
+        ctaLabel: 'Start Today',
+        targetUrl: '/auth/signup',
+      },
+      profile: {
+        title: 'Founder DNA Preview',
+        description:
+          'Profile, archetype, rhythm, and patterns come together to help you run your company with more clarity.',
+        ctaLabel: 'See My Profile',
+        targetUrl: '/auth/signup',
+      },
+      settings: {
+        title: 'Settings & Support',
+        description:
+          'Tune notifications, share feedback, and set the app up in a way that supports your real day-to-day flow.',
+        ctaLabel: 'Enter the App',
+        targetUrl: '/auth/signup',
+      },
+    }
+    trackEvent('preview_opened', { feature })
+    setGuestPreview({ feature, ...copy[feature] })
+  }
+
   return (
     <>
       {menuOpen && (
@@ -333,20 +386,37 @@ export function BottomNav() {
         {isLoggedIn ? <ProAccessBadge /> : null}
         <div className="max-w-4xl mx-auto flex items-end justify-around px-2 py-3 pt-4 pb-4">
           {/* Dashboard */}
-          <Link
-            href="/dashboard"
-            data-tour="dashboard"
-            className={`${navButtonClass} relative ${isDashboardActive ? 'text-[#ef725c] dark:text-[#f0886c]' : 'text-gray-700 dark:text-gray-300 dark:text-gray-300'}`}
-          >
-            <Home className="w-6 h-6" strokeWidth={isDashboardActive ? 2.5 : 2} />
-            <span className={`text-xs font-medium ${isDashboardActive ? '' : 'text-gray-600 dark:text-gray-400 dark:text-gray-400'}`}>Dashboard</span>
-          </Link>
+          {isLoggedIn ? (
+            <Link
+              href="/dashboard"
+              data-tour="dashboard"
+              className={`${navButtonClass} relative ${isDashboardActive ? 'text-[#ef725c] dark:text-[#f0886c]' : 'text-gray-700 dark:text-gray-300 dark:text-gray-300'}`}
+            >
+              <Home className="w-6 h-6" strokeWidth={isDashboardActive ? 2.5 : 2} />
+              <span className={`text-xs font-medium ${isDashboardActive ? '' : 'text-gray-600 dark:text-gray-400 dark:text-gray-400'}`}>Dashboard</span>
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => openGuestPreview('dashboard')}
+              className={`${navButtonClass} relative text-gray-700 dark:text-gray-300 dark:text-gray-300`}
+            >
+              <Home className="w-6 h-6" strokeWidth={2} />
+              <span className="text-xs font-medium text-gray-600 dark:text-gray-400 dark:text-gray-400">Dashboard</span>
+            </button>
+          )}
 
           {/* Insights */}
           <div ref={insightsRef} className="relative flex justify-center">
             <button
               type="button"
-              onClick={() => { setInsightsOpen(!insightsOpen); if (!insightsOpen) { setTodayOpen(false); setProfileOpen(false); setSettingsOpen(false) } }}
+              onClick={() => {
+                if (!isLoggedIn) {
+                  openGuestPreview('insights')
+                  return
+                }
+                setInsightsOpen(!insightsOpen); if (!insightsOpen) { setTodayOpen(false); setProfileOpen(false); setSettingsOpen(false) }
+              }}
               className={`${navButtonClass} ${isInsightsActive ? 'text-[#ef725c] dark:text-[#f0886c]' : 'text-gray-700 dark:text-gray-300 dark:text-gray-300'}`}
             >
               <span className="relative inline-block">
@@ -385,7 +455,10 @@ export function BottomNav() {
                     <Link
                       key={item.name}
                       href={item.href}
-                      onClick={closeAll}
+                      onClick={() => {
+                        pauseOnboardingForThisSession()
+                        closeAll()
+                      }}
                       className={menuItemClass}
                       aria-label={unlocked ? item.name : `${item.name} (locked)${lockLabel}`}
                     >
@@ -410,6 +483,10 @@ export function BottomNav() {
               type="button"
               data-tutorial="today-button"
               onClick={() => {
+                if (!isLoggedIn) {
+                  openGuestPreview('today')
+                  return
+                }
                 console.log('[BottomNav] 🔥 TODAY BUTTON CLICKED')
                 if (isTutorialActive && tutorialStep === 'dashboard') {
                   setInsightsOpen(false)
@@ -464,6 +541,7 @@ export function BottomNav() {
                       key={item.name}
                       href={itemHref}
                       onClick={() => {
+                        pauseOnboardingForThisSession()
                         if (isMorning && isTutorialActive) {
                           console.log('[BottomNav] 🔥 MORNING LINK CLICKED')
                         }
@@ -487,7 +565,13 @@ export function BottomNav() {
             <button
               type="button"
               data-tour="profile"
-              onClick={() => { setProfileOpen(!profileOpen); if (!profileOpen) { setInsightsOpen(false); setTodayOpen(false); setSettingsOpen(false) } }}
+              onClick={() => {
+                if (!isLoggedIn) {
+                  openGuestPreview('profile')
+                  return
+                }
+                setProfileOpen(!profileOpen); if (!profileOpen) { setInsightsOpen(false); setTodayOpen(false); setSettingsOpen(false) }
+              }}
               className={`${navButtonClass} relative ${isProfileActive ? 'text-[#ef725c] dark:text-[#f0886c]' : 'text-gray-700 dark:text-gray-300 dark:text-gray-300'}`}
             >
               <span className="relative inline-block">
@@ -524,7 +608,10 @@ export function BottomNav() {
                       ) : null}
                       <Link
                         href={item.href}
-                        onClick={closeAll}
+                        onClick={() => {
+                          pauseOnboardingForThisSession()
+                          closeAll()
+                        }}
                         className={menuItemClass}
                         aria-label={unlocked ? item.name : `${item.name} (locked)${lockLabel}`}
                       >
@@ -553,7 +640,13 @@ export function BottomNav() {
           <div ref={settingsRef} className="relative flex justify-center">
             <button
               type="button"
-              onClick={() => { setSettingsOpen(!settingsOpen); if (!settingsOpen) { setInsightsOpen(false); setTodayOpen(false); setProfileOpen(false) } }}
+              onClick={() => {
+                if (!isLoggedIn) {
+                  openGuestPreview('settings')
+                  return
+                }
+                setSettingsOpen(!settingsOpen); if (!settingsOpen) { setInsightsOpen(false); setTodayOpen(false); setProfileOpen(false) }
+              }}
               className={`${navButtonClass} ${isSettingsActive ? 'text-[#ef725c] dark:text-[#f0886c]' : 'text-gray-700 dark:text-gray-300 dark:text-gray-300'}`}
             >
               <Settings className="w-6 h-6" strokeWidth={isSettingsActive ? 2.5 : 2} />
@@ -566,7 +659,15 @@ export function BottomNav() {
                 {settingsItems.map((item) => {
                   const Icon = item.icon
                   return (
-                    <Link key={item.name} href={item.href} onClick={closeAll} className={menuItemClass}>
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      onClick={() => {
+                        pauseOnboardingForThisSession()
+                        closeAll()
+                      }}
+                      className={menuItemClass}
+                    >
                       <Icon className="w-5 h-5 flex-shrink-0" />
                       {item.name}
                     </Link>
@@ -586,6 +687,15 @@ export function BottomNav() {
           </div>
         </div>
       </nav>
+      <GuestPreviewModal
+        open={Boolean(guestPreview)}
+        featureName={guestPreview?.feature ?? 'unknown'}
+        title={guestPreview?.title ?? ''}
+        description={guestPreview?.description ?? ''}
+        ctaLabel={guestPreview?.ctaLabel ?? 'Enter the App'}
+        targetUrl={guestPreview?.targetUrl ?? '/auth'}
+        onClose={() => setGuestPreview(null)}
+      />
     </>
   )
 }

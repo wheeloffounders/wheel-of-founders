@@ -71,6 +71,15 @@ import { CalendarReminderModal, type CalendarReminderType } from '@/components/C
 import { EmptyTasks } from '@/components/tasks/EmptyTasks'
 import { handleCalendarAdd } from '@/lib/calendar'
 import { getEffectivePlanDate, getPlanDateString } from '@/lib/effective-plan-date'
+import {
+  ingestPendingDecisionParserIfNeeded,
+  WOF_PENDING_DECISION_PARSER_KEY,
+} from '@/lib/pending-decision-parser-ingest'
+import {
+  getNudgeMessage,
+  parseMorningEntryContext,
+  readPendingDecisionParserInStorage,
+} from '@/lib/morning-entry-nudge'
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery'
 import { fetchUserProfileBundle } from '@/lib/user-profile-bundle-cache'
 import { PageSidebar } from '@/components/layout/PageSidebar'
@@ -285,6 +294,10 @@ export default function MorningPage() {
   const isFirstTimeParam = searchParams?.get('first') === 'true'
   const isFirstTime = isFirstTimeParam && isNewOnboardingEnabled()
   const isResume = searchParams?.get('resume') === 'true'
+  const morningEntryContext = parseMorningEntryContext(
+    searchParams?.get('context'),
+    searchParams?.get('parserPass')
+  )
   const lang = useUserLanguage() // Personalized language
   const [userGoal, setUserGoal] = useState<UserGoal | null>(null)
   const [tierProfileRow, setTierProfileRow] = useState<TierProfileInput | null>(null)
@@ -463,6 +476,53 @@ export default function MorningPage() {
     return q ? `/morning?${q}` : '/morning'
   }, [searchParams])
 
+  const [entryNudgeReady, setEntryNudgeReady] = useState(false)
+  const [hasPendingDecisionCapture, setHasPendingDecisionCapture] = useState(false)
+
+  useLayoutEffect(() => {
+    if (!morningEntryContext) {
+      setEntryNudgeReady(false)
+      setHasPendingDecisionCapture(false)
+      return
+    }
+    if (morningEntryContext === 'decision') {
+      setHasPendingDecisionCapture(readPendingDecisionParserInStorage())
+    } else {
+      setHasPendingDecisionCapture(false)
+    }
+    setEntryNudgeReady(true)
+  }, [morningEntryContext])
+
+  useEffect(() => {
+    if (morningEntryContext !== 'decision') return
+    const sync = () => setHasPendingDecisionCapture(readPendingDecisionParserInStorage())
+    window.addEventListener('wof-pending-parser-cleared', sync)
+    return () => window.removeEventListener('wof-pending-parser-cleared', sync)
+  }, [morningEntryContext])
+
+  const entryNudgeMessage = useMemo(() => {
+    if (!morningEntryContext || !entryNudgeReady) return null
+    return getNudgeMessage(morningEntryContext, hasPendingDecisionCapture)
+  }, [morningEntryContext, entryNudgeReady, hasPendingDecisionCapture])
+
+  const entryContextNudge = useMemo(
+    () =>
+      entryNudgeMessage ? (
+        <div
+          className="mb-4 rounded-xl border border-[#f3cfc6] bg-[#fff3ef] p-4 text-sm text-[#4a3a32] shadow-sm dark:border-[#5c3d33] dark:bg-[#2a1814] dark:text-[#f0d6cc]"
+          role="status"
+        >
+          <p className="text-xs font-bold uppercase tracking-wide text-[#ef725c]">Mrs. Deer</p>
+          <p className="mt-2 leading-relaxed">{entryNudgeMessage}</p>
+        </div>
+      ) : null,
+    [entryNudgeMessage]
+  )
+
+  const decisionProminentExit =
+    morningEntryContext === 'decision' && hasPendingDecisionCapture && entryNudgeReady
+  const blogEntryStickySave = Boolean(morningEntryContext) && entryNudgeReady
+
   const planTimestampsFooterText = useMemo(() => {
     if (!planCreatedAt) return ''
     const created = format(planCreatedAt, 'h:mm a')
@@ -489,6 +549,10 @@ export default function MorningPage() {
       if (f) q.set('first', f)
       const r = searchParams?.get('resume')
       if (r) q.set('resume', r)
+      const ctx = searchParams?.get('context')
+      if (ctx) q.set('context', ctx)
+      const parserPass = searchParams?.get('parserPass')
+      if (parserPass === '1') q.set('parserPass', '1')
       router.push(`/morning?${q.toString()}`)
     },
     [router, searchParams]
@@ -1219,6 +1283,53 @@ export default function MorningPage() {
       if (!opts?.silent) setLoading(false)
     }
   }, [planDate, fireFunnelStep, showPostMorningInsightTier, isFirstTime])
+
+  const loadTodayPlanRef = useRef(loadTodayPlan)
+  loadTodayPlanRef.current = loadTodayPlan
+
+  useEffect(() => {
+    if (!planDate) return
+    void (async () => {
+      const session = await getUserSession()
+      if (!session?.user?.id) return
+
+      if (typeof document !== 'undefined') {
+        const hasSkip = document.cookie.split('; ').some((c) => c === 'skip_initial_onboarding=true')
+        if (hasSkip) {
+          document.cookie = 'skip_initial_onboarding=; Path=/; Max-Age=0; SameSite=Lax'
+        }
+      }
+
+      if (typeof window === 'undefined' || !localStorage.getItem(WOF_PENDING_DECISION_PARSER_KEY)) {
+        return
+      }
+
+      let shortDecision = 'your decision'
+      try {
+        const pending = JSON.parse(
+          localStorage.getItem(WOF_PENDING_DECISION_PARSER_KEY) || '{}'
+        ) as { decision?: string }
+        const t = typeof pending.decision === 'string' ? pending.decision.trim() : ''
+        if (t) shortDecision = t.length > 80 ? `${t.slice(0, 77)}...` : t
+      } catch {
+        // keep default
+      }
+
+      const outcome = await ingestPendingDecisionParserIfNeeded(supabase, session.user.id, planDate)
+      if (outcome === 'inserted') {
+        window.dispatchEvent(
+          new CustomEvent('toast', {
+            detail: {
+              message: `I've added your decision about "${shortDecision}" to your log. Let's review this experiment soon.`,
+              type: 'success',
+            },
+          })
+        )
+        await loadTodayPlanRef.current({ silent: true })
+      }
+      window.dispatchEvent(new CustomEvent('wof-pending-parser-cleared'))
+    })()
+  }, [planDate])
 
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development') return
@@ -2370,6 +2481,7 @@ export default function MorningPage() {
             aria-hidden
           />
         ) : null}
+        {entryContextNudge}
         {isResume && (
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
             Welcome back! You were about to plan your first day. Let&apos;s finish what you started.
@@ -2404,8 +2516,9 @@ export default function MorningPage() {
             onTutorialCheckInEnergyChange={setTutorialCheckInEnergy}
             strategicProLocked={trialUx.status === 'expired'}
             streamlinedOnboarding
-            stickySaveBar={streamlinedMorningOnboarding}
+            stickySaveBar={streamlinedMorningOnboarding || blogEntryStickySave}
             saveOverlayMasterGate={isFirstTime && !isTutorial}
+            prominentExitToDashboard={decisionProminentExit}
           />
         </div>
 
@@ -2531,6 +2644,7 @@ export default function MorningPage() {
           </Link>
         </div>
       ) : null}
+      {entryContextNudge}
       {!isFirstTime && (
         <FirstTimeSuccessModal
           isOpen={showFirstTimeModal}
@@ -2696,7 +2810,8 @@ export default function MorningPage() {
             onTutorialCheckInEnergyChange={setTutorialCheckInEnergy}
             strategicProLocked={trialUx.status === 'expired'}
             streamlinedOnboarding={streamlinedMorningOnboarding}
-            stickySaveBar={streamlinedMorningOnboarding}
+            stickySaveBar={streamlinedMorningOnboarding || blogEntryStickySave}
+            prominentExitToDashboard={decisionProminentExit}
           />
         </div>
 

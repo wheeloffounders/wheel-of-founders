@@ -30,6 +30,7 @@ import { NotificationCenter } from './notifications/NotificationCenter'
 import { useTheme } from '@/components/ThemeProvider'
 import { supabase } from '@/lib/supabase'
 import { resetAnalytics } from '@/lib/analytics'
+import { pauseOnboardingForThisSession } from '@/lib/onboarding-session-guard'
 
 const menuSections = [
   {
@@ -97,6 +98,8 @@ export function AppHeader() {
   const router = useRouter()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  /** Signed-out users stay on marketing `/`; signed-in users go to the app hub. */
+  const [logoHref, setLogoHref] = useState<'/' | '/dashboard'>('/')
 
   const handleSignOut = async () => {
     resetAnalytics()
@@ -114,23 +117,45 @@ export function AppHeader() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!cancelled) setLogoHref(session ? '/dashboard' : '/')
+    })
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setLogoHref(session ? '/dashboard' : '/')
+    })
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
+    }
+  }, [])
+
   const hideHeaderPaths = ['/', '/login', '/countdown', '/morning', '/evening', '/emergency', '/history']
+  const logoAriaLabel = logoHref === '/dashboard' ? 'Go to Dashboard' : 'Go to Homepage'
 
   if (
     !pathname ||
     hideHeaderPaths.includes(pathname) ||
-    pathname.startsWith('/auth')
+    pathname.startsWith('/auth') ||
+    pathname.startsWith('/blog')
   ) {
     return null
   }
 
   return (
     <header
-      className="app-header sticky top-0 left-0 right-0 border-b border-white/15 bg-[#152b50] px-4 py-3 flex items-center justify-between text-white shadow-sm"
+      className="app-header sticky top-0 left-0 right-0 flex h-16 items-center justify-between border-b border-white/15 bg-[#152b50] px-4 text-white shadow-sm"
     >
       <Link
-        href="/dashboard"
-        className="text-lg font-semibold text-white hover:text-[#ef725c] transition-colors"
+        href={logoHref}
+        aria-label={logoAriaLabel}
+        onClick={() => {
+          if (logoHref === '/dashboard') pauseOnboardingForThisSession()
+        }}
+        className="flex min-h-[44px] items-center px-3 text-lg font-semibold text-white transition duration-150 hover:text-[#ef725c] active:scale-95 active:bg-white/10"
       >
         Wheel of Founders
       </Link>
@@ -139,6 +164,7 @@ export function AppHeader() {
         <NotificationCenter triggerClassName="text-white hover:bg-white/15" />
         <Link
           href="/feedback"
+          onClick={() => pauseOnboardingForThisSession()}
           className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-white/90 hover:text-[#ef725c] transition-colors"
           aria-label="Report a bug"
         >
@@ -169,7 +195,10 @@ export function AppHeader() {
                     <Link
                       key={item.name}
                       href={item.href}
-                      onClick={() => setMenuOpen(false)}
+                      onClick={() => {
+                        pauseOnboardingForThisSession()
+                        setMenuOpen(false)
+                      }}
                       className={`flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 ${isActive ? 'text-[#ef725c] dark:text-[#f0886c]' : 'text-gray-900 dark:text-gray-100 dark:text-white'}`}
                     >
                       <Icon className="w-5 h-5 flex-shrink-0" />

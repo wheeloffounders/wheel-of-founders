@@ -119,6 +119,8 @@ export type ProMorningCanvasProps = {
   stickySaveBar?: boolean
   /** First non-tutorial save: overlay stays until parent finishes AI + min delay (no dismiss). */
   saveOverlayMasterGate?: boolean
+  /** Decision Parser skip-pass: emphasize the commit control as the exit to the Dashboard. */
+  prominentExitToDashboard?: boolean
 }
 
 function highlightStreakPhrases(text: string): ReactNode[] {
@@ -250,6 +252,8 @@ const DASHBOARD_MORNING_CARD =
 const COCKPIT_SAVE_BUTTON_CLASS =
   'flex min-h-[48px] w-full items-center justify-center rounded-none border-2 border-orange-600 bg-gradient-to-r from-orange-500 to-red-500 px-6 text-base font-semibold text-white shadow-[0_8px_28px_rgba(249,115,22,0.35)] transition hover:opacity-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-200 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none'
 
+const COCKPIT_SAVE_BUTTON_PROMINENT_CLASS = `${COCKPIT_SAVE_BUTTON_CLASS} min-h-[56px] text-lg shadow-[0_14px_40px_rgba(249,115,22,0.5)] ring-2 ring-orange-400/40 ring-offset-2 ring-offset-white dark:ring-offset-gray-900`
+
 function getSpeechRecognitionCtor(): (new () => any) | null {
   if (typeof window === 'undefined') return null
   const w = window as Window & { SpeechRecognition?: new () => any; webkitSpeechRecognition?: new () => any }
@@ -282,6 +286,7 @@ export function ProMorningCanvas({
   streamlinedOnboarding = false,
   stickySaveBar = false,
   saveOverlayMasterGate = false,
+  prominentExitToDashboard = false,
 }: ProMorningCanvasProps) {
   const cockpitOnboarding = tutorialMode || streamlinedOnboarding
   const router = useRouter()
@@ -3172,19 +3177,26 @@ export function ProMorningCanvas({
             )}
           </p>
         ) : null}
+        {prominentExitToDashboard ? (
+          <p className="mb-3 text-center text-sm font-medium text-[#152b50] dark:text-sky-100">
+            When you&apos;re done planning, save to open your Dashboard.
+          </p>
+        ) : null}
         {cockpitOnboarding ? (
           <button
             type="button"
             disabled={saving}
             data-tutorial={tutorialMode ? 'save-morning' : undefined}
             onClick={() => void Promise.resolve(commitPlanWithRefineFlush())}
-            className={COCKPIT_SAVE_BUTTON_CLASS}
+            className={prominentExitToDashboard ? COCKPIT_SAVE_BUTTON_PROMINENT_CLASS : COCKPIT_SAVE_BUTTON_CLASS}
           >
             {saving ? (
               <span className="inline-flex items-center justify-center gap-2">
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
                 Saving…
               </span>
+            ) : prominentExitToDashboard ? (
+              <>Save and go to Dashboard</>
             ) : (
               <>Save & Start My Day</>
             )}
@@ -3193,7 +3205,12 @@ export function ProMorningCanvas({
           <Button
             type="button"
             variant="primary"
-            className="w-full"
+            className={
+              prominentExitToDashboard
+                ? 'w-full min-h-[52px] text-base font-semibold shadow-[0_14px_40px_rgba(239,114,92,0.45)] ring-2 ring-[#ef725c]/35'
+                : 'w-full'
+            }
+            style={prominentExitToDashboard ? { backgroundColor: colors.coral.DEFAULT } : undefined}
             disabled={saving}
             data-tutorial={tutorialMode ? 'save-morning' : undefined}
             onClick={() => void Promise.resolve(commitPlanWithRefineFlush())}
@@ -3203,6 +3220,8 @@ export function ProMorningCanvas({
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
                 Saving…
               </span>
+            ) : prominentExitToDashboard ? (
+              <>Save and go to Dashboard</>
             ) : (
               <>Save & Start My Day</>
             )}

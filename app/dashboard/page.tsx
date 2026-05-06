@@ -44,6 +44,10 @@ import { isTrialExpirySimulationEnabled } from '@/lib/trial-simulation'
 import { subDays } from 'date-fns'
 import { fetchTrialWrapupStats } from '@/lib/trial-wrapup-stats'
 import type { TrialWrapupStats } from '@/lib/trial-wrapup-stats'
+import {
+  ingestPendingDecisionParserIfNeeded,
+  WOF_PENDING_DECISION_PARSER_KEY,
+} from '@/lib/pending-decision-parser-ingest'
 
 function DashboardContent() {
   const { syncData } = useDataSync()
@@ -177,10 +181,46 @@ function DashboardContent() {
       }
     }
     const onboardingStep = profileRow?.onboarding_step
-    const onboardingCompleted = profileRow?.onboarding_completed_at
+    const onboardingCompleted = Boolean(profileRow?.onboarding_completed_at)
+    const hasSkipPass =
+      typeof document !== 'undefined' &&
+      document.cookie.split('; ').some((cookie) => cookie === 'skip_initial_onboarding=true')
+    if (hasSkipPass) {
+      router.replace('/today?context=decision')
+      return
+    }
     setLoginCount(Math.max(0, Number(profileRow?.login_count ?? 0) || 0))
     const planDate = getPlanDateString(getUserTimezoneFromProfile(profileRow))
     setEveningPlanDate(planDate)
+
+    // Fallback: ingest guest Decision Parser capture if they reach dashboard with pending storage.
+    try {
+      if (typeof window !== 'undefined' && localStorage.getItem(WOF_PENDING_DECISION_PARSER_KEY)) {
+        let shortDecision = 'your decision'
+        try {
+          const pending = JSON.parse(
+            localStorage.getItem(WOF_PENDING_DECISION_PARSER_KEY) || '{}'
+          ) as { decision?: string }
+          const t = typeof pending.decision === 'string' ? pending.decision.trim() : ''
+          if (t) shortDecision = t.length > 80 ? `${t.slice(0, 77)}...` : t
+        } catch {
+          // use default shortDecision
+        }
+        const outcome = await ingestPendingDecisionParserIfNeeded(supabase, session.user.id, planDate)
+        if (outcome === 'inserted') {
+          window.dispatchEvent(
+            new CustomEvent('toast', {
+              detail: {
+                message: `I've added your decision about "${shortDecision}" to your log. Let's review this experiment soon.`,
+                type: 'success',
+              },
+            })
+          )
+        }
+      }
+    } catch (pendingError) {
+      console.warn('[Dashboard] Pending decision ingestion skipped:', pendingError)
+    }
 
     const [reviewRes, morningRes] = await Promise.all([
       supabase

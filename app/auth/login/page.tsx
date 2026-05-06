@@ -110,10 +110,15 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center p-4">
       <div className="max-w-md w-full">
-        <Link href="/auth" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 mb-6">
-          <ArrowLeft className="w-4 h-4" />
-          Back to login options
-        </Link>
+        <div className="mb-6 flex items-center justify-between gap-4 text-sm">
+          <Link href="/" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Home
+          </Link>
+          <Link href="/auth" className="text-[#ef725c] hover:underline">
+            Login options
+          </Link>
+        </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8">
           <div className="flex justify-center mb-4">

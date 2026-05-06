@@ -31,6 +31,7 @@ import { SafeAreaDebugOverlay } from '@/components/SafeAreaDebugOverlay'
 import { SessionSourceCapture } from '@/components/analytics/SessionSourceCapture'
 import { EmergencyModeProvider, EmergencyShell } from '@/components/emergency/EmergencyModeProvider'
 import { SupabaseAuthDebugListener } from '@/components/SupabaseAuthDebugListener'
+import { OnboardingSessionGate } from '@/components/OnboardingSessionGate'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -115,6 +116,7 @@ export default async function RootLayout({
         <InstallPrompt />
         <OfflineBanner />
         <SplashWithMicroLesson />
+        <OnboardingSessionGate />
         <AppHeader />
         <DuoUpgradeBanner />
         <PullToRefresh />

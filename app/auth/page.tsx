@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { UserPlus, LogIn, ArrowRight } from 'lucide-react'
+import { UserPlus, LogIn, ArrowRight, ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 export default function AuthChoicePage() {
@@ -11,6 +11,10 @@ export default function AuthChoicePage() {
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center p-4">
       <div className="max-w-md w-full">
+        <Link href="/" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 mb-6">
+          <ArrowLeft className="w-4 h-4" />
+          Back to Home
+        </Link>
         <div className="flex justify-center mb-6">
           <Image
             src="/icon-192x192.png"

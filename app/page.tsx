@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { MoonStar, Puzzle, Sun } from 'lucide-react'
 import { getBlogSlugs, loadBlogPostFile } from '@/lib/blog/load-blog-post'
 import type { BlogFrontmatter } from '@/lib/blog/types'
+import { SiteHeader } from '@/components/SiteHeader'
 
 const DAILY_RHYTHM = [
   {
@@ -81,25 +82,9 @@ export default function HomePage() {
 
   return (
     <main className="-mt-4 bg-[#fdfcfb] text-[#1a1a1a]">
+      <SiteHeader />
       {/* Hero */}
-      <section className="mx-auto max-w-6xl px-5 pt-10 pb-24 sm:px-8 sm:pt-12 sm:pb-28 lg:pt-16 lg:pb-32">
-        <nav className="mb-10 flex items-center justify-between lg:mb-14">
-          <Link href="/" className="text-lg font-bold tracking-tight">
-            Wheel of Founders
-          </Link>
-          <div className="flex items-center gap-4 text-sm font-medium">
-            <Link href="/blog" className="text-[#4a4a4a] hover:text-[#ef725c]">
-              Founder’s Journal
-            </Link>
-            <Link
-              href="/auth/login"
-              className="hidden text-[#4a4a4a] hover:text-[#ef725c] sm:inline"
-            >
-              Log in
-            </Link>
-          </div>
-        </nav>
-
+      <section className="mx-auto max-w-6xl px-5 pt-8 pb-24 sm:px-8 sm:pt-10 sm:pb-28 lg:pt-12 lg:pb-32">
         <div className="mb-12 overflow-hidden rounded-[2rem] border border-[#eaddd7] bg-orange-50/50 p-2 shadow-sm sm:p-3 lg:mb-16">
           <div className="relative aspect-[21/9] min-h-[200px] w-full overflow-hidden rounded-[1.35rem] sm:min-h-[240px] lg:min-h-[280px]">
             <Image
