@@ -4,6 +4,7 @@ import { MoonStar, Puzzle, Sun } from 'lucide-react'
 import { getBlogSlugs, loadBlogPostFile } from '@/lib/blog/load-blog-post'
 import type { BlogFrontmatter } from '@/lib/blog/types'
 import { SiteHeader } from '@/components/SiteHeader'
+import { HomeFounderTools } from '@/components/home/HomeFounderTools'
 
 const DAILY_RHYTHM = [
   {
@@ -98,68 +99,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="grid items-start gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#ef725c]">
-              Welcome to the beta
-            </p>
-            <h1 className="mt-5 max-w-4xl text-5xl font-bold tracking-tight sm:text-6xl lg:text-7xl">
-              Turn today’s actions into better decisions tomorrow.
-            </h1>
-            <p className="mt-6 max-w-2xl text-xl leading-8 text-[#4a4a4a]">
-              Mrs. Deer helps founders move from chaos to rhythm: plan the day, close the loop, and
-              notice patterns you were too busy to see.
-            </p>
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/auth/signup"
-                className="inline-flex items-center justify-center rounded-2xl bg-[#ef725c] px-6 py-4 text-base font-bold text-white shadow-sm transition hover:bg-[#e96650]"
-              >
-                Enter the App →
-              </Link>
-              <Link
-                href="/blog"
-                className="inline-flex items-center justify-center rounded-2xl border border-[#eaddd7] bg-white px-6 py-4 text-base font-bold text-[#1a1a1a] transition hover:border-[#ef725c]"
-              >
-                Read the Founder’s Journal
-              </Link>
-            </div>
-            <p className="mt-5 text-sm text-[#4a4a4a]">
-              40+ founders already shaping the future. No credit card needed during beta.
-            </p>
-          </div>
-
-          <div className="rounded-[2rem] border border-[#eaddd7] bg-white p-5 shadow-sm">
-            <div className="rounded-[1.5rem] bg-[#f9f7f2] p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#ef725c]">
-                    Today’s Rhythm
-                  </p>
-                  <h2 className="mt-1 text-2xl font-bold text-[#152b50]">Your Complete Loop</h2>
-                </div>
-                <div className="rounded-full bg-[#ef725c]/10 px-3 py-1 text-sm font-bold text-[#ef725c]">
-                  Beta
-                </div>
-              </div>
-              <div className="space-y-3">
-                {[
-                  ['3 Needle Movers', 'Choose the few priorities that actually move the business.'],
-                  ['Decision Log', 'Capture the why behind heavy choices so they stop looping at 2 AM.'],
-                  ['Evening Reflection', 'Close the day, spot patterns, and let tomorrow start lighter.'],
-                ].map(([title, body]) => (
-                  <div
-                    key={title}
-                    className="rounded-2xl border border-[#eaddd7] bg-[#fdfcfb] p-4 transition hover:border-[#ef725c]/40"
-                  >
-                    <h3 className="font-bold">{title}</h3>
-                    <p className="mt-1 text-sm leading-6 text-[#4a4a4a]">{body}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+        <HomeFounderTools />
       </section>
 
       {/* Daily rhythm */}

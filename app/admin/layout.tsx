@@ -26,7 +26,7 @@ export default function AdminLayout({
         const { data: { session } } = await supabase.auth.getSession()
 
         if (!session) {
-          router.replace(`/auth/login?returnTo=${encodeURIComponent(pathname || '/admin')}`)
+          router.push(`/auth/login?returnTo=${encodeURIComponent(pathname || '/admin')}`)
           return
         }
 
@@ -37,7 +37,7 @@ export default function AdminLayout({
           .maybeSingle()
 
         if (profileError) {
-          router.replace(`/auth/login?returnTo=${encodeURIComponent(pathname || '/admin')}`)
+          router.push(`/auth/login?returnTo=${encodeURIComponent(pathname || '/admin')}`)
           return
         }
 
@@ -51,7 +51,7 @@ export default function AdminLayout({
         setIsAdmin(true)
       } catch (error) {
         console.error('[admin layout] Unexpected error:', error)
-        router.replace('/auth/login')
+        router.push('/auth/login')
       } finally {
         setIsLoading(false)
       }

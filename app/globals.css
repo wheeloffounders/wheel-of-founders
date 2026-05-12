@@ -301,6 +301,32 @@ nav:not(.bottom-nav):not(.page-sidebar-nav) {
   }
 }
 
+/* Burnout diagnostic — one-shot ring pulse when 3rd symptom locks (dominant archetype glow) */
+@keyframes burnout-diagnostic-ring-pulse-once {
+  0% {
+    box-shadow: 0 0 0 0 transparent;
+    transform: scale(1);
+  }
+  45% {
+    box-shadow: 0 0 0 14px var(--burnout-ring-glow, rgba(239, 114, 92, 0.28));
+    transform: scale(1.045);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    transform: scale(1);
+  }
+}
+
+.burnout-diagnostic-ring-pulse-once {
+  animation: burnout-diagnostic-ring-pulse-once 0.85s ease-out 1 forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .burnout-diagnostic-ring-pulse-once {
+    animation: none;
+  }
+}
+
 @layer utilities {
   .text-muted-foreground {
     @apply text-gray-500 dark:text-gray-400;

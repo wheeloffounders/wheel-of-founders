@@ -1,5 +1,6 @@
 import { getServerSupabase } from './server-supabase'
 import { format, subDays, startOfWeek, endOfWeek, getDay } from 'date-fns'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { getFeatureAccess, UserProfile } from './features'
 import {
   buildSmartContextSystemBlock,
@@ -9,6 +10,7 @@ import {
   textContainsVerbatimNorthStar,
   type CoachingMaturityProfileRow,
 } from '@/lib/coaching-maturity-context'
+import { USER_ACTIVITY_PRESENCE_PERMIT_CLAIM } from '@/lib/user-activity-types'
 
 export interface UserPatterns {
   userId: string
@@ -733,3 +735,109 @@ async function maybeMarkNorthStarQuotedWeek(
     .eq('id', userId)
 }
 
+// --- Partial meal (trial summary): volume / velocity from real tables only ---
+
+export type PlanDateRange = { start: string; end: string }
+
+/** Inclusive rolling window of `plan_date` strings (UTC calendar dates). */
+export function getRollingPlanDateRange(days: number, endDate: Date = new Date()): PlanDateRange {
+  const end = format(endDate, 'yyyy-MM-dd')
+  const start = format(subDays(endDate, Math.max(0, days - 1)), 'yyyy-MM-dd')
+  return { start, end }
+}
+
+/** Needle movers with non-empty descriptions in range → attempted; `completed` counts as done. */
+export async function getCompletionRate(
+  supabase: SupabaseClient,
+  userId: string,
+  range: PlanDateRange
+): Promise<{ attempted: number; completed: number; completionRatePercent: number }> {
+  const { data, error } = await supabase
+    .from('morning_tasks')
+    .select('needle_mover, completed, description')
+    .eq('user_id', userId)
+    .gte('plan_date', range.start)
+    .lte('plan_date', range.end)
+
+  if (error || !data?.length) {
+    return { attempted: 0, completed: 0, completionRatePercent: 0 }
+  }
+
+  const rows = data as Array<{ needle_mover?: boolean | null; completed?: boolean | null; description?: string | null }>
+  const attempted = rows.filter(
+    (r) => r.needle_mover === true && typeof r.description === 'string' && r.description.trim().length > 0
+  )
+  const completed = attempted.filter((r) => r.completed === true)
+  const n = attempted.length
+  const completionRatePercent = n === 0 ? 0 : Math.round((completed.length / n) * 100)
+  return { attempted: n, completed: completed.length, completionRatePercent }
+}
+
+/** Rows in `morning_decisions` with a non-empty decision string in the date range. */
+export async function getDecisionVolume(
+  supabase: SupabaseClient,
+  userId: string,
+  range: PlanDateRange
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('morning_decisions')
+    .select('id, decision')
+    .eq('user_id', userId)
+    .gte('plan_date', range.start)
+    .lte('plan_date', range.end)
+
+  if (error || !data?.length) return 0
+  const rows = data as Array<{ decision?: string | null }>
+  return rows.filter((r) => typeof r.decision === 'string' && r.decision.trim().length > 0).length
+}
+
+/** Presence Permit / Finished Enough claims logged via `user_activities`. */
+export async function getPresenceCount(
+  supabase: SupabaseClient,
+  userId: string,
+  range: PlanDateRange
+): Promise<number> {
+  const startIso = `${range.start}T00:00:00.000Z`
+  const endIso = `${range.end}T23:59:59.999Z`
+
+  const { count, error } = await supabase
+    .from('user_activities')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('activity_type', USER_ACTIVITY_PRESENCE_PERMIT_CLAIM)
+    .gte('created_at', startIso)
+    .lte('created_at', endIso)
+
+  if (error) return 0
+  return count ?? 0
+}
+
+export type PartialMealMetrics = {
+  range: PlanDateRange
+  needleMoversAttempted: number
+  needleMoversCompleted: number
+  completionRatePercent: number
+  decisionLogsCount: number
+  presencePermitCount: number
+}
+
+export async function fetchPartialMealMetrics(
+  supabase: SupabaseClient,
+  userId: string,
+  rollingDays: number = 7
+): Promise<PartialMealMetrics> {
+  const range = getRollingPlanDateRange(rollingDays)
+  const [completion, decisions, presence] = await Promise.all([
+    getCompletionRate(supabase, userId, range),
+    getDecisionVolume(supabase, userId, range),
+    getPresenceCount(supabase, userId, range),
+  ])
+  return {
+    range,
+    needleMoversAttempted: completion.attempted,
+    needleMoversCompleted: completion.completed,
+    completionRatePercent: completion.completionRatePercent,
+    decisionLogsCount: decisions,
+    presencePermitCount: presence,
+  }
+}

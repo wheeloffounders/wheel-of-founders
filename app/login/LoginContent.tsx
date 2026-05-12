@@ -7,6 +7,11 @@ import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
 import { AlertCircle, LogIn, UserPlus } from 'lucide-react'
 import GoogleIcon from '@/components/icons/GoogleIcon'
+import {
+  getWarmAuthMessage,
+  parseMorningEntryContext,
+} from '@/lib/morning-entry-nudge'
+import { applyBlogTrialGiftFromAuthClient } from '@/lib/blog-trial-gift-profile'
 
 export default function LoginContent() {
   const [email, setEmail] = useState('')
@@ -17,7 +22,10 @@ export default function LoginContent() {
   const [checkingSession, setCheckingSession] = useState(true)
   const router = useRouter()
   const searchParams = useSearchParams()
-  const returnTo = searchParams?.get('returnTo') || '/dashboard'
+  const entryContext = parseMorningEntryContext(searchParams?.get('context'), null)
+  const contextReturnTo = entryContext ? `/today?context=${entryContext}` : '/dashboard'
+  const returnTo = searchParams?.get('returnTo') || contextReturnTo
+  const warmMessage = getWarmAuthMessage(entryContext, 'login')
 
   // Redirect if already authenticated (e.g. after OAuth callback, or direct /login visit)
   useEffect(() => {
@@ -55,6 +63,7 @@ export default function LoginContent() {
       if (authError) {
         setError(authError.message)
       } else {
+        await applyBlogTrialGiftFromAuthClient(supabase)
         router.push(returnTo)
         router.refresh()
       }
@@ -107,6 +116,11 @@ w-full max-w-md border-l-4 border-[#152b50]">
 mb-6 text-center">Welcome Founder</h1>
         <p className="text-center text-gray-700 dark:text-gray-300 dark:text-gray-300 
 mb-8">Sign up or log in to manage your day.</p>
+        {warmMessage ? (
+          <div className="mb-6 rounded-lg border border-[#f3cfc6] bg-[#fff3ef] p-3 text-sm text-[#7e3f2f]">
+            {warmMessage}
+          </div>
+        ) : null}
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 

@@ -5,7 +5,20 @@ import { flushSync } from 'react-dom'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { format, formatDistanceToNow, subDays, startOfMonth, addYears } from 'date-fns'
-import { Target, Zap, X, AlertCircle, Edit2, Check, Square, HelpCircle, Trash2, Lock, Sun } from 'lucide-react'
+import {
+  Target,
+  Zap,
+  X,
+  AlertCircle,
+  Edit2,
+  Check,
+  Square,
+  HelpCircle,
+  Trash2,
+  Lock,
+  Sun,
+  Shield,
+} from 'lucide-react'
 import { InfoTooltip } from '@/components/InfoTooltip'
 import SpeechToTextInput, { useSpeechDictation, SpeechTextField } from '@/components/SpeechToTextInput'
 import { supabase } from '@/lib/supabase'
@@ -43,7 +56,7 @@ import { SaveAsTemplateModal } from '@/components/SaveAsTemplateModal'
 import { generateExamplesForUser } from '@/lib/profile-examples'
 import { FirstTimeSuccessModal } from '@/components/FirstTimeSuccessModal'
 import { isNewOnboardingEnabled } from '@/lib/feature-flags'
-import { getClientAuthHeaders } from '@/lib/api/fetch-json'
+import { getClientAuthHeaders, fetchWithClientAuth } from '@/lib/api/fetch-json'
 import { trackErrorSync } from '@/lib/error-tracker'
 import { getEffectiveUserTier, type TierProfileInput } from '@/lib/auth/tier-logic'
 import { resolveProEntitlement } from '@/lib/auth/is-pro'
@@ -76,10 +89,35 @@ import {
   WOF_PENDING_DECISION_PARSER_KEY,
 } from '@/lib/pending-decision-parser-ingest'
 import {
+  getTemplates,
   getNudgeMessage,
   parseMorningEntryContext,
   readPendingDecisionParserInStorage,
 } from '@/lib/morning-entry-nudge'
+import {
+  getBlogInteractiveFunnel,
+  getBurnoutDiagnosticMorningNudge,
+  getBurnoutWhispererMorningNudge,
+  getDelegationStressTestMorningNudge,
+  getLegacyContinuityMorningNudge,
+  getFulfillmentGapMorningNudge,
+  getDisciplineLoopMorningNudge,
+  getNeedleMoverDistillerMorningNudge,
+  getDecisionClarityBenchMorningNudge,
+  getMissionDriftFilterMorningNudge,
+  getMissionShieldBadgeLine,
+  getSuccessHangoverLabMorningNudge,
+  getVisionBridgeMorningNudge,
+  getFinishedEnoughMorningNudge,
+  getPendingPlanToastMessage,
+  getRoadmapVoteMorningNudge,
+} from '@/lib/blog-interactive-funnels'
+import { hasBlogTrialGiftInSession, clearBlogTrialGiftInSession } from '@/lib/blog-trial-gift-session'
+import { USER_ACTIVITY_PRESENCE_PERMIT_CLAIM } from '@/lib/user-activity-types'
+import {
+  WOF_PRO_TRIAL_ACTIVATED_WELCOME_SESSION_KEY,
+  WOF_PRO_TRIAL_WELCOME_COOKIE,
+} from '@/lib/blog-trial-gift-profile'
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery'
 import { fetchUserProfileBundle } from '@/lib/user-profile-bundle-cache'
 import { PageSidebar } from '@/components/layout/PageSidebar'
@@ -298,6 +336,40 @@ export default function MorningPage() {
     searchParams?.get('context'),
     searchParams?.get('parserPass')
   )
+  const urlFunnelRaw = searchParams?.get('funnel')?.trim() || null
+  const urlFunnelValid =
+    urlFunnelRaw && getBlogInteractiveFunnel(urlFunnelRaw) ? urlFunnelRaw : null
+  const [morningFunnelId, setMorningFunnelId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (urlFunnelValid) {
+      try {
+        sessionStorage.setItem('wof_morning_funnel', urlFunnelValid)
+      } catch {
+        /* ignore */
+      }
+      setMorningFunnelId(urlFunnelValid)
+      return
+    }
+    if (!morningEntryContext) {
+      setMorningFunnelId(null)
+      return
+    }
+    try {
+      const s = sessionStorage.getItem('wof_morning_funnel')?.trim()
+      const cfg = s ? getBlogInteractiveFunnel(s) : undefined
+      if (s && cfg && cfg.handoffContext === morningEntryContext) {
+        setMorningFunnelId(s)
+      } else {
+        if (s) sessionStorage.removeItem('wof_morning_funnel')
+        setMorningFunnelId(null)
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [urlFunnelValid, morningEntryContext])
+
   const lang = useUserLanguage() // Personalized language
   const [userGoal, setUserGoal] = useState<UserGoal | null>(null)
   const [tierProfileRow, setTierProfileRow] = useState<TierProfileInput | null>(null)
@@ -475,9 +547,36 @@ export default function MorningPage() {
     const q = searchParams?.toString()
     return q ? `/morning?${q}` : '/morning'
   }, [searchParams])
+  const loginFromBlog = useMemo(() => {
+    const from = searchParams?.get('from')?.trim()
+    return from && from.startsWith('/blog') ? from : null
+  }, [searchParams])
+  const loginRedirectHref = useMemo(() => {
+    const q = searchParams?.toString()
+    const returnTo = q ? `/morning?${q}` : '/morning'
+    const authQ = new URLSearchParams()
+    authQ.set('returnTo', returnTo)
+    if (loginFromBlog) authQ.set('from', loginFromBlog)
+    return `/auth/login?${authQ.toString()}`
+  }, [searchParams, loginFromBlog])
 
   const [entryNudgeReady, setEntryNudgeReady] = useState(false)
   const [hasPendingDecisionCapture, setHasPendingDecisionCapture] = useState(false)
+  const [roadmapVoteNudge, setRoadmapVoteNudge] = useState<string | null>(null)
+  const [burnoutDiagnosticNudge, setBurnoutDiagnosticNudge] = useState<string | null>(null)
+  const [whispererAuditNudge, setWhispererAuditNudge] = useState<string | null>(null)
+  const [delegationStressNudge, setDelegationStressNudge] = useState<string | null>(null)
+  const [legacyContinuityNudge, setLegacyContinuityNudge] = useState<string | null>(null)
+  const [fulfillmentGapNudge, setFulfillmentGapNudge] = useState<string | null>(null)
+  const [disciplineLoopNudge, setDisciplineLoopNudge] = useState<string | null>(null)
+  const [needleDistillerNudge, setNeedleDistillerNudge] = useState<string | null>(null)
+  const [decisionClarityBenchNudge, setDecisionClarityBenchNudge] = useState<string | null>(null)
+  const [missionDriftNudge, setMissionDriftNudge] = useState<string | null>(null)
+  const [meaningLabNudge, setMeaningLabNudge] = useState<string | null>(null)
+  const [visionBridgeNudge, setVisionBridgeNudge] = useState<string | null>(null)
+  const [shutdownRitualNudge, setShutdownRitualNudge] = useState<string | null>(null)
+  const [missionShieldMessage, setMissionShieldMessage] = useState<string | null>(null)
+  const [proTrialActivatedWelcome, setProTrialActivatedWelcome] = useState(false)
 
   useLayoutEffect(() => {
     if (!morningEntryContext) {
@@ -500,10 +599,86 @@ export default function MorningPage() {
     return () => window.removeEventListener('wof-pending-parser-cleared', sync)
   }, [morningEntryContext])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    let show = false
+    try {
+      if (sessionStorage.getItem(WOF_PRO_TRIAL_ACTIVATED_WELCOME_SESSION_KEY) === '1') {
+        show = true
+        sessionStorage.removeItem(WOF_PRO_TRIAL_ACTIVATED_WELCOME_SESSION_KEY)
+      }
+    } catch {
+      // ignore
+    }
+    if (!show) {
+      try {
+        const hasWelcomeCookie = document.cookie.split(';').some((part) => {
+          const [k, ...rest] = part.trim().split('=')
+          return k === WOF_PRO_TRIAL_WELCOME_COOKIE && rest.join('=') === '1'
+        })
+        if (hasWelcomeCookie) {
+          show = true
+          document.cookie = `${WOF_PRO_TRIAL_WELCOME_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (show) setProTrialActivatedWelcome(true)
+  }, [])
+
   const entryNudgeMessage = useMemo(() => {
+    if (roadmapVoteNudge) return roadmapVoteNudge
+    if (burnoutDiagnosticNudge) return burnoutDiagnosticNudge
+    if (whispererAuditNudge) return whispererAuditNudge
+    if (delegationStressNudge) return delegationStressNudge
+    if (legacyContinuityNudge) return legacyContinuityNudge
+    if (fulfillmentGapNudge) return fulfillmentGapNudge
+    if (shutdownRitualNudge) return shutdownRitualNudge
+    if (needleDistillerNudge) return needleDistillerNudge
+    if (decisionClarityBenchNudge) return decisionClarityBenchNudge
+    if (missionDriftNudge) return missionDriftNudge
+    if (meaningLabNudge) return meaningLabNudge
+    if (visionBridgeNudge) return visionBridgeNudge
+    if (disciplineLoopNudge) return disciplineLoopNudge
     if (!morningEntryContext || !entryNudgeReady) return null
-    return getNudgeMessage(morningEntryContext, hasPendingDecisionCapture)
-  }, [morningEntryContext, entryNudgeReady, hasPendingDecisionCapture])
+    return getNudgeMessage(morningEntryContext, hasPendingDecisionCapture, morningFunnelId)
+  }, [
+    roadmapVoteNudge,
+    burnoutDiagnosticNudge,
+    whispererAuditNudge,
+    delegationStressNudge,
+    legacyContinuityNudge,
+    fulfillmentGapNudge,
+    shutdownRitualNudge,
+    needleDistillerNudge,
+    decisionClarityBenchNudge,
+    missionDriftNudge,
+    meaningLabNudge,
+    visionBridgeNudge,
+    disciplineLoopNudge,
+    morningEntryContext,
+    entryNudgeReady,
+    hasPendingDecisionCapture,
+    morningFunnelId,
+  ])
+  const entryTemplates = useMemo(
+    () => getTemplates(morningEntryContext),
+    [morningEntryContext]
+  )
+  const hasAnyTaskDescription = useMemo(
+    () => tasks.some((t) => t.description.trim().length > 0),
+    [tasks]
+  )
+  const showContextTemplates = useMemo(
+    () =>
+      Boolean(morningEntryContext) &&
+      entryNudgeReady &&
+      entryTemplates.length > 0 &&
+      !hasPlan &&
+      !hasAnyTaskDescription,
+    [morningEntryContext, entryNudgeReady, entryTemplates, hasPlan, hasAnyTaskDescription]
+  )
 
   const entryContextNudge = useMemo(
     () =>
@@ -517,6 +692,41 @@ export default function MorningPage() {
         </div>
       ) : null,
     [entryNudgeMessage]
+  )
+
+  const missionShieldBanner = useMemo(
+    () =>
+      missionShieldMessage ? (
+        <div
+          className="mb-4 flex gap-3 rounded-xl border border-[#152b50]/20 bg-slate-50 p-4 text-sm text-[#1a2f4a] shadow-sm dark:border-sky-800/40 dark:bg-sky-950/50 dark:text-sky-100"
+          role="status"
+        >
+          <Shield className="mt-0.5 h-5 w-5 shrink-0 text-[#152b50] dark:text-sky-300" aria-hidden />
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-[#152b50] dark:text-sky-300">
+              Mission Shield
+            </p>
+            <p className="mt-1.5 leading-relaxed">{missionShieldMessage}</p>
+          </div>
+        </div>
+      ) : null,
+    [missionShieldMessage]
+  )
+
+  const proTrialWelcomeBanner = useMemo(
+    () =>
+      proTrialActivatedWelcome ? (
+        <div
+          className="mb-4 rounded-xl border border-[#152b50]/25 bg-[#152b50] p-4 text-sm text-white shadow-sm"
+          role="status"
+        >
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-white/90">Pro trial</p>
+          <p className="mt-2 text-base font-semibold leading-snug">
+            Pro Trial Activated. Mrs. Deer is now analyzing your patterns.
+          </p>
+        </div>
+      ) : null,
+    [proTrialActivatedWelcome]
   )
 
   const decisionProminentExit =
@@ -553,9 +763,26 @@ export default function MorningPage() {
       if (ctx) q.set('context', ctx)
       const parserPass = searchParams?.get('parserPass')
       if (parserPass === '1') q.set('parserPass', '1')
+      const fromBlog = searchParams?.get('from')?.trim()
+      if (fromBlog && fromBlog.startsWith('/blog')) q.set('from', fromBlog)
+      const funnelFromUrl = searchParams?.get('funnel')?.trim()
+      const funnelResolved =
+        (funnelFromUrl && getBlogInteractiveFunnel(funnelFromUrl) ? funnelFromUrl : null) ??
+        morningFunnelId ??
+        (typeof window !== 'undefined'
+          ? (() => {
+              try {
+                const s = sessionStorage.getItem('wof_morning_funnel')?.trim()
+                return s && getBlogInteractiveFunnel(s) ? s : null
+              } catch {
+                return null
+              }
+            })()
+          : null)
+      if (funnelResolved) q.set('funnel', funnelResolved)
       router.push(`/morning?${q.toString()}`)
     },
-    [router, searchParams]
+    [router, searchParams, morningFunnelId]
   )
 
   const isMobile = useMediaQuery('(max-width: 768px)')
@@ -862,10 +1089,17 @@ export default function MorningPage() {
       setScheduledSuggestionsLoading(true)
       setSuggestionsError(null)
       try {
+        const headers = await getClientAuthHeaders()
         const res = await fetch(`/api/suggestions/today?date=${encodeURIComponent(planDate)}`, {
+          headers,
           credentials: 'include',
           signal: ac.signal,
         })
+        if (res.status === 401 || res.status === 403) {
+          // Session can be mid-refresh during initial mount/navigation; avoid noisy unauthorized errors.
+          if (!cancelled) setScheduledSuggestions([])
+          return
+        }
         if (!res.ok) {
           const body = await res.json().catch(() => ({}))
           throw new Error(body.error || 'Failed to load suggestions')
@@ -1288,6 +1522,282 @@ export default function MorningPage() {
   loadTodayPlanRef.current = loadTodayPlan
 
   useEffect(() => {
+    if (loading || hasPlan) return
+    const hasExistingDescriptions = tasks.some((t) => t.description.trim().length > 0)
+    if (hasExistingDescriptions) return
+    if (typeof window === 'undefined') return
+
+    try {
+      const raw = sessionStorage.getItem('pending_plan')
+      if (!raw) return
+      const parsed = JSON.parse(raw) as {
+        items?: string[]
+        funnelId?: string
+        selectedFriction?: string
+        selectedOptionId?: string
+        diagnosisId?: string
+        diagnostic?: boolean
+        narrativeAudit?: boolean
+        audit_results?: {
+          switch_flip_label?: string
+          switch_flip_minutes?: number
+          decision_weight?: string
+          growth_vs_maintenance?: string
+        }
+        stressTest?: boolean
+        stress_test?: {
+          task_name?: string
+          worst_case?: string
+          saved_time_activity?: string
+          risk_tier?: string
+        }
+        continuityMapper?: boolean
+        continuity_map?: {
+          remembered_value?: string
+          dependence_tier?: string
+          succession_today?: number
+          succession_target_12m?: number
+          continuity_score?: number
+        }
+        fulfillmentGap?: boolean
+        fulfillment_gap?: {
+          external_score?: number
+          internal_score?: number
+          gap?: number
+          heavy_factor?: string
+        }
+        disciplineLoop?: boolean
+        discipline_loop?: {
+          trigger?: string
+          tiny_habit?: string
+          celebration?: string
+          celebration_label?: string
+        }
+        needleDistiller?: boolean
+        distilled_tasks?: {
+          primary_needle_mover?: string
+          momentum_tasks?: string[]
+          maintenance_tasks?: string[]
+        }
+        decisionLogger?: boolean
+        decision_log?: {
+          decisionTopic?: string
+          optionA?: string
+          optionB?: string
+          chosen_path?: string
+          chosenPath?: string
+          reasoning?: string
+          reviewDate?: string
+        }
+        missionDriftFilter?: boolean
+        mission_check?: {
+          opportunity?: string
+          corePersona?: string
+          sarahTest?: string
+          talentSlider?: number
+          alignmentScore?: number
+        }
+        meaningLab?: boolean
+        meaning_lab?: {
+          achievement?: string
+          evolvingValues?: string[]
+          experiment?: string
+        }
+        visionBridge?: boolean
+        vision_bridge?: {
+          bigVision?: string
+          currentTask?: string
+          dailyBrick?: string
+        }
+        shutdownRitual?: boolean
+        shutdown_logic?: {
+          workItch?: string
+          calibration?: string
+          finishedEnough?: string
+          presenceFor?: string
+        }
+      }
+      let items = Array.isArray(parsed.items)
+        ? parsed.items.map((s) => (typeof s === 'string' ? s.trim() : '')).filter(Boolean)
+        : []
+      if (
+        items.length === 0 &&
+        parsed.shutdownRitual &&
+        parsed.shutdown_logic &&
+        typeof parsed.shutdown_logic.finishedEnough === 'string' &&
+        parsed.shutdown_logic.finishedEnough.trim().length > 0
+      ) {
+        const L = parsed.shutdown_logic
+        const fe = typeof L.finishedEnough === 'string' ? L.finishedEnough.trim() : ''
+        const wi = typeof L.workItch === 'string' ? L.workItch.trim() : ''
+        const pf = typeof L.presenceFor === 'string' ? L.presenceFor.trim() : ''
+        items = [
+          `Finished enough: ${fe}`,
+          wi ? `Itch parked: ${wi}` : 'Itch parked (named in your permit)',
+          pf ? `100% presence for: ${pf}` : '100% presence tonight',
+        ]
+      }
+      if (items.length === 0) {
+        sessionStorage.removeItem('pending_plan')
+        return
+      }
+
+      const fid = typeof parsed.funnelId === 'string' ? parsed.funnelId.trim() : ''
+      if (fid && getBlogInteractiveFunnel(fid)) {
+        try {
+          sessionStorage.setItem('wof_morning_funnel', fid)
+        } catch {
+          /* ignore */
+        }
+        setMorningFunnelId(fid)
+      }
+
+      const voteKey = [parsed.selectedFriction, parsed.selectedOptionId]
+        .map((s) => (typeof s === 'string' ? s.trim() : ''))
+        .find(Boolean)
+      if (fid && voteKey) {
+        const vn = getRoadmapVoteMorningNudge(fid, voteKey)
+        if (vn) setRoadmapVoteNudge(vn)
+      }
+
+      const diagnosisKey =
+        typeof parsed.diagnosisId === 'string' ? parsed.diagnosisId.trim() : ''
+      if (fid && diagnosisKey) {
+        const dn = getBurnoutDiagnosticMorningNudge(fid, diagnosisKey)
+        if (dn) setBurnoutDiagnosticNudge(dn)
+        try {
+          sessionStorage.setItem('wof_burnout_diagnosis_id', diagnosisKey)
+        } catch {
+          /* ignore */
+        }
+      }
+
+      const flipLabel =
+        typeof parsed.audit_results?.switch_flip_label === 'string'
+          ? parsed.audit_results.switch_flip_label.trim()
+          : ''
+      if (fid && parsed.narrativeAudit && flipLabel) {
+        const wn = getBurnoutWhispererMorningNudge(fid, flipLabel)
+        if (wn) setWhispererAuditNudge(wn)
+        try {
+          sessionStorage.setItem('wof_whisperer_switch_flip', flipLabel)
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (fid && parsed.stressTest && parsed.stress_test) {
+        const dn = getDelegationStressTestMorningNudge(fid, parsed.stress_test)
+        if (dn) setDelegationStressNudge(dn)
+      }
+
+      if (fid && parsed.continuityMapper && parsed.continuity_map) {
+        const rv =
+          typeof parsed.continuity_map.remembered_value === 'string'
+            ? parsed.continuity_map.remembered_value.trim()
+            : ''
+        const ln = getLegacyContinuityMorningNudge(fid, rv)
+        if (ln) setLegacyContinuityNudge(ln)
+      }
+
+      if (fid && parsed.fulfillmentGap && parsed.fulfillment_gap) {
+        const fg = parsed.fulfillment_gap
+        const gn = getFulfillmentGapMorningNudge(fid, fg.external_score, fg.internal_score)
+        if (gn) setFulfillmentGapNudge(gn)
+      }
+
+      if (fid && parsed.shutdownRitual && parsed.shutdown_logic) {
+        const sn = getFinishedEnoughMorningNudge(fid, parsed.shutdown_logic)
+        if (sn) setShutdownRitualNudge(sn)
+        void (async () => {
+          const session = await getUserSession()
+          if (!session?.user?.id) return
+          try {
+            await fetchWithClientAuth('/api/user/activity', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                activity_type: USER_ACTIVITY_PRESENCE_PERMIT_CLAIM,
+                metadata: { funnelId: fid, source: 'pending_plan_hydrate' },
+              }),
+            })
+          } catch {
+            // non-blocking — presence counts are best-effort
+          }
+        })()
+      }
+
+      if (fid && parsed.disciplineLoop && parsed.discipline_loop) {
+        const dn = getDisciplineLoopMorningNudge(fid, parsed.discipline_loop)
+        if (dn) setDisciplineLoopNudge(dn)
+      }
+
+      if (fid && parsed.needleDistiller && parsed.distilled_tasks) {
+        const pm =
+          typeof parsed.distilled_tasks.primary_needle_mover === 'string'
+            ? parsed.distilled_tasks.primary_needle_mover
+            : ''
+        const nn = getNeedleMoverDistillerMorningNudge(fid, pm)
+        if (nn) setNeedleDistillerNudge(nn)
+      }
+
+      if (fid && parsed.decisionLogger && parsed.decision_log) {
+        const dn = getDecisionClarityBenchMorningNudge(fid, parsed.decision_log)
+        if (dn) setDecisionClarityBenchNudge(dn)
+      }
+
+      if (fid && parsed.missionDriftFilter && parsed.mission_check) {
+        const mn = getMissionDriftFilterMorningNudge(fid, parsed.mission_check)
+        if (mn) setMissionDriftNudge(mn)
+        const shield = getMissionShieldBadgeLine(parsed.mission_check.corePersona)
+        if (shield) setMissionShieldMessage(shield)
+      }
+
+      if (fid && parsed.meaningLab && parsed.meaning_lab) {
+        const ln = getSuccessHangoverLabMorningNudge(fid, parsed.meaning_lab)
+        if (ln) setMeaningLabNudge(ln)
+      }
+
+      if (fid && parsed.visionBridge && parsed.vision_bridge) {
+        const vn = getVisionBridgeMorningNudge(fid, parsed.vision_bridge)
+        if (vn) setVisionBridgeNudge(vn)
+      }
+
+      setTasks((prev) => {
+        const next = [...prev]
+        const needed = Math.max(next.length, 3)
+        while (next.length < needed) next.push({ ...EMPTY_TASK, id: generateTaskId() })
+        for (let i = 0; i < Math.min(items.length, next.length, 3); i += 1) {
+          next[i] = { ...next[i], description: items[i] }
+        }
+        return next
+      })
+      sessionStorage.removeItem('pending_plan')
+      window.dispatchEvent(
+        new CustomEvent('toast', {
+          detail: { message: getPendingPlanToastMessage(fid || null), type: 'success' },
+        })
+      )
+      window.setTimeout(() => {
+        if (typeof window === 'undefined') return
+        if (!hasBlogTrialGiftInSession()) return
+        window.dispatchEvent(
+          new CustomEvent('toast', {
+            detail: {
+              message:
+                "Pro trial gift unlocked: Mrs. Deer Pro early access is yours when you're ready—open Settings → Billing to start your 7-day trial.",
+              type: 'success',
+            },
+          })
+        )
+        clearBlogTrialGiftInSession()
+      }, 450)
+    } catch {
+      sessionStorage.removeItem('pending_plan')
+    }
+  }, [loading, hasPlan, tasks])
+
+  useEffect(() => {
     if (!planDate) return
     void (async () => {
       const session = await getUserSession()
@@ -1616,7 +2126,7 @@ export default function MorningPage() {
     const checkAuth = async () => {
       const session = await getUserSession()
       if (!session) {
-        if (!cancelled) router.push('/auth/login')
+        if (!cancelled) router.push(loginRedirectHref)
         return
       }
       if (cancelled) return
@@ -1792,7 +2302,7 @@ export default function MorningPage() {
     return () => {
       cancelled = true
     }
-  }, [router, planDate, searchParams])
+  }, [router, planDate, searchParams, loginRedirectHref])
 
   useEffect(() => {
     const onSync = () => {
@@ -2000,7 +2510,7 @@ export default function MorningPage() {
       console.log('🔴 [SAVE] Exiting early: no session')
       setError('User not authenticated. Please log in.')
       setSaving(false)
-      router.push('/auth/login')
+      router.push(loginRedirectHref)
       return
     }
 
@@ -2077,7 +2587,7 @@ export default function MorningPage() {
       setSaving(false)
       setError(writeAuth.message)
       window.dispatchEvent(new CustomEvent('toast', { detail: { message: writeAuth.message, type: 'error' } }))
-      router.push('/auth/login')
+      router.push(loginRedirectHref)
       return
     }
 
@@ -2481,7 +2991,9 @@ export default function MorningPage() {
             aria-hidden
           />
         ) : null}
+        {proTrialWelcomeBanner}
         {entryContextNudge}
+        {missionShieldBanner}
         {isResume && (
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
             Welcome back! You were about to plan your first day. Let&apos;s finish what you started.
@@ -2519,6 +3031,7 @@ export default function MorningPage() {
             stickySaveBar={streamlinedMorningOnboarding || blogEntryStickySave}
             saveOverlayMasterGate={isFirstTime && !isTutorial}
             prominentExitToDashboard={decisionProminentExit}
+            suggestedTemplates={showContextTemplates ? entryTemplates : []}
           />
         </div>
 
@@ -2644,7 +3157,9 @@ export default function MorningPage() {
           </Link>
         </div>
       ) : null}
+      {proTrialWelcomeBanner}
       {entryContextNudge}
+      {missionShieldBanner}
       {!isFirstTime && (
         <FirstTimeSuccessModal
           isOpen={showFirstTimeModal}
@@ -2812,6 +3327,7 @@ export default function MorningPage() {
             streamlinedOnboarding={streamlinedMorningOnboarding}
             stickySaveBar={streamlinedMorningOnboarding || blogEntryStickySave}
             prominentExitToDashboard={decisionProminentExit}
+            suggestedTemplates={showContextTemplates ? entryTemplates : []}
           />
         </div>
 

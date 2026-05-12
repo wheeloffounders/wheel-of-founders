@@ -121,6 +121,8 @@ export type ProMorningCanvasProps = {
   saveOverlayMasterGate?: boolean
   /** Decision Parser skip-pass: emphasize the commit control as the exit to the Dashboard. */
   prominentExitToDashboard?: boolean
+  /** Optional context-based starter actions shown on empty task rows. */
+  suggestedTemplates?: string[]
 }
 
 function highlightStreakPhrases(text: string): ReactNode[] {
@@ -287,6 +289,7 @@ export function ProMorningCanvas({
   stickySaveBar = false,
   saveOverlayMasterGate = false,
   prominentExitToDashboard = false,
+  suggestedTemplates = [],
 }: ProMorningCanvasProps) {
   const cockpitOnboarding = tutorialMode || streamlinedOnboarding
   const router = useRouter()
@@ -2454,6 +2457,7 @@ export function ProMorningCanvas({
               Boolean(rowTask.description.trim()) &&
               !showUndoBar &&
               (isGhostwritingRow || rowHasStrategicInlineContent(rowTask))
+            const rowSuggestedTemplate = suggestedTemplates[index] ?? null
             const strategicCardKey = `${index}-${rowTask.actionPlan}-${whyInline.slice(0, 40)}-${howInline.slice(0, 60)}-${(rowTask.actionPlanNote ?? '').slice(0, 40)}`
             return (
               <Fragment key={index}>
@@ -2595,7 +2599,11 @@ export function ProMorningCanvas({
                             }}
                             onKeyDown={(e) => onRowKeyDown(e, index)}
                             placeholder={
-                              index < baseStreamSlots ? `Action ${index + 1}...` : `Task ${index + 1}`
+                              rowSuggestedTemplate && !rowTask.description.trim()
+                                ? `Suggested: ${rowSuggestedTemplate}`
+                                : index < baseStreamSlots
+                                  ? `Action ${index + 1}...`
+                                  : `Task ${index + 1}`
                             }
                             disabled={rowBrainDumpBusy}
                             minRows={1}
@@ -2608,6 +2616,23 @@ export function ProMorningCanvas({
                               dashboardUnderline: cockpitOnboarding && index < baseStreamSlots,
                             })}
                           />
+                          {rowSuggestedTemplate && !rowTask.description.trim() ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTasks((prev) =>
+                                  prev.map((task, taskIndex) =>
+                                    taskIndex === index
+                                      ? { ...task, description: rowSuggestedTemplate }
+                                      : task
+                                  )
+                                )
+                              }
+                              className="mt-1 inline-flex max-w-full items-center rounded-full border border-[#f3cfc6] bg-[#fff3ef] px-3 py-1 text-xs font-medium text-[#8a4a3a] transition hover:border-[#ef725c] hover:text-[#7e3f2f] dark:border-[#5c3d33] dark:bg-[#2a1814] dark:text-[#f0d6cc]"
+                            >
+                              Use suggestion
+                            </button>
+                          ) : null}
                         </motion.div>
                         <AnimatePresence initial={false}>
                           {showStrategicCard ? (

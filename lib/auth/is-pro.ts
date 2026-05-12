@@ -11,6 +11,8 @@ export type ProEntitlementProfile = {
   trial_ends_at?: string | null
   stripe_subscription_status?: string | null
   created_at?: string | null
+  /** Set when user activated the blog/home 7-day Pro trial gift. */
+  is_pro_trial?: boolean | null
 }
 
 export type ProEntitlementSource =

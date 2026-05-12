@@ -8,6 +8,30 @@ import { addOrUpdateSubscriber } from '@/lib/mailerlite'
 import { sendTransactionalEmail } from '@/lib/email/transactional'
 import { syncRemindersToGoogleCalendar } from '@/lib/google-calendar'
 import { isWhitelistAdminEmail } from '@/lib/admin-emails'
+import { getBlogTrialGiftProfilePatch, WOF_PRO_TRIAL_WELCOME_COOKIE } from '@/lib/blog-trial-gift-profile'
+import { WOF_BLOG_TRIAL_GIFT_COOKIE } from '@/lib/blog-trial-gift-session'
+
+function authCallbackSuccessRedirect(
+  requestUrl: URL,
+  dest: string,
+  giftApplied: boolean,
+  cookieSecure: boolean
+): NextResponse {
+  const url = dest.startsWith('http')
+    ? dest
+    : `${requestUrl.origin}${dest.startsWith('/') ? dest : `/${dest}`}`
+  const res = NextResponse.redirect(url)
+  if (giftApplied) {
+    res.cookies.set(WOF_BLOG_TRIAL_GIFT_COOKIE, '', { path: '/', maxAge: 0, sameSite: 'lax', secure: cookieSecure })
+    res.cookies.set(WOF_PRO_TRIAL_WELCOME_COOKIE, '1', {
+      path: '/',
+      maxAge: 600,
+      sameSite: 'lax',
+      secure: cookieSecure,
+    })
+  }
+  return res
+}
 
 /** Provider fields from Supabase Auth session right after code exchange (may also appear on getSession()). */
 type OAuthProviderSession = {
@@ -44,6 +68,7 @@ export async function GET(request: NextRequest) {
 
   if (code) {
     const cookieStore = await cookies()
+    const blogTrialGiftCookie = cookieStore.get(WOF_BLOG_TRIAL_GIFT_COOKIE)?.value === '1'
     /** http://localhost must not use Secure cookies or the browser drops them after redirect. */
     const cookieSecure = requestUrl.protocol === 'https:'
 
@@ -201,6 +226,7 @@ export async function GET(request: NextRequest) {
           updated_at: nowIso,
           trial_starts_at: nowIso,
           trial_ends_at: trialEnds,
+          ...(blogTrialGiftCookie ? { is_pro_trial: true } : {}),
           is_admin: user.email && isWhitelistAdminEmail(user.email) ? true : false,
           admin_role: user.email && isWhitelistAdminEmail(user.email) ? 'super_admin' : null,
         }
@@ -259,6 +285,17 @@ export async function GET(request: NextRequest) {
           .eq('id', user.id)
       }
 
+      let blogTrialGiftApplied = Boolean(blogTrialGiftCookie && isNewUser)
+      if (blogTrialGiftCookie && !isNewUser) {
+        try {
+          const giftPatch = getBlogTrialGiftProfilePatch()
+          await (db.from('user_profiles') as any).upsert({ id: user.id, ...giftPatch }, { onConflict: 'id' })
+          blogTrialGiftApplied = true
+        } catch (err) {
+          console.error('[auth/callback] blog trial gift profile patch failed', err)
+        }
+      }
+
       if (user.email && isWhitelistAdminEmail(user.email)) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -276,12 +313,12 @@ export async function GET(request: NextRequest) {
 
       // Calendar OAuth connect should return to caller location immediately.
       if (calendarOAuth) {
-        return NextResponse.redirect(`${requestUrl.origin}${next}`)
+        return authCallbackSuccessRedirect(requestUrl, next, blogTrialGiftApplied, cookieSecure)
       }
 
       // New users must go through goal → personalization → morning. Redirect to goal.
       if (isNewUser) {
-        return NextResponse.redirect(`${requestUrl.origin}/onboarding/goal`)
+        return authCallbackSuccessRedirect(requestUrl, '/onboarding/goal', blogTrialGiftApplied, cookieSecure)
       }
 
       // Existing users: resume logic — detect where they left off and redirect accordingly
@@ -309,13 +346,18 @@ export async function GET(request: NextRequest) {
 
       // Stage 1: Goal done, needs personalization
       if (hasGoal && !hasOnboarding) {
-        return NextResponse.redirect(`${requestUrl.origin}/onboarding/personalization`)
+        return authCallbackSuccessRedirect(
+          requestUrl,
+          '/onboarding/personalization',
+          blogTrialGiftApplied,
+          cookieSecure
+        )
       }
       // Stage 2: Onboarding done, never saved morning
       if (hasOnboarding && !hasMorning) {
         const { isNewOnboardingEnabled } = await import('@/lib/feature-flags')
         const qs = isNewOnboardingEnabled() ? '?first=true&resume=true' : ''
-        return NextResponse.redirect(`${requestUrl.origin}/morning${qs}`)
+        return authCallbackSuccessRedirect(requestUrl, `/morning${qs}`, blogTrialGiftApplied, cookieSecure)
       }
       // Stage 3: Morning done, no evening today — check if they have morning for today
       const { count: morningTodayCount } = await db
@@ -330,12 +372,17 @@ export async function GET(request: NextRequest) {
         .eq('review_date', today)
       if ((morningTodayCount ?? 0) > 0 && (eveningTodayCount ?? 0) === 0) {
         console.log('[Auth Callback] Stage 3: Redirecting to /dashboard?showEveningReminder=true')
-        return NextResponse.redirect(`${requestUrl.origin}/dashboard?showEveningReminder=true`)
+        return authCallbackSuccessRedirect(
+          requestUrl,
+          '/dashboard?showEveningReminder=true',
+          blogTrialGiftApplied,
+          cookieSecure
+        )
       }
 
       // Stage 4 or explicit next: respect next param
       console.log('[Auth Callback] Stage 4: Redirecting to', next)
-      return NextResponse.redirect(`${requestUrl.origin}${next}`)
+      return authCallbackSuccessRedirect(requestUrl, next, blogTrialGiftApplied, cookieSecure)
   }
 
   // No code, redirect to login

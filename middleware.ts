@@ -6,6 +6,15 @@ import { createServerClient } from '@supabase/ssr'
  * Onboarding routing is enforced in `OnboardingSessionGate` (client) so sessionStorage breakout works.
  */
 export async function middleware(request: NextRequest) {
+  console.log('[MIDDLEWARE RUNNING FOR]:', request.nextUrl.pathname)
+  const path = request.nextUrl.pathname
+  // Safe zone: never run auth/session logic for blog/content shell routes.
+  if (path.startsWith('/blog') || path.startsWith('/_next')) {
+    return NextResponse.next({
+      request: { headers: request.headers },
+    })
+  }
+
   if (request.nextUrl.pathname.startsWith('/auth')) {
     console.log(
       '[MIDDLEWARE DEBUG] Path:',
@@ -61,6 +70,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|manifest\\.json|offline\\.html|icon-.*\\.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api|blog|_next/static|_next/image|favicon.ico|manifest\\.json|offline\\.html|icon-.*\\.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

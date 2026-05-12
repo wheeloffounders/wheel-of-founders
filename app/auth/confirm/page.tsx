@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { applyBlogTrialGiftFromAuthClient } from '@/lib/blog-trial-gift-profile'
 import { Mail, CheckCircle, RefreshCw } from 'lucide-react'
 
 export default function ConfirmPage() {
@@ -12,6 +13,20 @@ export default function ConfirmPage() {
   const [resending, setResending] = useState(false)
   const [resendSuccess, setResendSuccess] = useState(false)
   const [resendError, setResendError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (cancelled || !session) return
+      await applyBlogTrialGiftFromAuthClient(supabase)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleResend = async () => {
     setResending(true)

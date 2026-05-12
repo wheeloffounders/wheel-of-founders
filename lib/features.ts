@@ -45,6 +45,7 @@ export interface UserProfile {
   stripe_subscription_status?: string | null
   subscription_tier?: string | null
   created_at?: string | null
+  is_pro_trial?: boolean | null
 }
 
 /**

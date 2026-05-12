@@ -8,6 +8,7 @@ import { TutorialProgress } from '@/components/TutorialProgress'
 import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
 import { colors } from '@/lib/design-tokens'
 import { inferPrimaryGoalEnumFromFreeText } from '@/lib/social-proof'
+import { applyBlogTrialGiftFromAuthClient } from '@/lib/blog-trial-gift-profile'
 
 export default function GoalPage() {
   const [goal, setGoal] = useState('')
@@ -17,6 +18,12 @@ export default function GoalPage() {
 
   useEffect(() => {
     trackJourneyStep('viewed_goal')
+  }, [])
+
+  useEffect(() => {
+    void (async () => {
+      await applyBlogTrialGiftFromAuthClient(supabase)
+    })()
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
