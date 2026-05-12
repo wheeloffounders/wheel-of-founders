@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import type { BlogInteractiveFunnelConfig, InteractiveFunnelId } from '@/lib/blog-interactive-funnels'
 import { unlockBlogTrialGiftInSession } from '@/lib/blog-trial-gift-session'
+import { useBlogWidgetRadar, useRadarCompleteWhen } from '@/components/blog/useBlogWidgetRadar'
 
 type Phase = 'shiny' | 'sarah' | 'talent' | 'summary'
 
@@ -61,12 +62,15 @@ function MissionCompass({ score }: { score: number }) {
 
 export function AlignmentFilterWidget({ funnelId, config }: AlignmentFilterWidgetProps) {
   const pathname = usePathname()
+  const { onFirstPointer, markComplete } = useBlogWidgetRadar(funnelId)
   const [phase, setPhase] = useState<Phase>('shiny')
   const [opportunity, setOpportunity] = useState('')
   const [corePersona, setCorePersona] = useState('')
   const [sarahTest, setSarahTest] = useState<SarahAnswer | null>(null)
   const [talentSlider, setTalentSlider] = useState(35)
   const [claiming, setClaiming] = useState(false)
+
+  useRadarCompleteWhen(phase === 'summary', markComplete)
 
   const oppTrim = opportunity.trim()
   const personaTrim = corePersona.trim()
@@ -133,7 +137,10 @@ export function AlignmentFilterWidget({ funnelId, config }: AlignmentFilterWidge
   }
 
   return (
-    <section className="my-8 rounded-2xl border border-[#e8dbd5] bg-[#fdf8f6] p-5 shadow-sm sm:p-6">
+    <section
+      className="my-8 rounded-2xl border border-[#e8dbd5] bg-[#fdf8f6] p-5 shadow-sm sm:p-6"
+      onPointerDownCapture={onFirstPointer}
+    >
       <p className="text-xs font-bold uppercase tracking-wide text-[#ef725c]">{config.microPlannerLabel}</p>
       <h3 className="mt-2 text-xl font-semibold text-[#152b50]">{config.title}</h3>
       <p className="mt-1 text-sm text-[#5b4d46]">{config.subtitle}</p>

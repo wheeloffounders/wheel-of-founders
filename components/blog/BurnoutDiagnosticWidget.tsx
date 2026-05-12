@@ -9,6 +9,7 @@ import type {
   InteractiveFunnelId,
 } from '@/lib/blog-interactive-funnels'
 import { unlockBlogTrialGiftInSession } from '@/lib/blog-trial-gift-session'
+import { useBlogWidgetRadar, useRadarCompleteWhen } from '@/components/blog/useBlogWidgetRadar'
 
 const ORDER: BurnoutArchetypeId[] = ['firefighter', 'winner', 'architect']
 
@@ -51,9 +52,9 @@ function dominantArchetype(
 
 export function BurnoutDiagnosticWidget({ funnelId, config }: BurnoutDiagnosticWidgetProps) {
   const pathname = usePathname()
-  const symptoms = config.diagnosticSymptoms
+  const symptoms = config.diagnosticSymptoms ?? []
   const archetypes = config.diagnosticArchetypes
-  if (!symptoms?.length || !archetypes) return null
+  const { onFirstPointer, markComplete } = useBlogWidgetRadar(funnelId)
 
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [claiming, setClaiming] = useState(false)
@@ -64,10 +65,17 @@ export function BurnoutDiagnosticWidget({ funnelId, config }: BurnoutDiagnosticW
   const totalSel = selected.size
   const dom = useMemo(() => dominantArchetype(scores), [scores])
   const showBlueprint = totalSel >= 3
-  const profile = dom.total > 0 ? archetypes[dom.id] : null
+  const profile = archetypes && dom.total > 0 ? archetypes[dom.id] : null
+
+  useRadarCompleteWhen(showBlueprint, markComplete)
 
   const pulseGlowColor = useMemo(
-    () => (dom.total > 0 ? archetypes[dom.id].ringColor : archetypes.firefighter.ringColor),
+    () =>
+      !archetypes
+        ? '#e8ded8'
+        : dom.total > 0
+          ? archetypes[dom.id].ringColor
+          : archetypes.firefighter.ringColor,
     [dom.total, dom.id, archetypes]
   )
 
@@ -85,6 +93,9 @@ export function BurnoutDiagnosticWidget({ funnelId, config }: BurnoutDiagnosticW
   }, [ringPulseActive])
 
   const ringGradient = useMemo(() => {
+    if (!archetypes) {
+      return 'conic-gradient(from 0deg, #e8ded8 0%, #f4ede9 100%)'
+    }
     const t = dom.total
     if (t === 0) {
       return 'conic-gradient(from 0deg, #e8ded8 0%, #f4ede9 100%)'
@@ -103,6 +114,10 @@ export function BurnoutDiagnosticWidget({ funnelId, config }: BurnoutDiagnosticW
     }
     return `conic-gradient(from -90deg, ${seg(f, cF)}, ${seg(w, cW)}, ${seg(a, cA)})`
   }, [scores, dom.total, archetypes])
+
+  if (!symptoms.length || !archetypes) return null
+
+  const { microPlannerLabel, title, subtitle, strategicSummary } = config
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -150,10 +165,11 @@ export function BurnoutDiagnosticWidget({ funnelId, config }: BurnoutDiagnosticW
     window.location.assign(`/auth/signup?${q.toString()}`)
   }
 
-  const { microPlannerLabel, title, subtitle, strategicSummary } = config
-
   return (
-    <section className="my-10 rounded-[1.75rem] border border-[#e6d8d2] bg-gradient-to-br from-[#fffdfb] via-[#fdf8f5] to-[#f7f0eb] p-6 shadow-sm sm:p-8">
+    <section
+      className="my-10 rounded-[1.75rem] border border-[#e6d8d2] bg-gradient-to-br from-[#fffdfb] via-[#fdf8f5] to-[#f7f0eb] p-6 shadow-sm sm:p-8"
+      onPointerDownCapture={onFirstPointer}
+    >
       <p className="text-xs font-bold uppercase tracking-wide text-[#ef725c]">{microPlannerLabel}</p>
       <h3 className="mt-2 text-xl font-semibold text-[#152b50]">{title}</h3>
       <p className="mt-2 text-sm leading-relaxed text-[#5b4d46]">{subtitle}</p>

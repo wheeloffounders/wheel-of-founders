@@ -8,6 +8,7 @@ import type {
   LegacyContinuityDependence,
 } from '@/lib/blog-interactive-funnels'
 import { unlockBlogTrialGiftInSession } from '@/lib/blog-trial-gift-session'
+import { useBlogWidgetRadar, useRadarCompleteWhen } from '@/components/blog/useBlogWidgetRadar'
 
 type Phase = 'value' | 'depend' | 'spectrum' | 'summary'
 
@@ -69,12 +70,15 @@ function blueprintCopy(
 
 export function ContinuityMapperWidget({ funnelId, config }: ContinuityMapperWidgetProps) {
   const pathname = usePathname()
+  const { onFirstPointer, markComplete } = useBlogWidgetRadar(funnelId)
   const [phase, setPhase] = useState<Phase>('value')
   const [rememberedValue, setRememberedValue] = useState('')
   const [dependence, setDependence] = useState<LegacyContinuityDependence | null>(null)
   const [spectrumToday, setSpectrumToday] = useState(35)
   const [spectrum12m, setSpectrum12m] = useState(55)
   const [claiming, setClaiming] = useState(false)
+
+  useRadarCompleteWhen(phase === 'summary', markComplete)
 
   const continuityScore = useMemo(
     () => computeContinuityScore(dependence, spectrumToday, spectrum12m),
@@ -137,7 +141,10 @@ export function ContinuityMapperWidget({ funnelId, config }: ContinuityMapperWid
   const canDepend = dependence !== null
 
   return (
-    <section className="my-10 rounded-[1.75rem] border border-[#e6d8d2] bg-gradient-to-br from-[#fffdfb] via-[#fdf8f5] to-[#f7f0eb] p-6 shadow-sm sm:p-8">
+    <section
+      className="my-10 rounded-[1.75rem] border border-[#e6d8d2] bg-gradient-to-br from-[#fffdfb] via-[#fdf8f5] to-[#f7f0eb] p-6 shadow-sm sm:p-8"
+      onPointerDownCapture={onFirstPointer}
+    >
       <p className="text-xs font-bold uppercase tracking-wide text-[#ef725c]">{microPlannerLabel}</p>
       <h3 className="mt-2 text-xl font-semibold text-[#152b50]">{title}</h3>
       <p className="mt-2 text-sm leading-relaxed text-[#5b4d46]">{subtitle}</p>

@@ -8,6 +8,7 @@ import type {
   InteractiveFunnelId,
 } from '@/lib/blog-interactive-funnels'
 import { unlockBlogTrialGiftInSession } from '@/lib/blog-trial-gift-session'
+import { useBlogWidgetRadar, useRadarCompleteWhen } from '@/components/blog/useBlogWidgetRadar'
 
 type Phase = 'trigger' | 'habit' | 'reward' | 'summary'
 
@@ -73,11 +74,14 @@ function LoopGraphic(props: { phase: Phase }) {
 
 export function LoopBuilderWidget({ funnelId, config }: LoopBuilderWidgetProps) {
   const pathname = usePathname()
+  const { onFirstPointer, markComplete } = useBlogWidgetRadar(funnelId)
   const [phase, setPhase] = useState<Phase>('trigger')
   const [trigger, setTrigger] = useState('')
   const [tinyHabit, setTinyHabit] = useState('')
   const [celebration, setCelebration] = useState<DisciplineCelebrationId | null>(null)
   const [claiming, setClaiming] = useState(false)
+
+  useRadarCompleteWhen(phase === 'summary', markComplete)
 
   const habitTooBig = tinyHabit.length > 50
   const canTrigger = trigger.trim().length > 0
@@ -135,7 +139,10 @@ export function LoopBuilderWidget({ funnelId, config }: LoopBuilderWidgetProps) 
   const { microPlannerLabel, title, subtitle, strategicSummary } = config
 
   return (
-    <section className="my-10 rounded-[1.75rem] border border-[#e6d8d2] bg-gradient-to-br from-[#fffdfb] via-[#fdf8f5] to-[#f7f0eb] p-6 shadow-sm sm:p-8">
+    <section
+      className="my-10 rounded-[1.75rem] border border-[#e6d8d2] bg-gradient-to-br from-[#fffdfb] via-[#fdf8f5] to-[#f7f0eb] p-6 shadow-sm sm:p-8"
+      onPointerDownCapture={onFirstPointer}
+    >
       <p className="text-xs font-bold uppercase tracking-wide text-[#ef725c]">{microPlannerLabel}</p>
       <h3 className="mt-2 text-xl font-semibold text-[#152b50]">{title}</h3>
       <p className="mt-2 text-sm leading-relaxed text-[#5b4d46]">{subtitle}</p>

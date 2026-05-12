@@ -9,6 +9,7 @@ import {
   TrendingDown,
   AlertTriangle,
   HeartPulse,
+  Gauge,
 } from 'lucide-react'
 import { format } from 'date-fns'
 export const dynamic = 'force-dynamic'
@@ -26,6 +27,7 @@ export default async function AdminDashboardPage() {
   const newToday = (todayStats as { new_users?: number } | null)?.new_users ?? null
 
   const links = [
+    { href: '/admin/radar', label: 'Founder Radar (funnels)', icon: Gauge },
     { href: '/admin/list', label: 'Search User', icon: List },
     { href: '/admin/journey-funnel', label: 'User Journey Funnel', icon: TrendingDown },
     { href: '/admin/errors', label: 'Code Scary – Error Logs', icon: AlertTriangle },

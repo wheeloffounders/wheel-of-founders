@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import type { BlogInteractiveFunnelConfig, InteractiveFunnelId, ReframerPattern } from '@/lib/blog-interactive-funnels'
 import { matchReframerPattern } from '@/lib/blog-interactive-funnels'
 import { unlockBlogTrialGiftInSession } from '@/lib/blog-trial-gift-session'
+import { useBlogWidgetRadar, useRadarCompleteWhen } from '@/components/blog/useBlogWidgetRadar'
 
 type GuiltReframerWidgetProps = {
   funnelId: InteractiveFunnelId
@@ -14,7 +15,7 @@ type GuiltReframerWidgetProps = {
 export function GuiltReframerWidget({ funnelId, config }: GuiltReframerWidgetProps) {
   const pathname = usePathname()
   const patterns = config.reframerPatterns
-  if (!patterns?.length) return null
+  const { onFirstPointer, markComplete } = useBlogWidgetRadar(funnelId)
 
   const labels = config.reframerLabels ?? {
     guilt: 'I feel guilty when…',
@@ -25,6 +26,10 @@ export function GuiltReframerWidget({ funnelId, config }: GuiltReframerWidgetPro
   const [belief, setBelief] = useState('')
   const [mirrorPattern, setMirrorPattern] = useState<ReframerPattern | undefined>(undefined)
   const [claiming, setClaiming] = useState(false)
+
+  useRadarCompleteWhen(Boolean(mirrorPattern), markComplete)
+
+  if (!patterns?.length) return null
 
   const seedText = useMemo(() => `${guilt}\n${belief}`.trim(), [guilt, belief])
 
@@ -88,7 +93,10 @@ export function GuiltReframerWidget({ funnelId, config }: GuiltReframerWidgetPro
         : 'Mrs. Deer is reflecting…'
 
   return (
-    <section className="my-10 rounded-[1.75rem] border border-[#ead9cf] bg-gradient-to-b from-[#fffdfb] to-[#fdf6f2] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] sm:p-8">
+    <section
+      className="my-10 rounded-[1.75rem] border border-[#ead9cf] bg-gradient-to-b from-[#fffdfb] to-[#fdf6f2] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] sm:p-8"
+      onPointerDownCapture={onFirstPointer}
+    >
       <p className="text-xs font-bold uppercase tracking-wide text-[#ef725c]">{microPlannerLabel}</p>
       <h3 className="mt-2 text-xl font-semibold text-[#152b50]">{title}</h3>
       <p className="mt-2 text-sm leading-relaxed text-[#5b4d46]">{subtitle}</p>

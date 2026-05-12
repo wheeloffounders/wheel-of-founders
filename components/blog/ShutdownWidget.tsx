@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import type { BlogInteractiveFunnelConfig, InteractiveFunnelId } from '@/lib/blog-interactive-funnels'
 import { unlockBlogTrialGiftInSession } from '@/lib/blog-trial-gift-session'
+import { useBlogWidgetRadar, useRadarCompleteWhen } from '@/components/blog/useBlogWidgetRadar'
 
 type Phase = 'itch' | 'calibrate' | 'define' | 'summary'
 
@@ -53,6 +54,7 @@ function LaptopLidGraphic({ stepsFilled }: { stepsFilled: number }) {
 
 export function ShutdownWidget({ funnelId, config }: ShutdownWidgetProps) {
   const pathname = usePathname()
+  const { onFirstPointer, markComplete } = useBlogWidgetRadar(funnelId)
   const [phase, setPhase] = useState<Phase>('itch')
   const [workItch, setWorkItch] = useState('')
   const [calibration, setCalibration] = useState<'revenue' | 'presence' | null>(null)
@@ -60,6 +62,8 @@ export function ShutdownWidget({ funnelId, config }: ShutdownWidgetProps) {
   const [presencePreset, setPresencePreset] = useState<string | null>(null)
   const [presenceCustom, setPresenceCustom] = useState('')
   const [claiming, setClaiming] = useState(false)
+
+  useRadarCompleteWhen(phase === 'summary', markComplete)
 
   const itchTrim = workItch.trim()
   const enoughTrim = finishedEnough.trim()
@@ -126,7 +130,10 @@ export function ShutdownWidget({ funnelId, config }: ShutdownWidgetProps) {
   }
 
   return (
-    <section className="my-8 rounded-2xl border border-[#e8dbd5] bg-[#fdf8f6] p-5 shadow-sm sm:p-6">
+    <section
+      className="my-8 rounded-2xl border border-[#e8dbd5] bg-[#fdf8f6] p-5 shadow-sm sm:p-6"
+      onPointerDownCapture={onFirstPointer}
+    >
       <p className="text-xs font-bold uppercase tracking-wide text-[#ef725c]">{config.microPlannerLabel}</p>
       <h3 className="mt-2 text-xl font-semibold text-[#152b50]">{config.title}</h3>
       <p className="mt-1 text-sm text-[#5b4d46]">{config.subtitle}</p>

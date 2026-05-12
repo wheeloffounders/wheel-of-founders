@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import type { BlogInteractiveFunnelConfig, InteractiveFunnelId } from '@/lib/blog-interactive-funnels'
 import { unlockBlogTrialGiftInSession } from '@/lib/blog-trial-gift-session'
+import { useBlogWidgetRadar, useRadarCompleteWhen } from '@/components/blog/useBlogWidgetRadar'
 
 type UiPhase =
   | 'step1_pick'
@@ -36,11 +37,14 @@ type NarrativeAuditWidgetProps = {
 
 export function NarrativeAuditWidget({ funnelId, config }: NarrativeAuditWidgetProps) {
   const pathname = usePathname()
+  const { onFirstPointer, markComplete } = useBlogWidgetRadar(funnelId)
   const [phase, setPhase] = useState<UiPhase>('step1_pick')
   const [switchFlipMins, setSwitchFlipMins] = useState(18 * 60 + 30) // 6:30 PM default
   const [decisionWeight, setDecisionWeight] = useState<DecisionWeight | null>(null)
   const [growthMode, setGrowthMode] = useState<GrowthMode | null>(null)
   const [claiming, setClaiming] = useState(false)
+
+  useRadarCompleteWhen(phase === 'summary', markComplete)
 
   const switchLabel = useMemo(() => formatTime12h(switchFlipMins), [switchFlipMins])
 
@@ -109,7 +113,10 @@ export function NarrativeAuditWidget({ funnelId, config }: NarrativeAuditWidgetP
   const { microPlannerLabel, title, subtitle, strategicSummary } = config
 
   return (
-    <section className="my-10 rounded-[1.75rem] border border-[#e6d8d2] bg-gradient-to-br from-[#fffdfb] via-[#fdf8f5] to-[#f7f0eb] p-6 shadow-sm sm:p-8">
+    <section
+      className="my-10 rounded-[1.75rem] border border-[#e6d8d2] bg-gradient-to-br from-[#fffdfb] via-[#fdf8f5] to-[#f7f0eb] p-6 shadow-sm sm:p-8"
+      onPointerDownCapture={onFirstPointer}
+    >
       <p className="text-xs font-bold uppercase tracking-wide text-[#ef725c]">{microPlannerLabel}</p>
       <h3 className="mt-2 text-xl font-semibold text-[#152b50]">{title}</h3>
       <p className="mt-2 text-sm leading-relaxed text-[#5b4d46]">{subtitle}</p>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import {
   type InteractiveFunnelId,
@@ -21,6 +21,7 @@ import { MeaningMapperWidget } from '@/components/blog/MeaningMapperWidget'
 import { VisionBridgeWidget } from '@/components/blog/VisionBridgeWidget'
 import { ShutdownWidget } from '@/components/blog/ShutdownWidget'
 import { unlockBlogTrialGiftInSession } from '@/lib/blog-trial-gift-session'
+import { trackRadarEvent, type RadarSource } from '@/lib/radar'
 
 type InteractiveTemplateProps = {
   /** Registry key; extends to new slugs in `lib/blog-interactive-funnels.ts`. */
@@ -53,6 +54,13 @@ export function InteractiveTemplate({
   subtitle: subtitleOverride,
 }: InteractiveTemplateProps) {
   const pathname = usePathname()
+  const radarSource: RadarSource = pathname?.startsWith('/blog') ? 'blog' : 'home'
+  const radarStartRef = useRef(false)
+  const markRadarStart = () => {
+    if (radarStartRef.current) return
+    radarStartRef.current = true
+    trackRadarEvent(funnelId, 'start', radarSource)
+  }
   const config = getBlogInteractiveFunnel(funnelId)
 
   const placeholders = placeholdersOverride ?? config?.placeholders ?? ['', '', '']
@@ -99,6 +107,7 @@ export function InteractiveTemplate({
     if (items.length === 0) return
     setClaiming(true)
     try {
+      trackRadarEvent(funnelId, 'complete', radarSource)
       sessionStorage.setItem(
         'pending_plan',
         JSON.stringify({
@@ -183,7 +192,10 @@ export function InteractiveTemplate({
   }
 
   return (
-    <section className="my-8 rounded-2xl border border-[#e8dbd5] bg-[#fdf8f6] p-5 shadow-sm sm:p-6">
+    <section
+      className="my-8 rounded-2xl border border-[#e8dbd5] bg-[#fdf8f6] p-5 shadow-sm sm:p-6"
+      onPointerDownCapture={markRadarStart}
+    >
       <p className="text-xs font-bold uppercase tracking-wide text-[#ef725c]">{microLabel}</p>
       <h3 className="mt-2 text-xl font-semibold text-[#152b50]">{title}</h3>
       <p className="mt-1 text-sm text-[#5b4d46]">{subtitle}</p>
@@ -193,6 +205,7 @@ export function InteractiveTemplate({
           <input
             key={idx}
             value={value}
+            onFocus={markRadarStart}
             onChange={(e) => handleInputChange(idx, e.target.value)}
             placeholder={placeholders[idx]}
             className="w-full rounded-lg border border-[#e6d8d2] bg-white px-3 py-2 text-sm text-[#1e1e1e] outline-none transition focus:border-[#ef725c] focus:ring-2 focus:ring-[#ef725c]/20"

@@ -4,6 +4,7 @@ import { useId, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import type { BlogInteractiveFunnelConfig, InteractiveFunnelId } from '@/lib/blog-interactive-funnels'
 import { unlockBlogTrialGiftInSession } from '@/lib/blog-trial-gift-session'
+import { useBlogWidgetRadar, useRadarCompleteWhen } from '@/components/blog/useBlogWidgetRadar'
 
 type Phase = 'win' | 'values' | 'experiment' | 'summary'
 
@@ -57,11 +58,14 @@ function MeaningCup({ fillPct }: { fillPct: number }) {
 export function MeaningMapperWidget({ funnelId, config }: MeaningMapperWidgetProps) {
   const suggestionListId = useId()
   const pathname = usePathname()
+  const { onFirstPointer, markComplete } = useBlogWidgetRadar(funnelId)
   const [phase, setPhase] = useState<Phase>('win')
   const [achievement, setAchievement] = useState('')
   const [selected, setSelected] = useState<ValueId[]>([])
   const [experiment, setExperiment] = useState('')
   const [claiming, setClaiming] = useState(false)
+
+  useRadarCompleteWhen(phase === 'summary', markComplete)
 
   const achTrim = achievement.trim()
   const expTrim = experiment.trim()
@@ -133,7 +137,10 @@ export function MeaningMapperWidget({ funnelId, config }: MeaningMapperWidgetPro
   }
 
   return (
-    <section className="my-8 rounded-2xl border border-[#e8dbd5] bg-[#fdf8f6] p-5 shadow-sm sm:p-6">
+    <section
+      className="my-8 rounded-2xl border border-[#e8dbd5] bg-[#fdf8f6] p-5 shadow-sm sm:p-6"
+      onPointerDownCapture={onFirstPointer}
+    >
       <p className="text-xs font-bold uppercase tracking-wide text-[#ef725c]">{config.microPlannerLabel}</p>
       <h3 className="mt-2 text-xl font-semibold text-[#152b50]">{config.title}</h3>
       <p className="mt-1 text-sm text-[#5b4d46]">{config.subtitle}</p>

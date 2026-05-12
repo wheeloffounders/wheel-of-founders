@@ -119,6 +119,11 @@ export type ProMorningCanvasProps = {
   stickySaveBar?: boolean
   /** First non-tutorial save: overlay stays until parent finishes AI + min delay (no dismiss). */
   saveOverlayMasterGate?: boolean
+  /**
+   * Full-screen “Mrs. Deer is reading…” save overlay. Off for normal `/morning` saves; enable for
+   * first-plan onboarding (`/morning?first=true` after `app/onboarding`) so sense-making stays intact.
+   */
+  showMrsDeerSaveProcessingOverlay?: boolean
   /** Decision Parser skip-pass: emphasize the commit control as the exit to the Dashboard. */
   prominentExitToDashboard?: boolean
   /** Optional context-based starter actions shown on empty task rows. */
@@ -288,6 +293,7 @@ export function ProMorningCanvas({
   streamlinedOnboarding = false,
   stickySaveBar = false,
   saveOverlayMasterGate = false,
+  showMrsDeerSaveProcessingOverlay = false,
   prominentExitToDashboard = false,
   suggestedTemplates = [],
 }: ProMorningCanvasProps) {
@@ -1833,7 +1839,7 @@ export function ProMorningCanvas({
   return (
     <>
       <MorningSaveProcessingOverlay
-        open={saving && !saveProcessingOverlayDismissed}
+        open={showMrsDeerSaveProcessingOverlay && saving && !saveProcessingOverlayDismissed}
         brainDumpPreview={morningBrainDumpText}
         coreObjectivePreview={decision.decision}
         masterGate={saveOverlayMasterGate}

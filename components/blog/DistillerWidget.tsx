@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import type { BlogInteractiveFunnelConfig, InteractiveFunnelId } from '@/lib/blog-interactive-funnels'
 import { unlockBlogTrialGiftInSession } from '@/lib/blog-trial-gift-session'
+import { useBlogWidgetRadar, useRadarCompleteWhen } from '@/components/blog/useBlogWidgetRadar'
 
 type Phase = 'dump' | 'king' | 'triage' | 'summary'
 
@@ -30,12 +31,15 @@ function useRowIds() {
 export function DistillerWidget({ funnelId, config }: DistillerWidgetProps) {
   const pathname = usePathname()
   const nextId = useRowIds()
+  const { onFirstPointer, markComplete } = useBlogWidgetRadar(funnelId)
   const [phase, setPhase] = useState<Phase>('dump')
   const [tasks, setTasks] = useState<TaskRow[]>([])
   const [draft, setDraft] = useState('')
   const [primaryId, setPrimaryId] = useState<string | null>(null)
   const [triageById, setTriageById] = useState<Record<string, TriageTag>>({})
   const [claiming, setClaiming] = useState(false)
+
+  useRadarCompleteWhen(phase === 'summary', markComplete)
 
   const entryList = useMemo(
     () => tasks.map((r) => ({ ...r, text: r.text.trim() })).filter((r) => r.text.length > 0),
@@ -141,7 +145,10 @@ export function DistillerWidget({ funnelId, config }: DistillerWidgetProps) {
   }
 
   return (
-    <section className="my-8 rounded-2xl border border-[#e8dbd5] bg-[#fdf8f6] p-5 shadow-sm sm:p-6">
+    <section
+      className="my-8 rounded-2xl border border-[#e8dbd5] bg-[#fdf8f6] p-5 shadow-sm sm:p-6"
+      onPointerDownCapture={onFirstPointer}
+    >
       <p className="text-xs font-bold uppercase tracking-wide text-[#ef725c]">{config.microPlannerLabel}</p>
       <h3 className="mt-2 text-xl font-semibold text-[#152b50]">{config.title}</h3>
       <p className="mt-1 text-sm text-[#5b4d46]">{config.subtitle}</p>

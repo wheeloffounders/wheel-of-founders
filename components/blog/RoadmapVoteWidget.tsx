@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { Brain, Moon, RefreshCw } from 'lucide-react'
 import type { BlogInteractiveFunnelConfig, InteractiveFunnelId } from '@/lib/blog-interactive-funnels'
 import { unlockBlogTrialGiftInSession } from '@/lib/blog-trial-gift-session'
+import { useBlogWidgetRadar, useRadarCompleteWhen } from '@/components/blog/useBlogWidgetRadar'
 
 const CARD_ICONS = [Moon, Brain, RefreshCw] as const
 
@@ -16,10 +17,14 @@ type RoadmapVoteWidgetProps = {
 export function RoadmapVoteWidget({ funnelId, config }: RoadmapVoteWidgetProps) {
   const pathname = usePathname()
   const roadmapVoteOptions = config.roadmapVoteOptions
-  if (!roadmapVoteOptions?.length) return null
-  const { handoffContext, microPlannerLabel, title, subtitle, strategicSummary } = config
+  const { onFirstPointer, markComplete } = useBlogWidgetRadar(funnelId)
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null)
   const [claiming, setClaiming] = useState(false)
+
+  useRadarCompleteWhen(Boolean(selectedOptionId), markComplete)
+
+  if (!roadmapVoteOptions?.length) return null
+  const { handoffContext, microPlannerLabel, title, subtitle, strategicSummary } = config
 
   const selected = roadmapVoteOptions.find((o) => o.id === selectedOptionId)
 
@@ -54,7 +59,10 @@ export function RoadmapVoteWidget({ funnelId, config }: RoadmapVoteWidgetProps) 
   }
 
   return (
-    <section className="my-8 rounded-2xl border border-[#e8dbd5] bg-[#fdf8f6] p-5 shadow-sm sm:p-6">
+    <section
+      className="my-8 rounded-2xl border border-[#e8dbd5] bg-[#fdf8f6] p-5 shadow-sm sm:p-6"
+      onPointerDownCapture={onFirstPointer}
+    >
       <p className="text-xs font-bold uppercase tracking-wide text-[#ef725c]">{microPlannerLabel}</p>
       <h3 className="mt-2 text-xl font-semibold text-[#152b50]">{title}</h3>
       <p className="mt-1 text-sm text-[#5b4d46]">{subtitle}</p>

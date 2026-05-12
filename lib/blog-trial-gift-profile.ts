@@ -4,6 +4,7 @@ import {
   clearBlogTrialGiftCookie,
   hasBlogTrialGiftCookie,
 } from '@/lib/blog-trial-gift-session'
+import { trackRadarConversionForGiftClaim } from '@/lib/radar'
 
 /** Short-lived: morning page reads once to show Pro trial welcome banner after OAuth. */
 export const WOF_PRO_TRIAL_WELCOME_COOKIE = 'wof_pro_trial_welcome'
@@ -50,6 +51,7 @@ export async function applyBlogTrialGiftFromAuthClient(supabase: SupabaseClient)
     return false
   }
 
+  trackRadarConversionForGiftClaim()
   clearBlogTrialGiftCookie()
   try {
     sessionStorage.setItem(WOF_PRO_TRIAL_ACTIVATED_WELCOME_SESSION_KEY, '1')

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Suspense, type ReactNode } from 'react'
+import { Analytics } from '@vercel/analytics/next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
@@ -110,6 +111,7 @@ export default async function RootLayout({
         <GlobalErrorHandlers />
         <DevModeBadge />
         <PostHogProvider />
+        <Analytics />
         <SupabaseAuthDebugListener />
         <PageViewTracker />
         <ServiceWorkerRegister />

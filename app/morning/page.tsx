@@ -3030,6 +3030,7 @@ export default function MorningPage() {
             streamlinedOnboarding
             stickySaveBar={streamlinedMorningOnboarding || blogEntryStickySave}
             saveOverlayMasterGate={isFirstTime && !isTutorial}
+            showMrsDeerSaveProcessingOverlay
             prominentExitToDashboard={decisionProminentExit}
             suggestedTemplates={showContextTemplates ? entryTemplates : []}
           />

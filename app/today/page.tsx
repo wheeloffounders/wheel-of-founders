@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { morningHandoffPathFromTodaySearchParams } from '@/lib/morning-handoff-from-today-query'
 
 type PageProps = {
   searchParams?: Promise<{ context?: string; parserPass?: string; from?: string; funnel?: string }>
@@ -7,14 +8,10 @@ type PageProps = {
 /** Canonical morning planning lives at `/morning`; `/today` is the product alias for today's plan. */
 export default async function Page({ searchParams }: PageProps) {
   const sp = searchParams ? await searchParams : {}
-  const qs = new URLSearchParams()
-  const context = sp.context?.trim()
-  if (context) qs.set('context', context)
-  else if (sp.parserPass === '1') qs.set('context', 'decision')
-  const from = sp.from?.trim()
-  if (from && from.startsWith('/blog')) qs.set('from', from)
-  const funnel = sp.funnel?.trim()
-  if (funnel) qs.set('funnel', funnel)
-  const q = qs.toString() ? `?${qs.toString()}` : ''
-  redirect(`/morning${q}`)
+  const inbound = new URLSearchParams()
+  if (sp.context?.trim()) inbound.set('context', sp.context.trim())
+  if (sp.parserPass === '1') inbound.set('parserPass', '1')
+  if (sp.from?.trim()) inbound.set('from', sp.from.trim())
+  if (sp.funnel?.trim()) inbound.set('funnel', sp.funnel.trim())
+  redirect(morningHandoffPathFromTodaySearchParams(inbound))
 }
