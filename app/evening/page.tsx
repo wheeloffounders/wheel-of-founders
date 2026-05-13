@@ -25,6 +25,9 @@ import {
   isMissingEveningIsDraftColumnError,
 } from '@/lib/supabase/evening-is-draft-column'
 import { getUserSession, refreshSessionForWrite, isRlsOrAuthPermissionError } from '@/lib/auth'
+import { getTrialStatus } from '@/lib/auth/trial-status'
+import type { ProEntitlementProfile } from '@/lib/auth/is-pro'
+import { isTrialExpirySimulationEnabled } from '@/lib/trial-simulation'
 import { calculateStreak, isStreakMilestone } from '@/lib/streak'
 import { AICoachPrompt } from '@/components/AICoachPrompt'
 import SpeechToTextInput from '@/components/SpeechToTextInput'
@@ -270,6 +273,7 @@ export default function EveningPage() {
   const isTutorial = searchParams?.get('tutorial') === 'true'
   // All hooks must be at the top level - no conditional calls
   const [userTier, setUserTier] = useState<string>('beta')
+  const [eveningProEntitled, setEveningProEntitled] = useState(true)
   const [aiCoachMessage, setAiCoachMessage] = useState<string | null>(null)
   const [aiCoachTrigger, setAiCoachTrigger] = useState<'evening_after' | null>(null)
   const [eveningInsightId, setEveningInsightId] = useState<string | null>(null)
@@ -684,6 +688,42 @@ export default function EveningPage() {
     }
     checkAuth()
   }, [router])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const session = await getUserSession()
+      if (!session?.user?.id || cancelled) return
+      const { data } = await supabase
+        .from('user_profiles')
+        .select(
+          'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at, subscription_override, is_beta_retired, is_beta'
+        )
+        .eq('id', session.user.id)
+        .maybeSingle()
+      if (cancelled) return
+      const row = data as ProEntitlementProfile | null
+      const trialUx = getTrialStatus(
+        {
+          tier: row?.tier ?? session.user.tier ?? null,
+          pro_features_enabled: row?.pro_features_enabled ?? session.user.pro_features_enabled,
+          subscription_tier: row?.subscription_tier ?? null,
+          trial_starts_at: row?.trial_starts_at ?? null,
+          trial_ends_at: row?.trial_ends_at ?? null,
+          stripe_subscription_status: row?.stripe_subscription_status ?? null,
+          created_at: row?.created_at ?? null,
+          subscription_override: row?.subscription_override ?? null,
+          is_beta_retired: row?.is_beta_retired ?? null,
+          is_beta: row?.is_beta ?? null,
+        },
+        { simulateExpired: isTrialExpirySimulationEnabled() }
+      )
+      setEveningProEntitled(trialUx.isPro)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     postEveningStreamStartedRef.current = false
@@ -2603,6 +2643,7 @@ export default function EveningPage() {
                 insightId={eveningInsightId ?? undefined}
                 eveningHotUnresolvedCount={eveningHotUnresolvedCount}
                 eveningCoachStreaming={isStreaming}
+                insightFreemiumLocked={!eveningProEntitled}
               />
             </>
           )}

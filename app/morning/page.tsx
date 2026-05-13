@@ -62,6 +62,7 @@ import { getEffectiveUserTier, type TierProfileInput } from '@/lib/auth/tier-log
 import { resolveProEntitlement } from '@/lib/auth/is-pro'
 import { getTrialStatus } from '@/lib/auth/trial-status'
 import { isTrialExpirySimulationEnabled } from '@/lib/trial-simulation'
+import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 import { ProMorningCanvas } from '@/components/morning/ProMorningCanvas'
 import type { DecisionStrategyOption } from '@/lib/morning/pro-morning-oracle'
 import {
@@ -70,6 +71,10 @@ import {
 } from '@/lib/morning/morning-plan-decision-json'
 import { getDaysWithEntries } from '@/lib/founder-dna/days-with-entries'
 import { isMorningInsightsUnlocked } from '@/lib/founder-dna/unlock-schedule-config'
+import {
+  FREEMIUM_MORNING_AFTER_INSIGHT_PLACEHOLDER,
+  FREEMIUM_MORNING_BEFORE_INSIGHT_PLACEHOLDER,
+} from '@/lib/morning/freemium-morning-insight-placeholder'
 import { morningTasksOrFilterForPlanDate, isTaskShowingAsMovedToTomorrow } from '@/lib/morning-tasks-plan-date-query'
 import { getUserDaysActiveCalendar, getUserTimezoneFromProfile } from '@/lib/timezone'
 import { FirstBadgeCelebration } from '@/components/founder-dna/FirstBadgeCelebration'
@@ -530,6 +535,72 @@ export default function MorningPage() {
     [tierAllowsPostMorningInsight, trialUx.status]
   )
 
+  /** Freemium: show morning “Gentle Architect” teaser immediately (no DB / journey wait). */
+  const showFreemiumMorningInsightTeaser = useMemo(
+    () => !trialUx.isPro && trialUx.status !== 'expired',
+    [trialUx.isPro, trialUx.status]
+  )
+
+  /** Freemium: post–Plan Review card once they have a saved plan (fetch is Pro-gated). */
+  const showFreemiumPostMorningInsightTeaser = useMemo(
+    () => !trialUx.isPro && trialUx.status !== 'expired',
+    [trialUx.isPro, trialUx.status]
+  )
+
+  const showPostMorningCoachSlot = useMemo(() => {
+    if (!hasPlan) return false
+    if (showFreemiumPostMorningInsightTeaser) return true
+    return (
+      showPostMorningInsightTier &&
+      Boolean(
+        postMorningInsight?.trim() ||
+          isStreamingPostMorning ||
+          streamingError ||
+          postMorningInsightFetchFailed
+      )
+    )
+  }, [
+    hasPlan,
+    showFreemiumPostMorningInsightTeaser,
+    showPostMorningInsightTier,
+    postMorningInsight,
+    isStreamingPostMorning,
+    streamingError,
+    postMorningInsightFetchFailed,
+  ])
+
+  const postMorningCoachMessage = useMemo(() => {
+    if (isStreamingPostMorning) return streamingInsight?.trim() || '…'
+    if (streamingError || postMorningInsightFetchFailed) {
+      return `[AI ERROR] ${streamingError || 'Mrs. Deer could not finish your note. Use Retry below.'}`
+    }
+    const trimmed = postMorningInsight?.trim()
+    if (trimmed) return trimmed
+    if (showFreemiumPostMorningInsightTeaser) return FREEMIUM_MORNING_AFTER_INSIGHT_PLACEHOLDER
+    return ''
+  }, [
+    isStreamingPostMorning,
+    streamingInsight,
+    streamingError,
+    postMorningInsightFetchFailed,
+    postMorningInsight,
+    showFreemiumPostMorningInsightTeaser,
+  ])
+
+  const showMorningBeforeCoach = useMemo(
+    () =>
+      !(trialUx.status === 'expired' && !isTutorial) &&
+      (Boolean(morningInsight?.trim()) || showFreemiumMorningInsightTeaser),
+    [trialUx.status, isTutorial, morningInsight, showFreemiumMorningInsightTeaser]
+  )
+
+  const morningBeforeCoachMessage = useMemo(() => {
+    const trimmed = morningInsight?.trim()
+    if (trimmed) return trimmed
+    if (showFreemiumMorningInsightTeaser) return FREEMIUM_MORNING_BEFORE_INSIGHT_PLACEHOLDER
+    return ''
+  }, [morningInsight, showFreemiumMorningInsightTeaser])
+
   /** Tutorial-only mood/energy when the check-in card is shown (non-streamlined). */
   const [tutorialCheckInMood, setTutorialCheckInMood] = useState<number | null>(3)
   const [tutorialCheckInEnergy, setTutorialCheckInEnergy] = useState<number | null>(3)
@@ -717,13 +788,23 @@ export default function MorningPage() {
     () =>
       proTrialActivatedWelcome ? (
         <div
-          className="mb-4 rounded-xl border border-[#152b50]/25 bg-[#152b50] p-4 text-sm text-white shadow-sm"
+          className="mb-4 rounded-xl border border-indigo-400/35 bg-gradient-to-br from-indigo-950 via-indigo-900 to-slate-950 p-4 text-sm text-white shadow-md dark:border-indigo-500/40"
           role="status"
         >
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-white/90">Pro trial</p>
-          <p className="mt-2 text-base font-semibold leading-snug">
-            Pro Trial Activated. Mrs. Deer is now analyzing your patterns.
-          </p>
+          <div className="flex gap-3">
+            <span
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-500/30 ring-1 ring-amber-200/40"
+              aria-hidden
+            >
+              <Lock className="h-5 w-5 text-amber-100" strokeWidth={2.25} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-[0.12em] text-amber-100/95">Pro trial</p>
+              <p className="mt-2 text-base font-semibold leading-snug text-white">
+                Pro Trial Activated. Mrs. Deer is now analyzing your patterns.
+              </p>
+            </div>
+          </div>
         </div>
       ) : null,
     [proTrialActivatedWelcome]
@@ -2131,9 +2212,15 @@ export default function MorningPage() {
       }
       if (cancelled) return
       setUserTier(session.user.tier || 'beta')
+
+      const bundle = await fetchUserProfileBundle()
+      if (cancelled) return
       setFreemiumSessionUser({
-        tier: session.user.tier,
-        pro_features_enabled: session.user.pro_features_enabled,
+        tier: bundle?.tier ?? session.user.tier,
+        pro_features_enabled: bundle?.pro_features_enabled ?? session.user.pro_features_enabled,
+        subscription_override: bundle?.subscription_override ?? null,
+        is_beta_retired: bundle?.is_beta_retired ?? null,
+        is_beta: bundle?.is_beta ?? null,
       })
 
       // Load user's goal for personalized action plans
@@ -2141,8 +2228,6 @@ export default function MorningPage() {
       if (cancelled) return
       setUserGoal(goal)
 
-      const bundle = await fetchUserProfileBundle()
-      if (cancelled) return
       setTierProfileRow(
         bundle
           ? {
@@ -2151,7 +2236,10 @@ export default function MorningPage() {
               trial_starts_at: bundle.trial_starts_at ?? null,
               trial_ends_at: bundle.trial_ends_at ?? null,
               stripe_subscription_status: bundle.stripe_subscription_status ?? null,
-              pro_features_enabled: session.user.pro_features_enabled,
+              pro_features_enabled: bundle.pro_features_enabled ?? session.user.pro_features_enabled,
+              subscription_override: bundle.subscription_override ?? null,
+              is_beta_retired: bundle.is_beta_retired ?? null,
+              is_beta: bundle.is_beta ?? null,
             }
           : null
       )
@@ -3026,7 +3114,8 @@ export default function MorningPage() {
             tutorialCheckInEnergy={tutorialCheckInEnergy}
             onTutorialCheckInMoodChange={setTutorialCheckInMood}
             onTutorialCheckInEnergyChange={setTutorialCheckInEnergy}
-            strategicProLocked={trialUx.status === 'expired'}
+            morningIntelligenceGated={!trialUx.isPro}
+            hideTaskRowMic={trialUx.isPro}
             streamlinedOnboarding
             stickySaveBar={streamlinedMorningOnboarding || blogEntryStickySave}
             saveOverlayMasterGate={isFirstTime && !isTutorial}
@@ -3202,18 +3291,21 @@ export default function MorningPage() {
         <Card className="mb-6 border-[#152b50]/20 bg-gradient-to-br from-white via-slate-50/80 to-slate-50 dark:border-sky-900/30 dark:from-gray-900 dark:via-gray-900/95 dark:to-gray-950">
           <CardContent className="pt-6 pb-6">
             <p className="text-sm leading-relaxed text-gray-800 dark:text-gray-100">
-              You&apos;ve completed your first week! To keep using my strategic alignment and emergency tools, let&apos;s
-              officially move you to a Pro plan.
+              You&apos;ve completed your first week! To keep using my strategic alignment and emergency tools,
+              let&apos;s officially move you to a Pro plan.
             </p>
-            <Link href="/pricing" className="mt-4 inline-block">
-              <Button variant="primary" type="button">
-                View Pro plans
-              </Button>
+            <Link href="/pricing" className={`mt-4 inline-flex ${viewProPlansCtaClassName}`}>
+              View Pro plans
             </Link>
           </CardContent>
         </Card>
-      ) : morningInsight ? (
-        <AICoachPrompt message={morningInsight} trigger="morning_before" onClose={() => {}} />
+      ) : showMorningBeforeCoach ? (
+        <AICoachPrompt
+          message={morningBeforeCoachMessage}
+          trigger="morning_before"
+          onClose={() => {}}
+          insightFreemiumLocked={!trialUx.isPro}
+        />
       ) : null}
 
       <div ref={setBrainDumpPortalHost} className="mb-4 w-full" />
@@ -3324,7 +3416,8 @@ export default function MorningPage() {
             tutorialCheckInEnergy={tutorialCheckInEnergy}
             onTutorialCheckInMoodChange={setTutorialCheckInMood}
             onTutorialCheckInEnergyChange={setTutorialCheckInEnergy}
-            strategicProLocked={trialUx.status === 'expired'}
+            morningIntelligenceGated={!trialUx.isPro}
+            hideTaskRowMic={trialUx.isPro}
             streamlinedOnboarding={streamlinedMorningOnboarding}
             stickySaveBar={streamlinedMorningOnboarding || blogEntryStickySave}
             prominentExitToDashboard={decisionProminentExit}
@@ -3340,15 +3433,13 @@ export default function MorningPage() {
       )}
 
       {/* Mrs. Deer AI Coach - Plan Review: post-morning insight at BOTTOM, after Power List and Decision Log */}
-      {hasPlan &&
-        showPostMorningInsightTier &&
-        (postMorningInsight ||
-          isStreamingPostMorning ||
-          streamingError ||
-          postMorningInsightFetchFailed) && (
+      {showPostMorningCoachSlot ? (
         <div data-tutorial="mrs-deer-insight" className="scroll-mt-4">
           <AICoachPrompt
-            key={postMorningInsightId ?? (isStreamingPostMorning ? 'streaming' : 'no-id')}
+            key={
+              postMorningInsightId ??
+              (isStreamingPostMorning ? 'streaming' : showFreemiumPostMorningInsightTeaser ? 'freemium-teaser' : 'no-id')
+            }
             topSlot={
               isStreamingPostMorning ? (
                 <div
@@ -3369,18 +3460,13 @@ export default function MorningPage() {
                 </div>
               ) : null
             }
-            message={
-              isStreamingPostMorning
-                ? streamingInsight?.trim() || '…'
-                : streamingError || postMorningInsightFetchFailed
-                  ? `[AI ERROR] ${streamingError || 'Mrs. Deer could not finish your note. Use Retry below.'}`
-                  : postMorningInsight!
-            }
+            message={postMorningCoachMessage}
             trigger="morning_after"
             onClose={() => {}}
             insightId={postMorningInsightId ?? undefined}
             auditStreaming={isStreamingPostMorning}
             toneAdjustLocked={toneCalibrationLockedMorning}
+            insightFreemiumLocked={!trialUx.isPro}
           />
           {!isStreamingPostMorning && (streamingError || postMorningInsightFetchFailed) ? (
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -3398,7 +3484,7 @@ export default function MorningPage() {
             </div>
           ) : null}
         </div>
-      )}
+      ) : null}
 
       <TemplateLibraryModal
         isOpen={showTemplates}

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import type { PartialMealMetrics } from '@/lib/analysis-engine'
+import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 
 type TrialPartialMealCardProps = {
   metrics: PartialMealMetrics | null
@@ -47,10 +48,7 @@ export function TrialPartialMealCard({ metrics, loading }: TrialPartialMealCardP
             You have a high execution-to-presence ratio, but your decision-to-action lag is increasing. Subscribe to
             see the specific 3 patterns causing this friction.
           </p>
-          <Link
-            href="/pricing"
-            className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-[#ef725c] px-4 py-3 text-center text-sm font-bold text-white transition hover:bg-[#e8654d] sm:w-auto"
-          >
+          <Link href="/pricing" className={`mt-5 inline-flex w-full sm:w-auto ${viewProPlansCtaClassName} px-5 py-3`}>
             Subscribe to unlock the Full Analysis &amp; Pattern Radar
           </Link>
         </>

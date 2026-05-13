@@ -7,6 +7,7 @@ import { getUserSession } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { format } from 'date-fns'
+import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 
 interface SubscriptionData {
   tier: string
@@ -247,10 +248,7 @@ export default function SubscriptionDisabledContent() {
             <p className="text-gray-700 dark:text-gray-300 mb-4">
               Unlock unlimited history, AI insights, and more with Pro or Pro+.
             </p>
-            <Link
-              href="/pricing"
-              className="inline-block px-6 py-3 bg-[#152b50] text-white rounded-lg font-semibold hover:bg-[#1a3565] transition"
-            >
+            <Link href="/pricing" className={`inline-block px-6 py-3 ${viewProPlansCtaClassName}`}>
               View Plans
             </Link>
           </div>

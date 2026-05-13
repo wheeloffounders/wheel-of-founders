@@ -37,7 +37,7 @@ function activeTrial(profile: ProEntitlementProfile | null | undefined, nowMs: n
 
 /**
  * Returns unified trial UX state. Pass `simulateExpired: true` (from dev localStorage) to preview Day-8 downgrade.
- * Hierarchy: sim expired → beta env → active trial → resolveProEntitlement → (no trial dates → trialing grace) → expired.
+ * Hierarchy: sim expired → subscription_override → beta env → active trial → resolveProEntitlement → …
  */
 export function getTrialStatus(
   profile: ProEntitlementProfile | null | undefined,
@@ -53,6 +53,30 @@ export function getTrialStatus(
       daysLeft: 0,
       isPro: false,
       badgeLabel: 'Pro trial ended — upgrade to continue',
+    }
+    trialDebugLog(out.status, beta, sim)
+    return out
+  }
+
+  const overrideRaw = String(profile?.subscription_override ?? 'none')
+    .trim()
+    .toLowerCase()
+  if (overrideRaw === 'free') {
+    const out: TrialStatusResult = {
+      status: 'expired',
+      daysLeft: 0,
+      isPro: false,
+      badgeLabel: 'Free (developer override)',
+    }
+    trialDebugLog(out.status, beta, sim)
+    return out
+  }
+  if (overrideRaw === 'pro') {
+    const out: TrialStatusResult = {
+      status: 'subscriber',
+      daysLeft: 0,
+      isPro: true,
+      badgeLabel: 'Pro (developer override)',
     }
     trialDebugLog(out.status, beta, sim)
     return out

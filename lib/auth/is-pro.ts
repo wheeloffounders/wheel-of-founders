@@ -13,6 +13,12 @@ export type ProEntitlementProfile = {
   created_at?: string | null
   /** Set when user activated the blog/home 7-day Pro trial gift. */
   is_pro_trial?: boolean | null
+  /** Developer / support: 'pro' | 'free' | 'none' (default). Checked before env beta and trial. */
+  subscription_override?: string | null
+  /** After one-time legacy migration, unlimited tier beta no longer applies. */
+  is_beta_retired?: boolean | null
+  /** Legacy flag cleared on beta retirement. */
+  is_beta?: boolean | null
 }
 
 export type ProEntitlementSource =
@@ -21,6 +27,8 @@ export type ProEntitlementSource =
   | 'subscription'
   | 'tier_pro'
   | 'legacy_hook'
+  | 'override_pro'
+  | 'override_free'
   | 'none'
 
 export type ProEntitlement = {
@@ -69,10 +77,14 @@ function isWithinLegacyProHookWindow(createdAtIso: string | null | undefined): b
 
 function tierImpliesPro(profile: ProEntitlementProfile | null | undefined): boolean {
   if (!profile) return false
-  const sub = String(profile.subscription_tier ?? '')
+  const tier = String(profile.tier ?? '')
     .trim()
     .toLowerCase()
-  const tier = String(profile.tier ?? '')
+  // Retired unlimited beta: do not unlock from legacy tier name alone.
+  if (tier === 'beta' && profile.is_beta_retired === true) {
+    return false
+  }
+  const sub = String(profile.subscription_tier ?? '')
     .trim()
     .toLowerCase()
   if (sub === 'pro') return true
@@ -89,7 +101,7 @@ export type ResolveProEntitlementOptions = {
 
 /**
  * Resolves whether the user should receive Pro product behavior.
- * Order: dev trial sim (expired) → public beta → active trial → Stripe → legacy tier / signup hook.
+ * Order: dev trial sim → subscription_override → public beta env → trial → Stripe → legacy tier / signup hook.
  */
 export function resolveProEntitlement(
   profile: ProEntitlementProfile | null | undefined,
@@ -102,6 +114,26 @@ export function resolveProEntitlement(
       source: 'none',
       trialDaysRemaining: null,
       navBadgeLabel: 'Pro trial ended — upgrade to continue',
+    }
+  }
+
+  const overrideRaw = String(profile?.subscription_override ?? 'none')
+    .trim()
+    .toLowerCase()
+  if (overrideRaw === 'pro') {
+    return {
+      isPro: true,
+      source: 'override_pro',
+      trialDaysRemaining: null,
+      navBadgeLabel: 'Pro (developer override)',
+    }
+  }
+  if (overrideRaw === 'free') {
+    return {
+      isPro: false,
+      source: 'override_free',
+      trialDaysRemaining: null,
+      navBadgeLabel: 'Free (developer override)',
     }
   }
 

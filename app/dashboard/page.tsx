@@ -3,7 +3,7 @@
 // Production Fix - Resolved Checklist Invisibility & SQL Syntax Errors - 2026-04-09 22:59 HKT
 // UI Feature - Active Emergency Checklist on Dashboard - 2026-04-09 20:24 HKT
 
-import { Suspense, useState, useEffect, useCallback } from 'react'
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getUserSession } from '@/lib/auth'
 import { CheckCircle, X, Moon } from 'lucide-react'
@@ -32,13 +32,14 @@ import { TourPopUp } from '@/components/TourPopUp'
 import { IndependentTour } from '@/components/IndependentTour'
 import Link from 'next/link'
 import { Sparkles } from 'lucide-react'
+import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 import { supabase } from '@/lib/supabase'
 import { useComprehensiveTour } from '@/lib/contexts/ComprehensiveTourContext'
 import { isTourEnabled } from '@/lib/feature-flags'
 import { useFounderJourney } from '@/lib/hooks/useFounderJourney'
 import { getEffectivePlanDate, getPlanDateString } from '@/lib/effective-plan-date'
 import { getUserTimezoneFromProfile } from '@/lib/timezone'
-import { getTrialStatus, isFirstDayExpired } from '@/lib/auth/trial-status'
+import { getTrialStatus, isFirstDayExpired, type TrialStatusResult } from '@/lib/auth/trial-status'
 import type { ProEntitlementProfile } from '@/lib/auth/is-pro'
 import { isTrialExpirySimulationEnabled } from '@/lib/trial-simulation'
 import { subDays } from 'date-fns'
@@ -48,6 +49,7 @@ import {
   ingestPendingDecisionParserIfNeeded,
   WOF_PENDING_DECISION_PARSER_KEY,
 } from '@/lib/pending-decision-parser-ingest'
+import { isDevProfileMasterSwitchEmail } from '@/lib/dev-profile-master-switch-emails'
 
 function DashboardContent() {
   const { syncData } = useDataSync()
@@ -68,12 +70,22 @@ function DashboardContent() {
   /** Founder-day date in user profile timezone (matches morning page + /api/tasks/today). */
   const [eveningPlanDate, setEveningPlanDate] = useState<string | null>(null)
   const [trialExpired, setTrialExpired] = useState(false)
+  const [trialUxSnapshot, setTrialUxSnapshot] = useState<TrialStatusResult | null>(null)
+  const [showDevAdminLinks, setShowDevAdminLinks] = useState(false)
   const [showTrialWrapup, setShowTrialWrapup] = useState(false)
   const [wrapupStats, setWrapupStats] = useState<TrialWrapupStats | null>(null)
   const [trialEndsForWrapup, setTrialEndsForWrapup] = useState<string | null>(null)
   const [dashboardUserId, setDashboardUserId] = useState<string | null>(null)
   const searchParams = useSearchParams()
   const router = useRouter()
+  const paywallCtaRef = useRef<HTMLAnchorElement>(null)
+
+  const scrollToPaywallUpgrade = useCallback(() => {
+    paywallCtaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [])
+
+  const intelligenceLocked = Boolean(trialUxSnapshot && !trialUxSnapshot.isPro)
+  const showFreemiumPaywallCard = intelligenceLocked
 
   useEffect(() => {
     if (searchParams?.get('tutorial') === 'start') {
@@ -106,7 +118,7 @@ function DashboardContent() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase DB types omit profile columns
     const { data: profileData } = await (supabase.from('user_profiles') as any)
       .select(
-        'onboarding_step, onboarding_completed_at, timezone, login_count, trial_starts_at, trial_ends_at, stripe_subscription_status, tier, pro_features_enabled, subscription_tier, created_at'
+        'onboarding_step, onboarding_completed_at, timezone, login_count, trial_starts_at, trial_ends_at, stripe_subscription_status, tier, pro_features_enabled, subscription_tier, created_at, subscription_override, is_beta_retired, is_beta'
       )
       .eq('id', session.user.id)
       .maybeSingle()
@@ -123,6 +135,9 @@ function DashboardContent() {
       pro_features_enabled?: boolean | null
       subscription_tier?: string | null
       created_at?: string | null
+      subscription_override?: string | null
+      is_beta_retired?: boolean | null
+      is_beta?: boolean | null
     } | null
 
     const trialProfile: ProEntitlementProfile = {
@@ -133,10 +148,15 @@ function DashboardContent() {
       trial_ends_at: profileRow?.trial_ends_at ?? null,
       stripe_subscription_status: profileRow?.stripe_subscription_status ?? null,
       created_at: profileRow?.created_at ?? null,
+      subscription_override: profileRow?.subscription_override ?? null,
+      is_beta_retired: profileRow?.is_beta_retired ?? null,
+      is_beta: profileRow?.is_beta ?? null,
     }
     const simExpired = isTrialExpirySimulationEnabled()
     const trialUx = getTrialStatus(trialProfile, { simulateExpired: simExpired })
     setTrialExpired(trialUx.status === 'expired')
+    setTrialUxSnapshot(trialUx)
+    setShowDevAdminLinks(isDevProfileMasterSwitchEmail(session.user.email ?? null))
     setDashboardUserId(session.user.id)
 
     const trialEndsKey =
@@ -146,6 +166,7 @@ function DashboardContent() {
           ? 'simulated'
           : null
     const wrapupEligible =
+      profileRow?.is_beta_retired === true &&
       trialUx.status === 'expired' &&
       isFirstDayExpired(trialProfile, { simulateExpired: simExpired }) &&
       Boolean(trialEndsKey) &&
@@ -352,7 +373,10 @@ function DashboardContent() {
           {isTourEnabled() && <IndependentTour />}
           <div className="space-y-4 lg:space-y-3">
             <div className="space-y-3">
-              <DashboardHeader tierLabel={userTier === 'beta' ? 'Beta' : userTier} />
+              <DashboardHeader
+                tierLabel={userTier === 'beta' ? 'Beta' : userTier}
+                showDevAdminLinks={showDevAdminLinks}
+              />
               <ActiveEmergencyChecklistDashboard
                 setShowRestRecover={setShowRestRecover}
                 refreshKey={emergencyStripRefresh}
@@ -366,7 +390,9 @@ function DashboardContent() {
                   onDismiss={() => setShowTrialWrapup(false)}
                 />
               ) : (
-                <TrialExpiryBanner visible={trialExpired} />
+                <TrialExpiryBanner
+                  visible={Boolean(trialUxSnapshot && !trialUxSnapshot.isPro && trialExpired)}
+                />
               )}
               {/** Mobile: CTA under greeting. Desktop: CTA beside intention + insight so it stays above the fold. */}
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-6">
@@ -418,31 +444,69 @@ function DashboardContent() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <TaskWidget />
-              <WhatsNewToday />
+              <WhatsNewToday intelligenceLocked={intelligenceLocked} />
             </div>
 
-            <ArchetypeTeaser />
+            <ArchetypeTeaser
+              intelligenceLocked={intelligenceLocked}
+              onScrollToPaywall={scrollToPaywallUpgrade}
+            />
           </div>
 
           <SocialProofFooter loginCount={loginCount} />
 
-          {userTier === 'free' && (
-            <div className="mt-8 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-[#1A202C] dark:to-[#1A202C] rounded-xl shadow-lg p-6 border-2 border-purple-300 dark:border-purple-500/60">
-              <div className="flex items-center gap-3 mb-4">
-                <Sparkles className="w-8 h-8 text-purple-600" />
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Unlock AI Coaching Moments</h2>
+          {showFreemiumPaywallCard && (
+            <div
+              id="dashboard-paywall-card"
+              className="relative mt-8 rounded-xl border-2 border-purple-300 bg-gradient-to-r from-purple-50 to-pink-50 p-6 shadow-lg dark:border-purple-500/60 dark:from-[#1A202C] dark:to-[#1A202C]"
+            >
+              <div className="mb-4 flex items-center gap-3">
+                <Sparkles className="h-8 w-8 shrink-0 text-purple-600" />
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">
+                  Unlock AI Coaching Moments
+                </h2>
               </div>
-              <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-4">Pro+ includes personalized coaching with Mrs. Deer, your AI companion&apos;s Gentle Architect framework:</p>
-              <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-6 space-y-2">
-                <li>Daily morning reflection (Gentle Architect)</li>
-                <li>Plan analysis after each morning</li>
-                <li>Evening reflection insights</li>
-                <li>Weekly pattern summaries</li>
-                <li>Monthly growth reviews</li>
+              <p className="mb-4 text-gray-700 dark:text-gray-300">
+                Pro+ includes personalized coaching with Mrs. Deer, your AI companion&apos;s Gentle Architect
+                framework:
+              </p>
+              <div className="max-md:sticky max-md:bottom-0 z-20 max-md:-mx-2 max-md:rounded-t-xl max-md:border-t max-md:border-purple-200/80 max-md:bg-gradient-to-t max-md:from-purple-50 max-md:via-purple-50/98 max-md:to-purple-50/80 max-md:px-2 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:pt-4 dark:max-md:border-purple-800/50 dark:max-md:from-[#1A202C] dark:max-md:via-[#1A202C]/98 dark:max-md:to-[#1A202C]/85">
+                <Link
+                  ref={paywallCtaRef}
+                  id="dashboard-pro-upgrade-cta"
+                  href="/pricing"
+                  className="block w-full"
+                >
+                  <button
+                    type="button"
+                    className={`w-full ${viewProPlansCtaClassName} px-6 py-3 text-center text-base font-semibold`}
+                  >
+                    Upgrade to Pro+ ($39/month)
+                  </button>
+                </Link>
+              </div>
+              <ul className="mb-2 mt-5 list-none space-y-2 text-gray-700 dark:text-gray-300">
+                {[
+                  'Daily morning reflection (Gentle Architect)',
+                  'Plan analysis after each morning',
+                  'Evening reflection insights',
+                  'Weekly pattern summaries',
+                  'Monthly growth reviews',
+                ].map((label) => (
+                  <li key={label}>
+                    <button
+                      type="button"
+                      onClick={scrollToPaywallUpgrade}
+                      className="w-full rounded-lg py-1.5 pl-6 text-left text-sm underline-offset-2 transition hover:bg-purple-100/60 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 dark:hover:bg-purple-950/40 dark:focus-visible:ring-offset-gray-900"
+                    >
+                      <span className="-ml-4 mr-2 select-none text-purple-600 dark:text-purple-400" aria-hidden>
+                        •
+                      </span>
+                      {label}
+                    </button>
+                  </li>
+                ))}
               </ul>
-              <Link href="/pricing">
-                <button className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:opacity-90 transition">Upgrade to Pro+ ($39/month)</button>
-              </Link>
             </div>
           )}
         </>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useFounderJourney } from '@/lib/hooks/useFounderJourney'
+import { FreemiumStandbyFrame } from '@/components/dashboard/FreemiumStandbyFrame'
 
 type ArchetypeApiShape = {
   status?: 'preview' | 'full'
@@ -10,7 +11,20 @@ type ArchetypeApiShape = {
   personalityProfile?: { growthEdges?: string[] }
 }
 
-export function ArchetypeTeaser() {
+type ArchetypeTeaserProps = {
+  /** Non‑Pro / trial ended: standby chrome, blurred growth edge, paywall CTA. */
+  intelligenceLocked?: boolean
+  onScrollToPaywall?: () => void
+}
+
+function scrollToDashboardPaywallFallback() {
+  document.getElementById('dashboard-paywall-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
+export function ArchetypeTeaser({
+  intelligenceLocked = false,
+  onScrollToPaywall,
+}: ArchetypeTeaserProps) {
   const { data, loading, error } = useFounderJourney()
   const archetype = data?.archetype
   const status = archetype?.status ?? 'locked'
@@ -42,7 +56,31 @@ export function ArchetypeTeaser() {
     [details]
   )
 
+  const goPaywall = () => {
+    if (onScrollToPaywall) onScrollToPaywall()
+    else scrollToDashboardPaywallFallback()
+  }
+
+  const growthEdgeBlur = intelligenceLocked ? (
+    <span className="inline-block blur-[6px] select-none" aria-hidden="true">
+      {growthEdge}
+    </span>
+  ) : (
+    growthEdge
+  )
+
+  const upgradeArchetypeCta = (
+    <button
+      type="button"
+      onClick={goPaywall}
+      className="mt-2 inline-block text-left text-sm font-medium text-[#ef725c] underline-offset-2 hover:underline"
+    >
+      Upgrade to Unlock Archetype
+    </button>
+  )
+
   return (
+    <FreemiumStandbyFrame active={intelligenceLocked}>
     <div className="border border-gray-200 dark:border-gray-700 border-l-4 border-l-[#ef725c] bg-white/60 dark:bg-gray-800/40 px-4 pb-4 pt-4">
       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
         🏷️ Archetype Teaser
@@ -56,24 +94,42 @@ export function ArchetypeTeaser() {
               <p className="text-base text-gray-900 dark:text-gray-100">
                 {icon} <span className="font-semibold">{label}</span>. {trait}
               </p>
-              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-                Your growth edge: {growthEdge}. Review your full profile for strategy-level next steps.
+              <p
+                className="text-sm text-gray-600 dark:text-gray-300 mt-1"
+                {...(intelligenceLocked
+                  ? { 'aria-label': 'Your growth edge is available after upgrading to Pro.' }
+                  : {})}
+              >
+                Your growth edge: {growthEdgeBlur}. Review your full profile for strategy-level next steps.
               </p>
-              <Link href="/founder-dna/archetype" className="text-sm text-[#ef725c] hover:underline inline-block mt-2">
-                Open full profile now →
-              </Link>
+              {intelligenceLocked ? (
+                upgradeArchetypeCta
+              ) : (
+                <Link href="/founder-dna/archetype" className="text-sm text-[#ef725c] hover:underline inline-block mt-2">
+                  Open full profile now →
+                </Link>
+              )}
             </>
           ) : status === 'preview' ? (
             <>
               <p className="text-base text-gray-900 dark:text-gray-100">
                 {icon} Emerging <span className="font-semibold">{label}</span>. {trait}
               </p>
-              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-                About {archetype?.daysUntilFull ?? 0} day(s) until full profile. Growth edge teaser: {growthEdge}.
+              <p
+                className="text-sm text-gray-600 dark:text-gray-300 mt-1"
+                {...(intelligenceLocked
+                  ? { 'aria-label': 'Growth edge teaser is available after upgrading to Pro.' }
+                  : {})}
+              >
+                About {archetype?.daysUntilFull ?? 0} day(s) until full profile. Growth edge teaser: {growthEdgeBlur}.
               </p>
-              <Link href="/founder-dna/archetype" className="text-sm text-[#ef725c] hover:underline inline-block mt-2">
-                See your emerging profile →
-              </Link>
+              {intelligenceLocked ? (
+                upgradeArchetypeCta
+              ) : (
+                <Link href="/founder-dna/archetype" className="text-sm text-[#ef725c] hover:underline inline-block mt-2">
+                  See your emerging profile →
+                </Link>
+              )}
             </>
           ) : (
             <>
@@ -91,6 +147,7 @@ export function ArchetypeTeaser() {
         </div>
       ) : null}
     </div>
+    </FreemiumStandbyFrame>
   )
 }
 

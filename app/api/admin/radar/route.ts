@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { format, subDays } from 'date-fns'
 import { getServerSession } from '@/lib/server-auth'
 import { isWhitelistAdminEmail } from '@/lib/admin-emails'
+import { deriveInboundTouchLabel } from '@/lib/radar-inbound-label'
 import { serverSupabase } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -81,6 +82,19 @@ async function countActiveProTrials(db: ReturnType<typeof serverSupabase>) {
   }
 }
 
+function inboundLabelFromSnapshot(snap: unknown): string {
+  if (!snap || typeof snap !== 'object' || Array.isArray(snap)) {
+    return '—'
+  }
+  const o = snap as Record<string, unknown>
+  const tl = typeof o.touch_label === 'string' ? o.touch_label.trim() : ''
+  if (tl.length > 0) return tl.slice(0, 128)
+  return deriveInboundTouchLabel({
+    utm_source: typeof o.utm_source === 'string' ? o.utm_source : '',
+    referrer: typeof o.referrer === 'string' ? o.referrer : '',
+  })
+}
+
 function compactErr(err: unknown): { message: string; code?: string } | null {
   if (err == null) return null
   if (typeof err === 'string') return { message: err }
@@ -128,17 +142,25 @@ export async function GET() {
     const sinceIso = since.toISOString()
     const todayStart = `${format(new Date(), 'yyyy-MM-dd')}T00:00:00.000Z`
 
-    const [trialsResult, signupsRes, funnelRes] = await Promise.all([
+    const [trialsResult, signupsRes, funnelRes, recentConvRes] = await Promise.all([
       countActiveProTrials(db),
       db
         .from('user_profiles')
         .select('id', { count: 'exact', head: true })
         .gte('created_at', todayStart),
       db.from('funnel_analytics').select('funnel_id, event_type').gte('created_at', sinceIso),
+      db
+        .from('funnel_analytics')
+        .select('funnel_id, created_at, source, visitor_id, inbound_snapshot')
+        .eq('event_type', 'conversion')
+        .gte('created_at', sinceIso)
+        .order('created_at', { ascending: false })
+        .limit(50),
     ])
 
     const signupErr = signupsRes.error
     const funnelErr = funnelRes.error
+    const recentConvErr = recentConvRes.error
 
     if (trialsResult.count === null) {
       logRadarQueryError('signups_today count', signupErr, {
@@ -148,6 +170,10 @@ export async function GET() {
       logRadarQueryError('funnel_analytics select', funnelErr, {
         httpStatus: funnelRes.status,
         httpStatusText: funnelRes.statusText,
+      })
+      logRadarQueryError('funnel_analytics recent conversions', recentConvErr, {
+        httpStatus: recentConvRes.status,
+        httpStatusText: recentConvRes.statusText,
       })
 
       const isLocalDev = process.env.NODE_ENV === 'development'
@@ -164,6 +190,7 @@ export async function GET() {
                   active_pro_trials_fallback: compactErr(trialsResult.fallbackError),
                   signups_today: compactErr(signupErr),
                   funnel_events: compactErr(funnelErr),
+                  recent_conversions: compactErr(recentConvErr),
                 },
               }
             : {}),
@@ -172,7 +199,7 @@ export async function GET() {
       )
     }
 
-    if (signupErr || funnelErr) {
+    if (signupErr || funnelErr || recentConvErr) {
       logRadarQueryError('signups_today count', signupErr, {
         httpStatus: signupsRes.status,
         httpStatusText: signupsRes.statusText,
@@ -181,19 +208,24 @@ export async function GET() {
         httpStatus: funnelRes.status,
         httpStatusText: funnelRes.statusText,
       })
+      logRadarQueryError('funnel_analytics recent conversions', recentConvErr, {
+        httpStatus: recentConvRes.status,
+        httpStatusText: recentConvRes.statusText,
+      })
 
       const isLocalDev = process.env.NODE_ENV === 'development'
       return NextResponse.json(
         {
           error: 'Query failed',
           hint: isLocalDev
-            ? 'Check terminal for [admin/radar] logs. Typical fixes: run migration 146_funnel_analytics.sql, confirm SUPABASE_SERVICE_ROLE_KEY on this environment.'
+            ? 'Check terminal for [admin/radar] logs. Typical fixes: run migrations 146 and 147 (inbound_snapshot), confirm SUPABASE_SERVICE_ROLE_KEY on this environment.'
             : 'Check server logs for [admin/radar] entries.',
           ...(isLocalDev
             ? {
                 queries: {
                   signups_today: compactErr(signupErr),
                   funnel_events: compactErr(funnelErr),
+                  recent_conversions: compactErr(recentConvErr),
                 },
               }
             : {}),
@@ -205,6 +237,22 @@ export async function GET() {
     const activeTrials = trialsResult.count
     const signupsToday = signupsRes.count
     const funnelRows = funnelRes.data
+
+    type RecentConvRow = {
+      funnel_id: string
+      created_at: string
+      source: string
+      visitor_id: string
+      inbound_snapshot: unknown
+    }
+    const recentRows = (recentConvRes.data ?? []) as RecentConvRow[]
+    const recent_conversions = recentRows.map((r) => ({
+      funnel_id: r.funnel_id,
+      created_at: r.created_at,
+      surface: r.source,
+      visitor_id: r.visitor_id,
+      inbound_source: inboundLabelFromSnapshot(r.inbound_snapshot),
+    }))
 
     const rows = (funnelRows ?? []) as FunnelRow[]
     let starts = 0
@@ -253,6 +301,7 @@ export async function GET() {
       funnel_starts_30d: starts,
       funnel_completes_30d: completes,
       leaderboard,
+      recent_conversions,
     })
   } catch (handlerErr) {
     console.error('[admin/radar] unexpected handler failure (summary)', handlerErr)

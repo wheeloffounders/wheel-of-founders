@@ -13,6 +13,10 @@ import SpeechToTextInput from '@/components/SpeechToTextInput'
 import { trackEvent } from '@/lib/analytics'
 import Link from 'next/link'
 import { isDevelopment, isPreview } from '@/lib/env'
+import { isDevProfileMasterSwitchEmail } from '@/lib/dev-profile-master-switch-emails'
+import { invalidateUserProfileBundle } from '@/lib/user-profile-bundle-cache'
+
+type SubscriptionOverrideValue = 'none' | 'pro' | 'free'
 
 const HOBBY_OPTIONS = [
   { value: 'sports_fitness', label: 'Sports / fitness', emoji: '🏃' },
@@ -84,6 +88,9 @@ export default function ProfilePage() {
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [devResetLoading, setDevResetLoading] = useState<'idle' | 'onboarding' | 'full'>('idle')
 
+  const [subscriptionOverride, setSubscriptionOverride] = useState<SubscriptionOverrideValue>('none')
+  const [overrideBusy, setOverrideBusy] = useState(false)
+
   // Determine if dev tools should be visible (dev, preview, or ?dev=true)
   let shouldShowDevTools = isDevelopment || isPreview
   if (typeof window !== 'undefined') {
@@ -94,12 +101,6 @@ export default function ProfilePage() {
     }
   }
 
-  if (typeof window !== 'undefined') {
-    // Temporary debug log
-    // eslint-disable-next-line no-console
-    console.log('[Profile Debug] isDevelopment:', isDevelopment, 'isPreview:', isPreview, 'shouldShowDevTools:', shouldShowDevTools)
-  }
-  
   // Profile data
   const [name, setName] = useState('')
   const [preferredName, setPreferredName] = useState('')
@@ -125,6 +126,9 @@ export default function ProfilePage() {
   const [profileInsight, setProfileInsight] = useState<string | null>(null)
   const [generatingInsight, setGeneratingInsight] = useState(false)
   const [session, setSession] = useState<Awaited<ReturnType<typeof getUserSession>> | null>(null)
+
+  const masterSwitchEligible =
+    Boolean(session?.user?.email) && isDevProfileMasterSwitchEmail(session?.user?.email)
 
   useEffect(() => {
     return () => {
@@ -182,6 +186,12 @@ export default function ProfilePage() {
           setFounderPersonalityOther((data.founder_personality_other as string) || '')
           setEmailDigest((data.email_digest as boolean) ?? true)
           setNotificationFrequency((data.notification_frequency as string) || 'daily')
+          {
+            const ov = String((data as { subscription_override?: string }).subscription_override ?? 'none')
+              .trim()
+              .toLowerCase()
+            setSubscriptionOverride(ov === 'pro' || ov === 'free' ? (ov as SubscriptionOverrideValue) : 'none')
+          }
         }
 
         // Load current goal from user_profiles or user_goals
@@ -299,6 +309,7 @@ export default function ProfilePage() {
             notification_frequency: notificationFrequency,
             profile_completed_at: completedCount >= 6 ? new Date().toISOString() : null,
             updated_at: new Date().toISOString(),
+            subscription_override: subscriptionOverride,
           },
           { onConflict: 'id' }
         )
@@ -359,6 +370,45 @@ export default function ProfilePage() {
       })
     } finally {
       setSaving(false)
+    }
+  }
+
+  const applySubscriptionOverride = async (value: SubscriptionOverrideValue) => {
+    if (!masterSwitchEligible || overrideBusy) return
+    setOverrideBusy(true)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/user/subscription-override', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ value }),
+      })
+      const j = (await res.json().catch(() => ({}))) as { error?: string }
+      if (!res.ok) {
+        setMessage({
+          type: 'error',
+          text: typeof j.error === 'string' ? j.error : 'Failed to update subscription override',
+        })
+        return
+      }
+      setSubscriptionOverride(value)
+      setMessage({
+        type: 'success',
+        text:
+          value === 'none'
+            ? 'Using standard trial and subscription rules.'
+            : `Developer override: ${value === 'pro' ? 'always Pro' : 'always Free (paywalled)'}.`,
+      })
+      setTimeout(() => setMessage(null), 4000)
+      if (typeof window !== 'undefined') {
+        invalidateUserProfileBundle()
+        window.dispatchEvent(new Event('data-sync-request'))
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Network error while updating override.' })
+    } finally {
+      setOverrideBusy(false)
     }
   }
 
@@ -998,6 +1048,40 @@ export default function ProfilePage() {
           </button>
         </div>
       )}
+
+      {masterSwitchEligible ? (
+        <div className="mb-6 rounded-lg border border-zinc-600 bg-zinc-900 p-4 text-zinc-100 shadow-inner">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">Developer settings</h3>
+          <p className="mt-1 text-xs text-zinc-400">
+            Master switch for this account only. Pro = always unlocked; Freemium = always paywalled; Standard = normal
+            trial and Stripe rules.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(
+              [
+                { value: 'pro' as const, label: 'Pro mode' },
+                { value: 'free' as const, label: 'Freemium mode' },
+                { value: 'none' as const, label: 'Standard / timer' },
+              ] as const
+            ).map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                disabled={overrideBusy}
+                onClick={() => void applySubscriptionOverride(value)}
+                className={`rounded-md border px-3 py-2 text-xs font-medium transition ${
+                  subscriptionOverride === value
+                    ? 'border-[#ef725c] bg-[#ef725c]/20 text-white'
+                    : 'border-zinc-600 bg-zinc-800/80 text-zinc-200 hover:border-zinc-500'
+                } disabled:cursor-not-allowed disabled:opacity-50`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {overrideBusy ? <p className="mt-2 text-xs text-zinc-500">Updating…</p> : null}
+        </div>
+      ) : null}
 
       {shouldShowDevTools && (
         <div className="mt-4 p-4 border-2 border-red-300 rounded-lg bg-red-50">

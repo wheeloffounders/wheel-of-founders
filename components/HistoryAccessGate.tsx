@@ -1,9 +1,10 @@
 'use client'
 
-import { Lock, Sparkles } from 'lucide-react'
+import { Lock } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { format, subDays } from 'date-fns'
 import { getFeatureAccess, UserProfile } from '@/lib/features'
+import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 
 interface HistoryAccessGateProps {
   user: UserProfile | null
@@ -44,7 +45,7 @@ export function HistoryAccessGate({ user, children, date }: HistoryAccessGatePro
             </p>
             <button
               onClick={() => router.push('/pricing')}
-              className="w-full px-6 py-3 bg-gradient-to-r from-[#ef725c] to-[#152b50] text-white rounded-lg font-semibold hover:opacity-90 transition shadow-lg"
+              className={`w-full px-6 py-3 ${viewProPlansCtaClassName} text-base font-semibold shadow-lg`}
             >
               Upgrade to Pro ($19/month)
             </button>

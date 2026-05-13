@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, type ReactNode } from 'react'
+import Link from 'next/link'
 import { Sparkles, WifiOff } from 'lucide-react'
 import { MarkdownText } from './MarkdownText'
 import { MrsDeerMessageBubble } from './MrsDeerMessageBubble'
@@ -13,6 +14,7 @@ import {
   emphasizeTomorrowDebtInGoodnight,
   splitEveningCoachMessage,
 } from '@/lib/evening/evening-coach-message'
+import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 import { NextStepPrompt } from './NextStepPrompt'
 import { InsightFeedback } from './InsightFeedback'
 import { CalibrationRow } from './CalibrationRow'
@@ -33,6 +35,8 @@ interface AICoachPromptProps {
   eveningHotUnresolvedCount?: number
   /** While Mrs. Deer is still streaming, keep one block (split goodnight after stream ends). */
   eveningCoachStreaming?: boolean
+  /** Freemium: blur AI body and show upgrade CTA (morning / post-morning / evening insights). */
+  insightFreemiumLocked?: boolean
 }
 
 const CONTEXT_LABELS: Record<AICoachPromptProps['trigger'], string> = {
@@ -69,6 +73,7 @@ export function AICoachPrompt({
   toneAdjustLocked = false,
   eveningHotUnresolvedCount = 0,
   eveningCoachStreaming = false,
+  insightFreemiumLocked = false,
 }: AICoachPromptProps) {
   const [isOnline, setIsOnline] = useState(true)
   useEffect(() => {
@@ -100,6 +105,46 @@ export function AICoachPrompt({
       ? splitEveningCoachMessage(rawFiltered)
       : { body: rawFiltered, goodnight: null as string | null }
 
+  const shouldBlurInsightBody =
+    insightFreemiumLocked &&
+    !auditStreaming &&
+    !eveningCoachStreaming &&
+    (trigger === 'morning_before' || trigger === 'morning_after' || trigger === 'evening_after')
+
+  const markdownBlock =
+    trigger === 'evening_after' && eveningSplit.goodnight ? (
+      <>
+        <MarkdownText className="text-gray-900 dark:text-gray-100 leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0 [&_p]:leading-relaxed">
+          {eveningSplit.body}
+        </MarkdownText>
+        <MarkdownText className="italic text-gray-600 dark:text-gray-400 leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0 [&_p]:leading-relaxed [&_strong]:font-semibold [&_strong]:text-gray-800 dark:[&_strong]:text-gray-200">
+          {emphasizeTomorrowDebtInGoodnight(eveningSplit.goodnight, eveningHotUnresolvedCount)}
+        </MarkdownText>
+      </>
+    ) : (
+      <MarkdownText className="text-gray-900 dark:text-gray-100 leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0 [&_p]:leading-relaxed">
+        {rawFiltered}
+      </MarkdownText>
+    )
+
+  const insightLockedBody = shouldBlurInsightBody ? (
+      <div className="relative min-h-[8rem]">
+        <div className="pointer-events-none select-none opacity-40 blur-[8px]" aria-hidden>
+          {markdownBlock}
+        </div>
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg border border-indigo-400/25 bg-gradient-to-br from-indigo-950/95 via-indigo-900/92 to-slate-950/95 px-4 py-5 text-center shadow-inner backdrop-blur-[2px] dark:border-indigo-500/30">
+          <p className="max-w-sm text-sm font-semibold leading-snug text-white">
+            Mrs. Deer has a strategic insight for you. Upgrade to Pro to unlock.
+          </p>
+          <Link href="/pricing" className={viewProPlansCtaClassName}>
+            View Pro plans
+          </Link>
+        </div>
+      </div>
+    ) : (
+      markdownBlock
+    )
+
   const body = (
     <div className="space-y-3">
       {topSlot ? <div className="pb-1">{topSlot}</div> : null}
@@ -109,20 +154,7 @@ export function AICoachPrompt({
           {CONTEXT_LABELS[trigger]}
         </span>
       </div>
-      {trigger === 'evening_after' && eveningSplit.goodnight ? (
-        <>
-          <MarkdownText className="text-gray-900 dark:text-gray-100 leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0 [&_p]:leading-relaxed">
-            {eveningSplit.body}
-          </MarkdownText>
-          <MarkdownText className="italic text-gray-600 dark:text-gray-400 leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0 [&_p]:leading-relaxed [&_strong]:font-semibold [&_strong]:text-gray-800 dark:[&_strong]:text-gray-200">
-            {emphasizeTomorrowDebtInGoodnight(eveningSplit.goodnight, eveningHotUnresolvedCount)}
-          </MarkdownText>
-        </>
-      ) : (
-        <MarkdownText className="text-gray-900 dark:text-gray-100 leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0 [&_p]:leading-relaxed">
-          {rawFiltered}
-        </MarkdownText>
-      )}
+      {insightLockedBody}
     </div>
   )
 
@@ -130,7 +162,8 @@ export function AICoachPrompt({
     (trigger === 'morning_after' || trigger === 'emergency') &&
     insightId &&
     insightTypeForFeedback &&
-    !auditStreaming ? (
+    !auditStreaming &&
+    !insightFreemiumLocked ? (
       <CalibrationRow
         insightId={insightId}
         insightType={insightTypeForFeedback}

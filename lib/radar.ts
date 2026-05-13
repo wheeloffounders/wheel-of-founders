@@ -7,9 +7,20 @@ export type RadarEventType = 'start' | 'complete' | 'conversion'
 export type RadarSource = 'home' | 'blog'
 
 const VISITOR_COOKIE = 'wof_radar_visitor'
+const INBOUND_COOKIE = 'wof_inbound_ctx'
 const VISITOR_MAX_AGE_SEC = 60 * 60 * 24 * 400
 export const WOF_RADAR_LAST_FUNNEL_KEY = 'wof_radar_last_funnel_id'
 const WOF_RADAR_LAST_SOURCE_KEY = 'wof_radar_last_source'
+
+/** First-touch marketing context (cookie); stable for the visitor lifetime. */
+export type RadarInboundSnapshot = {
+  referrer: string
+  utm_source: string
+  utm_medium: string
+  utm_campaign: string
+  first_landing_page: string
+  captured_at: string
+}
 
 function randomUuid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -22,10 +33,84 @@ function randomUuid(): string {
   })
 }
 
+function readCookieValue(name: string): string | null {
+  if (typeof document === 'undefined') return null
+  const parts = document.cookie.split(';')
+  for (const part of parts) {
+    const [k, ...rest] = part.trim().split('=')
+    if (k === name) return rest.join('=').trim()
+  }
+  return null
+}
+
+function readInboundSnapshotFromCookie(): RadarInboundSnapshot | null {
+  const raw = readCookieValue(INBOUND_COOKIE)
+  if (!raw) return null
+  try {
+    const decoded = decodeURIComponent(raw)
+    const j = JSON.parse(decoded) as Partial<RadarInboundSnapshot>
+    if (!j || typeof j !== 'object') return null
+    return {
+      referrer: typeof j.referrer === 'string' ? j.referrer : '',
+      utm_source: typeof j.utm_source === 'string' ? j.utm_source : '',
+      utm_medium: typeof j.utm_medium === 'string' ? j.utm_medium : '',
+      utm_campaign: typeof j.utm_campaign === 'string' ? j.utm_campaign : '',
+      first_landing_page: typeof j.first_landing_page === 'string' ? j.first_landing_page : '',
+      captured_at: typeof j.captured_at === 'string' ? j.captured_at : '',
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Create first-touch cookie once: external referrer, UTMs, landing path. */
+export function ensureInboundContextCookie(): void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  try {
+    if (readInboundSnapshotFromCookie()) return
+
+    const params = new URLSearchParams(window.location.search)
+    const utm_source = (params.get('utm_source') ?? '').trim().slice(0, 200)
+    const utm_medium = (params.get('utm_medium') ?? '').trim().slice(0, 200)
+    const utm_campaign = (params.get('utm_campaign') ?? '').trim().slice(0, 200)
+
+    let referrer = ''
+    try {
+      const ref = document.referrer
+      if (ref) {
+        const r = new URL(ref)
+        if (r.hostname !== window.location.hostname) {
+          referrer = ref.slice(0, 500)
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    const first_landing_page = `${window.location.pathname}${window.location.search}`.slice(0, 2000)
+    const snapshot: RadarInboundSnapshot = {
+      referrer,
+      utm_source,
+      utm_medium,
+      utm_campaign,
+      first_landing_page,
+      captured_at: new Date().toISOString(),
+    }
+
+    const payload = encodeURIComponent(JSON.stringify(snapshot))
+    if (payload.length > 3800) return
+    document.cookie = `${INBOUND_COOKIE}=${payload}; Path=/; Max-Age=${VISITOR_MAX_AGE_SEC}; SameSite=Lax`
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Persistent anonymous id (cookie) for stitching pre-signup → conversion. */
 export function getOrCreateRadarVisitorId(): string | null {
   if (typeof document === 'undefined') return null
   try {
+    ensureInboundContextCookie()
+
     const parts = document.cookie.split(';')
     for (const part of parts) {
       const [k, ...rest] = part.trim().split('=')
@@ -92,15 +177,32 @@ export function trackRadarEvent(funnelId: string, eventType: RadarEventType, sou
       const visitorId = getOrCreateRadarVisitorId()
       if (!visitorId) return
       if (eventType === 'start') rememberRadarFunnelContext(id, source)
+
+      const attachInbound = eventType === 'start' || eventType === 'conversion'
+      const inbound = attachInbound ? readInboundSnapshotFromCookie() : null
+
+      const body: Record<string, unknown> = {
+        funnel_id: id,
+        event_type: eventType,
+        source,
+        visitor_id: visitorId,
+      }
+
+      if (inbound) {
+        body.inbound_snapshot = {
+          referrer: inbound.referrer,
+          utm_source: inbound.utm_source,
+          utm_medium: inbound.utm_medium,
+          utm_campaign: inbound.utm_campaign,
+          first_landing_page: inbound.first_landing_page,
+          captured_at: inbound.captured_at,
+        }
+      }
+
       await fetch('/api/radar/track', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          funnel_id: id,
-          event_type: eventType,
-          source,
-          visitor_id: visitorId,
-        }),
+        body: JSON.stringify(body),
       })
     } catch {
       /* silent */

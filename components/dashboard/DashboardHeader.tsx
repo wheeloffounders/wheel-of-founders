@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { isDevelopment, showDebugTools } from '@/lib/env'
+import { showDebugTools } from '@/lib/env'
 
 type DashboardHeaderProps = {
   tierLabel?: string
+  /** When true, render Admin / Test simulate (master allowlist only — never CSS-hidden). */
+  showDevAdminLinks?: boolean
 }
 
 function getTimeGreeting(): string {
@@ -16,7 +18,7 @@ function getTimeGreeting(): string {
   return 'Good evening'
 }
 
-export function DashboardHeader({ tierLabel }: DashboardHeaderProps) {
+export function DashboardHeader({ tierLabel, showDevAdminLinks }: DashboardHeaderProps) {
   const [name, setName] = useState('Founder')
   const [greeting, setGreeting] = useState(getTimeGreeting())
 
@@ -47,7 +49,7 @@ export function DashboardHeader({ tierLabel }: DashboardHeaderProps) {
           {greeting}, {name}{' '}
           <span className="text-sm font-medium text-gray-500 dark:text-gray-400">· {tier}</span>
         </h1>
-        {isDevelopment ? (
+        {showDevAdminLinks ? (
           <div className="flex items-center gap-3 shrink-0">
             <Link href="/admin" className="text-sm text-amber-600 dark:text-amber-400 hover:underline">
               Admin

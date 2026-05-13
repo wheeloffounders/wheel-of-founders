@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { Sparkles, Shield } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { colors } from '@/lib/design-tokens'
+import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 
 /**
  * Free-tier placeholder when a Hot fire is active but AI triage is Pro-only.
@@ -45,11 +45,7 @@ export function LockedTriageCard({
               Mrs. Deer is ready to triage this. Pro users get a &quot;Hold / Pivot / Drop&quot; strategy and tactical
               safe steps.
             </p>
-            <Link
-              href="/pricing"
-              className="pointer-events-auto mt-1 inline-flex items-center justify-center rounded-none px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-95"
-              style={{ backgroundColor: colors.coral.DEFAULT }}
-            >
+            <Link href="/pricing" className={`pointer-events-auto mt-1 ${viewProPlansCtaClassName} px-5 py-2.5`}>
               Unlock triage with Pro
             </Link>
           </div>

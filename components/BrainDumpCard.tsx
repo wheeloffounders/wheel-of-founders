@@ -96,6 +96,8 @@ type Props = {
   cockpitVisual?: boolean
   /** Emergency: voice-only capture (evening-style ghost). No visible textarea or typed sort — Finish & Sort sends transcript to protocol. */
   voiceCaptureOnly?: boolean
+  /** Pro+: AI distill / sort — disabled on freemium intelligence gate. */
+  proDistillLocked?: boolean
 }
 
 export function BrainDumpCard({
@@ -121,6 +123,7 @@ export function BrainDumpCard({
   hideHeader = false,
   cockpitVisual = false,
   voiceCaptureOnly = false,
+  proDistillLocked = false,
 }: Props) {
   const borderAccent = accent === 'navy' ? colors.navy.DEFAULT : SAGE
   const placeholderResolved =
@@ -327,6 +330,7 @@ export function BrainDumpCard({
   }, [])
 
   const onBrainDumpMicClick = useCallback(() => {
+    if (proDistillLocked) return
     if (hideSpeechButton || sortLoading) return
     if (!supportsSpeech) {
       window.dispatchEvent(
@@ -340,9 +344,10 @@ export function BrainDumpCard({
       return
     }
     toggleListening()
-  }, [hideSpeechButton, sortLoading, supportsSpeech, toggleListening])
+  }, [hideSpeechButton, proDistillLocked, sortLoading, supportsSpeech, toggleListening])
 
   const onDoneSpeaking = useCallback(() => {
+    if (proDistillLocked) return
     if (hideSpeechButton || sortLoading || !enableSortIntoReview || !onSortIntoReview) return
     textareaRef.current?.blur()
     stopListening()
@@ -365,7 +370,7 @@ export function BrainDumpCard({
         )
       }
     }, 120)
-  }, [enableSortIntoReview, hideSpeechButton, onSortBegin, onSortCancel, onSortIntoReview, sortLoading, stopListening])
+  }, [enableSortIntoReview, hideSpeechButton, onSortBegin, onSortCancel, onSortIntoReview, proDistillLocked, sortLoading, stopListening])
 
   const showMicHelperLine = !(
     (context === 'evening' || context === 'emergency' || context === 'morning') && enableSortIntoReview
@@ -429,10 +434,10 @@ export function BrainDumpCard({
     <button
       type="button"
       onClick={onDoneSpeaking}
-      disabled={sortLoading}
+      disabled={sortLoading || proDistillLocked}
       aria-label="Finish and sort — send capture to your reflection and cards"
       className={`flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl border-[3px] px-4 py-3.5 text-base font-bold shadow-md transition active:scale-[0.99] sm:min-h-14 sm:text-lg ${
-        sortLoading
+        sortLoading || proDistillLocked
           ? 'cursor-not-allowed border-slate-300 bg-slate-100 text-slate-400 opacity-60 dark:border-slate-600 dark:bg-slate-800'
           : 'border-[#ef725c] bg-[#5A7D66] text-white shadow-[0_4px_20px_rgba(90,125,102,0.45)] hover:bg-[#4d6b57] focus:outline-none focus:ring-4 focus:ring-[#ef725c]/35 dark:border-[#f0886c] dark:bg-[#4a6b55] dark:hover:bg-[#3d5a47]'
       }`}
@@ -460,7 +465,7 @@ export function BrainDumpCard({
         hideGhostMicForSort ? null : ghostShowFinishSort ? (
           <div className="flex w-full flex-col gap-3">
             {finishSortBlock}
-            {!isListening && !sortLoading && supportsSpeech ? (
+            {!isListening && !sortLoading && supportsSpeech && !proDistillLocked ? (
               <button
                 type="button"
                 onClick={onBrainDumpMicClick}
@@ -477,16 +482,18 @@ export function BrainDumpCard({
           <button
             type="button"
             onClick={onBrainDumpMicClick}
-            disabled={!supportsSpeech || sortLoading}
+            disabled={!supportsSpeech || sortLoading || proDistillLocked}
             aria-pressed={false}
             aria-label="Start brain dump — speak your loose threads"
             title={
-              !supportsSpeech
+              proDistillLocked
+                ? 'Brain Dump & AI Distillation is a Pro+ feature.'
+              : !supportsSpeech
                 ? 'Voice requires a supported browser'
                 : 'Tap to speak; your words appear as you go. Tap Done when finished.'
             }
             className={`flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-dashed py-3 font-medium transition-all border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900/50 ${
-              !supportsSpeech || sortLoading ? 'cursor-not-allowed opacity-50' : ''
+              !supportsSpeech || sortLoading || proDistillLocked ? 'cursor-not-allowed opacity-50' : ''
             }`}
           >
             <Mic className="h-6 w-6" strokeWidth={2.25} aria-hidden />
@@ -497,16 +504,18 @@ export function BrainDumpCard({
         <button
           type="button"
           onClick={onBrainDumpMicClick}
-          disabled={!supportsSpeech || sortLoading}
+          disabled={!supportsSpeech || sortLoading || proDistillLocked}
           aria-pressed={isListening}
           aria-label="Stop recording and add speech to brain dump"
           title={
-            !supportsSpeech
+            proDistillLocked
+              ? 'Brain Dump & AI Distillation is a Pro+ feature.'
+            : !supportsSpeech
               ? 'Voice requires a supported browser'
               : 'Tap to finish — your words are added to the box as you speak'
           }
           className={`flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-dashed py-3 font-medium transition-all border-[#ef725c]/70 bg-[#fff7f4] text-[#c44a38] shadow-[0_0_20px_rgba(239,114,92,0.25)] dark:border-[#f0886c]/60 dark:bg-[#2a1512]/40 dark:text-[#f5b8a8] ${
-            !supportsSpeech || sortLoading ? 'cursor-not-allowed opacity-50' : ''
+            !supportsSpeech || sortLoading || proDistillLocked ? 'cursor-not-allowed opacity-50' : ''
           }`}
         >
           <span className="text-[#ef725c] drop-shadow-[0_0_8px_rgba(239,114,92,0.9)] animate-pulse dark:text-[#f0886c]" aria-hidden>
@@ -518,16 +527,18 @@ export function BrainDumpCard({
         <button
           type="button"
           onClick={onBrainDumpMicClick}
-          disabled={!supportsSpeech || sortLoading}
+          disabled={!supportsSpeech || sortLoading || proDistillLocked}
           aria-pressed={false}
           aria-label="Start brain dump — speak freely, then tap again when done"
           title={
-            !supportsSpeech
+            proDistillLocked
+              ? 'Brain Dump & AI Distillation is a Pro+ feature.'
+            : !supportsSpeech
               ? 'Voice requires a supported browser'
               : 'Tap to speak freely; tap again when done'
           }
           className={`flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-dashed py-3 font-medium transition-all border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900/50 ${
-            !supportsSpeech || sortLoading ? 'cursor-not-allowed opacity-50' : ''
+            !supportsSpeech || sortLoading || proDistillLocked ? 'cursor-not-allowed opacity-50' : ''
           }`}
         >
           <Mic className="h-6 w-6" strokeWidth={2.25} aria-hidden />
@@ -541,6 +552,7 @@ export function BrainDumpCard({
   const showTypedSortButton = Boolean(
     enableSortIntoReview &&
       onSortIntoReview &&
+      !proDistillLocked &&
       (!isGhostMode || emergencyStackedGhost) &&
       !isListening &&
       value.trim().length > 0 &&
@@ -651,9 +663,10 @@ export function BrainDumpCard({
               value={value}
               onChange={(e) => onChange(e.target.value)}
               minRows={2}
-              disabled={sortLoading}
+              disabled={sortLoading || proDistillLocked}
+              readOnly={proDistillLocked}
               placeholder={placeholderResolved}
-              className={`${TEXTAREA_EMERGENCY_CLASSES} ${sortLoading ? 'opacity-60' : ''}`}
+              className={`${TEXTAREA_EMERGENCY_CLASSES} ${sortLoading || proDistillLocked ? 'opacity-60' : ''}`}
             />
           </div>
         ) : !isGhostMode ? (
@@ -665,9 +678,10 @@ export function BrainDumpCard({
               value={value}
               onChange={(e) => onChange(e.target.value)}
               rows={5}
-              disabled={sortLoading}
+              disabled={sortLoading || proDistillLocked}
+              readOnly={proDistillLocked}
               placeholder={placeholderResolved}
-              className={`${cockpitVisual ? TEXTAREA_CLASSES_COCKPIT : TEXTAREA_CLASSES} ${sortLoading ? 'opacity-60' : ''}`}
+              className={`${cockpitVisual ? TEXTAREA_CLASSES_COCKPIT : TEXTAREA_CLASSES} ${sortLoading || proDistillLocked ? 'opacity-60' : ''}`}
             />
           </div>
         ) : emergencyStackedGhost ? (
@@ -680,9 +694,10 @@ export function BrainDumpCard({
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 minRows={2}
-                disabled={sortLoading}
+                disabled={sortLoading || proDistillLocked}
+                readOnly={proDistillLocked}
                 placeholder={placeholderResolved}
-                className={`${TEXTAREA_EMERGENCY_CLASSES} ${sortLoading ? 'opacity-60' : ''}`}
+                className={`${TEXTAREA_EMERGENCY_CLASSES} ${sortLoading || proDistillLocked ? 'opacity-60' : ''}`}
               />
             </div>
             {brainDumpMicBlock}
@@ -717,12 +732,16 @@ export function BrainDumpCard({
             textareaRef.current?.blur()
             onSortIntoReview?.()
           }}
-          disabled={sortLoading || value.trim().length < 8}
+              disabled={sortLoading || value.trim().length < 8 || proDistillLocked}
           title={
-            value.trim().length < 8 ? 'Add a few more words so Mrs. Deer can sort your dump.' : undefined
+            proDistillLocked
+              ? 'Brain Dump & AI Distillation is a Pro+ feature.'
+              : value.trim().length < 8
+                ? 'Add a few more words so Mrs. Deer can sort your dump.'
+                : undefined
           }
           className={`flex w-full items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
-            sortLoading || value.trim().length < 8
+            sortLoading || value.trim().length < 8 || proDistillLocked
               ? 'border-[#152B50] bg-[#152B50] text-white hover:bg-[#1a3560] dark:border-sky-200/40 dark:bg-slate-700 dark:hover:bg-slate-600'
               : value.trim().length >= 20
                 ? 'motion-safe:animate-pulse border-[#5A7D66] bg-[#5A7D66] text-white shadow-[0_0_24px_rgba(90,125,102,0.35)] hover:bg-[#4d6b57] dark:border-emerald-400/50 dark:bg-[#4a6b55] dark:hover:bg-[#3d5a47]'

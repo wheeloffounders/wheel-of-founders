@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { Sparkles } from 'lucide-react'
 import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
+import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 import { Button } from '@/components/ui/button'
 import { trackEvent } from '@/lib/analytics'
 import type { TrialWrapupStats } from '@/lib/trial-wrapup-stats'
@@ -114,7 +115,7 @@ export function TrialWeekWrapupCard({ stats, onDismiss, userId, trialEndsAt }: T
           <Link
             href="/pricing"
             onClick={() => onUpgrade()}
-            className="inline-flex w-full items-center justify-center rounded-none border-2 border-[#152b50] bg-[#152b50] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#152b50]/90 sm:w-auto dark:border-sky-800 dark:bg-sky-800 dark:hover:bg-sky-700"
+            className={`inline-flex w-full sm:w-auto ${viewProPlansCtaClassName}`}
           >
             Keep Mrs. Deer as my COO (Upgrade)
           </Link>

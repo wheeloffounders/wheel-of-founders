@@ -14,6 +14,8 @@ interface InfoTooltipProps {
    * `popover` — compact panel; hover on desktop, tap to toggle on touch; **rendered via portal** so cards with `overflow-x: hidden` cannot clip it.
    */
   presentation?: 'modal' | 'popover'
+  /** Dark zinc styling for admin / dense tables (default keeps existing gray panels). */
+  tone?: 'default' | 'controlRoom'
 }
 
 const POPOVER_Z = 500
@@ -24,6 +26,7 @@ export function InfoTooltip({
   className = '',
   position = 'top',
   presentation = 'modal',
+  tone = 'default',
 }: InfoTooltipProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isHover, setIsHover] = useState(false)
@@ -107,13 +110,24 @@ export function InfoTooltip({
   }, [presentation])
 
   if (presentation === 'popover') {
+    const isControl = tone === 'controlRoom'
+    const panelClass = isControl
+      ? 'w-max max-w-[min(300px,calc(100vw-2.5rem))] rounded-lg border border-zinc-600/90 bg-[#151c26] px-3 py-2 text-xs leading-snug text-zinc-200 shadow-xl pointer-events-auto'
+      : 'w-max max-w-[min(280px,calc(100vw-2.5rem))] rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-xs text-gray-800 dark:text-gray-200 shadow-lg pointer-events-auto'
+    const triggerBtnClass = isControl
+      ? 'cursor-help p-0.5 rounded-full hover:bg-zinc-800/80 transition-colors shrink-0 relative z-0 text-zinc-500 hover:text-zinc-300'
+      : 'cursor-help p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0 relative z-0'
+    const iconClass = isControl
+      ? 'w-3.5 h-3.5 text-zinc-500 hover:text-zinc-300 transition'
+      : 'w-4 h-4 text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300 transition'
+
     const popoverNode =
       showPopover && typeof document !== 'undefined' && popoverStyle ? (
         <div
           ref={tooltipRef}
           role="tooltip"
           style={popoverStyle}
-          className="w-max max-w-[min(280px,calc(100vw-2.5rem))] rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-xs text-gray-800 dark:text-gray-200 shadow-lg pointer-events-auto"
+          className={panelClass}
           onMouseEnter={() => setIsHover(true)}
           onMouseLeave={() => setIsHover(false)}
         >
@@ -129,11 +143,11 @@ export function InfoTooltip({
           onClick={() => setIsOpen((v) => !v)}
           onMouseEnter={() => setIsHover(true)}
           onMouseLeave={() => setIsHover(false)}
-          className="cursor-help p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0 relative z-0"
+          className={triggerBtnClass}
           aria-label="Help"
           aria-expanded={isOpen}
         >
-          <HelpCircle className="w-4 h-4 text-gray-500 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300 transition" />
+          <HelpCircle className={iconClass} aria-hidden />
         </button>
         {popoverNode && createPortal(popoverNode, document.body)}
       </span>

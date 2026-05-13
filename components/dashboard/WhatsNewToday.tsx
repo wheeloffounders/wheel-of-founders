@@ -20,6 +20,7 @@ import {
   buildDashboardRotatingCard,
   type DashboardRotatingCard,
 } from '@/lib/founder-dna/dashboard-whats-new-card'
+import { FreemiumStandbyFrame } from '@/components/dashboard/FreemiumStandbyFrame'
 
 const MILESTONE_BADGE_WINDOW_MS = 48 * 60 * 60 * 1000
 
@@ -108,7 +109,18 @@ function badgeLabel(name: string): string {
   return BADGE_DEFINITION_MAP[name]?.label ?? name.replaceAll('_', ' ')
 }
 
-export function WhatsNewToday() {
+type WhatsNewTodayProps = {
+  /**
+   * Non‑Pro: industrial standby (muted card + lock) and no weekly insight deep link;
+   * show the static line about milestones vs weekly mirrors.
+   */
+  intelligenceLocked?: boolean
+}
+
+const INTELLIGENCE_LOCKED_COPY =
+  "Your milestones and unlocks still surface here. Weekly mirrors stay tucked away until you're back on Pro."
+
+export function WhatsNewToday({ intelligenceLocked = false }: WhatsNewTodayProps) {
   const [, setTick] = useState(0)
   useEffect(() => {
     const id = window.setInterval(() => setTick((n) => n + 1), 60_000)
@@ -149,6 +161,7 @@ export function WhatsNewToday() {
     'mt-3 block rounded-xl border border-transparent -mx-1 px-3 py-2 -mb-1 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/70 hover:border-gray-200 dark:hover:border-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ef725c] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900'
 
   return (
+    <FreemiumStandbyFrame active={intelligenceLocked}>
     <div className="border border-gray-200 dark:border-gray-700 border-l-4 border-l-[#152b50] bg-white/60 dark:bg-gray-800/40 px-4 pb-4 pt-4 overflow-visible">
       <div className="flex items-start gap-3 mb-3">
         <MrsDeerAvatar expression="thoughtful" size="sm" className="shrink-0 mt-0.5" />
@@ -162,7 +175,7 @@ export function WhatsNewToday() {
               className="shrink-0"
             />
           </div>
-          {!isLoading && variantSub ? (
+          {!isLoading && variantSub && !intelligenceLocked ? (
             <p className="text-xs font-semibold uppercase tracking-wider mt-2 flex items-center gap-1.5 text-[#EF725C] dark:text-[#F28771]">
               <span aria-hidden>{variantSub.icon}</span>
               <span>{variantSub.label}</span>
@@ -173,13 +186,17 @@ export function WhatsNewToday() {
       {isLoading ? <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Loading...</p> : null}
 
       {!isLoading && (card?.variant === 'insight' || card?.variant === 'missed') ? (
-        <Link href={card.item.href} className={cardLinkClass}>
-          <p className="text-base text-gray-900 dark:text-white">
-            <span aria-hidden>{card.item.icon}</span> {card.item.typeLabel}
-          </p>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">{card.item.preview}</p>
-          <p className="text-sm font-medium text-[#ef725c] mt-3">Open full update →</p>
-        </Link>
+        intelligenceLocked ? (
+          <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">{INTELLIGENCE_LOCKED_COPY}</p>
+        ) : (
+          <Link href={card.item.href} className={cardLinkClass}>
+            <p className="text-base text-gray-900 dark:text-white">
+              <span aria-hidden>{card.item.icon}</span> {card.item.typeLabel}
+            </p>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">{card.item.preview}</p>
+            <p className="text-sm font-medium text-[#ef725c] mt-3">Open full update →</p>
+          </Link>
+        )
       ) : null}
 
       {!isLoading && card?.variant === 'milestone' ? (
@@ -189,6 +206,7 @@ export function WhatsNewToday() {
         </Link>
       ) : null}
     </div>
+    </FreemiumStandbyFrame>
   )
 }
 

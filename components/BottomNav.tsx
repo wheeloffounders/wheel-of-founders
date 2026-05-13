@@ -149,7 +149,7 @@ export function BottomNav() {
         supabase
           .from('user_profiles')
           .select(
-            'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at'
+            'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at, subscription_override, is_beta_retired, is_beta'
           )
           .eq('id', session.user.id)
           .maybeSingle(),
@@ -162,6 +162,9 @@ export function BottomNav() {
         trial_ends_at?: string | null
         stripe_subscription_status?: string | null
         created_at?: string | null
+        subscription_override?: string | null
+        is_beta_retired?: boolean | null
+        is_beta?: boolean | null
       } | null
       const trialProfile: ProEntitlementProfile = {
         tier: p?.tier ?? null,
@@ -171,6 +174,9 @@ export function BottomNav() {
         trial_ends_at: p?.trial_ends_at ?? null,
         stripe_subscription_status: p?.stripe_subscription_status ?? null,
         created_at: p?.created_at ?? null,
+        subscription_override: p?.subscription_override ?? null,
+        is_beta_retired: p?.is_beta_retired ?? null,
+        is_beta: p?.is_beta ?? null,
       }
       const expired =
         getTrialStatus(trialProfile, { simulateExpired: isTrialExpirySimulationEnabled() }).status === 'expired'

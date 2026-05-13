@@ -162,7 +162,7 @@ export default function WeeklyPage() {
       const { data } = await supabase
         .from('user_profiles')
         .select(
-          'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at'
+          'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at, subscription_override, is_beta_retired, is_beta'
         )
         .eq('id', session.user.id)
         .maybeSingle()
@@ -184,7 +184,7 @@ export default function WeeklyPage() {
         const { data } = await supabase
           .from('user_profiles')
           .select(
-            'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at'
+            'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at, subscription_override, is_beta_retired, is_beta'
           )
           .eq('id', session.user.id)
           .maybeSingle()

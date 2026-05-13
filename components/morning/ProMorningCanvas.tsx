@@ -56,7 +56,9 @@ import { ProMorningAIError } from '@/lib/morning/pro-morning-api'
 import { resolveStruggleMorningTitles } from '@/lib/morning/struggle-morning-titles'
 import type { UserProfile } from '@/lib/features'
 import { isMorningFeatureLocked } from '@/lib/features'
-import { StrategicProLockOverlay } from '@/components/pro/StrategicProLockOverlay'
+import { getTrialStatus } from '@/lib/auth/trial-status'
+import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
+import { FreemiumStandbyFrame } from '@/components/dashboard/FreemiumStandbyFrame'
 import {
   MorningTaskRowShell,
   morningTaskDescriptionInputClassName,
@@ -108,8 +110,10 @@ export type ProMorningCanvasProps = {
   tutorialCheckInEnergy?: number | null
   onTutorialCheckInMoodChange?: (v: number) => void
   onTutorialCheckInEnergyChange?: (v: number) => void
-  /** Trial expired (Day 8): lock Strategy Prism / alignment UX; task rows stay editable. */
-  strategicProLocked?: boolean
+  /** Non‑Pro: gate brain dump distillation, strategic helpers, blueprints row AI, and row ghostwriter — core pivot + tasks stay manual. */
+  morningIntelligenceGated?: boolean
+  /** Pro: hide per-row task microphone — typed needle movers only. */
+  hideTaskRowMic?: boolean
   /**
    * First session / guided tutorial: lead with brain dump + top priorities, no mood/energy, no “add 4th row”,
    * minimal footer copy.
@@ -289,7 +293,8 @@ export function ProMorningCanvas({
   tutorialCheckInEnergy = null,
   onTutorialCheckInMoodChange,
   onTutorialCheckInEnergyChange,
-  strategicProLocked = false,
+  morningIntelligenceGated = false,
+  hideTaskRowMic = false,
   streamlinedOnboarding = false,
   stickySaveBar = false,
   saveOverlayMasterGate = false,
@@ -306,7 +311,14 @@ export function ProMorningCanvas({
     [founderStruggleIds]
   )
   const streamTasksPhrase = streamSectionTitle.toLowerCase()
-  const lockStrategicUx = strategicProLocked && !tutorialMode
+  const intelligenceGated = morningIntelligenceGated && !tutorialMode
+
+  /** Parent flag + profile-derived Pro — hides per-row task mic whenever user is Pro-entitled. */
+  const rowMicHidden = useMemo(() => {
+    if (hideTaskRowMic) return true
+    if (freemiumUser) return getTrialStatus(freemiumUser).isPro
+    return false
+  }, [hideTaskRowMic, freemiumUser])
 
   const voiceLocked = useMemo(
     () => isMorningFeatureLocked('voice_to_text', freemiumUser),
@@ -407,9 +419,11 @@ export function ProMorningCanvas({
   const voiceLockedForRowSpeechRef = useRef(voiceLocked)
   const brainDumpProcessingForRowSpeechRef = useRef(brainDumpProcessing)
   const savingForRowSpeechRef = useRef(saving)
+  const rowMicHiddenForRowSpeechRef = useRef(rowMicHidden)
   voiceLockedForRowSpeechRef.current = voiceLocked
   brainDumpProcessingForRowSpeechRef.current = brainDumpProcessing
   savingForRowSpeechRef.current = saving
+  rowMicHiddenForRowSpeechRef.current = rowMicHidden
 
   const [saveProcessingOverlayDismissed, setSaveProcessingOverlayDismissed] = useState(false)
   useEffect(() => {
@@ -563,7 +577,7 @@ export function ProMorningCanvas({
 
   useEffect(() => {
     if (tutorialMode) return
-    if (decisionAiLocked) return
+    if (decisionAiLocked || intelligenceGated) return
     const trimmed = decision.decision.trim()
     if (trimmed) {
       setDecisionStrategies(null)
@@ -627,15 +641,16 @@ export function ProMorningCanvas({
     onDecisionStrategiesPersist,
     decisionAiLocked,
     tutorialMode,
+    intelligenceGated,
   ])
 
   useEffect(() => {
-    if (!decisionAiLocked) return
+    if (!decisionAiLocked && !intelligenceGated) return
     setStrategyPrismOpen(false)
     setOracleLoading(false)
     setTraySuggestions(null)
     setTraySuccessLine(null)
-  }, [decisionAiLocked])
+  }, [decisionAiLocked, intelligenceGated])
 
   useEffect(() => {
     oracleRanForPlanRef.current = null
@@ -658,17 +673,17 @@ export function ProMorningCanvas({
   }, [])
 
   const invokeStrategyPrism = useCallback(() => {
-    if (decisionAiLocked) return
+    if (decisionAiLocked || intelligenceGated) return
     if (decision.decision.trim()) return
     setStrategyPrismOpen(true)
-  }, [decision.decision, decisionAiLocked])
+  }, [decision.decision, decisionAiLocked, intelligenceGated])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return
       if (e.key !== 'j' && e.key !== 'J') return
       if (decisionTextRef.current.trim()) return
-      if (decisionAiLocked) return
+      if (decisionAiLocked || intelligenceGated) return
       const el = e.target as HTMLElement | null
       if (el?.closest('[role="dialog"][aria-labelledby="pro-refine-title"]')) return
       e.preventDefault()
@@ -676,7 +691,7 @@ export function ProMorningCanvas({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [decisionAiLocked, invokeStrategyPrism])
+  }, [decisionAiLocked, intelligenceGated, invokeStrategyPrism])
 
   const updateRowDescription = useCallback(
     (index: number, description: string) => {
@@ -716,7 +731,7 @@ export function ProMorningCanvas({
       forcedActionPlan?: ActionPlanOption2,
       forcedDecision?: string
     ) => {
-      if (strategicLocked) return
+      if (strategicLocked || intelligenceGated) return
       const name = (forcedDescription !== undefined ? forcedDescription : taskAt(index).description).trim()
       if (!name) return
       if (ghostwritingRef.current.has(index) && forcedActionPlan === undefined) return
@@ -755,7 +770,7 @@ export function ProMorningCanvas({
         }
       }
     },
-    [decision.decision, setTasks, taskAt]
+    [decision.decision, intelligenceGated, setTasks, strategicLocked, taskAt]
   )
 
   const appendToRowDescription = useCallback(
@@ -787,7 +802,7 @@ export function ProMorningCanvas({
 
   const toggleRowSpeech = useCallback(
     (index: number) => {
-      if (voiceLocked || brainDumpProcessing || saving || !getSpeechRecognitionCtor()) return
+      if (rowMicHidden || voiceLocked || brainDumpProcessing || saving || !getSpeechRecognitionCtor()) return
       if (rowSpeechSlot === index) {
         stopRowSpeechRecognition()
         exclusiveSpeechStopRef.current = null
@@ -830,6 +845,7 @@ export function ProMorningCanvas({
         if (rowSpeechRecognitionRef.current !== recognition) return
         if (
           rowSpeechUserStopRef.current ||
+          rowMicHiddenForRowSpeechRef.current ||
           voiceLockedForRowSpeechRef.current ||
           brainDumpProcessingForRowSpeechRef.current ||
           savingForRowSpeechRef.current
@@ -842,6 +858,7 @@ export function ProMorningCanvas({
         window.setTimeout(() => {
           if (rowSpeechRecognitionRef.current !== recognition || rowSpeechUserStopRef.current) return
           if (
+            rowMicHiddenForRowSpeechRef.current ||
             voiceLockedForRowSpeechRef.current ||
             brainDumpProcessingForRowSpeechRef.current ||
             savingForRowSpeechRef.current
@@ -876,6 +893,7 @@ export function ProMorningCanvas({
     [
       appendToRowDescription,
       brainDumpProcessing,
+      rowMicHidden,
       rowSpeechSlot,
       saving,
       stopRowSpeechRecognition,
@@ -942,7 +960,7 @@ export function ProMorningCanvas({
 
   const runBrainDumpSort = useCallback(
     async (transcript: string) => {
-      if (voiceLocked) return
+      if (voiceLocked || intelligenceGated) return
       let completedOk = false
       try {
         const res = await processMorningBrainDump({
@@ -1078,6 +1096,7 @@ export function ProMorningCanvas({
       setTasks,
       tasks,
       voiceLocked,
+      intelligenceGated,
     ]
   )
 
@@ -1129,11 +1148,12 @@ export function ProMorningCanvas({
 
   const runMorningBrainDumpSortFromCard = useCallback(
     async (dumpText?: string) => {
+      if (intelligenceGated) return
       const raw = (dumpText ?? morningBrainDumpText).trim()
       if (raw.length < 8) return
       await runBrainDumpSort(raw)
     },
-    [morningBrainDumpText, runBrainDumpSort]
+    [morningBrainDumpText, runBrainDumpSort, intelligenceGated]
   )
 
   const handleBrainDumpListeningChange = useCallback(
@@ -1159,7 +1179,7 @@ export function ProMorningCanvas({
 
   const applyDecisionStrategy = useCallback(
     (opt: DecisionStrategyOption) => {
-      if (decisionAiLocked) return
+      if (decisionAiLocked || intelligenceGated) return
       const rawDec = opt.text.trim()
       const decisionText = rawDec ? sanitizeAiCardLabelText(rawDec) || rawDec : ''
       const plan = opt.suggestedActionPlan
@@ -1194,6 +1214,7 @@ export function ProMorningCanvas({
     },
     [
       decisionAiLocked,
+      intelligenceGated,
       onDecisionStrategiesPersist,
       refineIndex,
       runGhostwriterForRow,
@@ -1208,7 +1229,7 @@ export function ProMorningCanvas({
       if (!e.altKey || e.metaKey || e.ctrlKey) return
       if (e.key !== '1' && e.key !== '2' && e.key !== '3') return
       const list = decisionStrategiesRef.current
-      if (decisionAiLocked) return
+      if (decisionAiLocked || intelligenceGated) return
       if (!strategyPrismOpen || !list?.length || decisionTextRef.current.trim()) return
       const el = e.target as HTMLElement | null
       const field = el?.closest('input, textarea, select, [contenteditable="true"]')
@@ -1224,11 +1245,11 @@ export function ProMorningCanvas({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [applyDecisionStrategy, decisionAiLocked, strategyPrismOpen])
+  }, [applyDecisionStrategy, decisionAiLocked, intelligenceGated, strategyPrismOpen])
 
   const fetchSuggestionsToTray = useCallback(
     async (opts?: { fromTrayRefresh?: boolean }) => {
-      if (decisionAiLocked) return
+      if (decisionAiLocked || intelligenceGated) return
       if (opts?.fromTrayRefresh) {
         setTrayRefreshLockedUntil(Date.now() + 2000)
       }
@@ -1252,7 +1273,7 @@ export function ProMorningCanvas({
         setSuggestLoading(false)
       }
     },
-    [decision.decision, traySuggestCount]
+    [decision.decision, decisionAiLocked, intelligenceGated, traySuggestCount]
   )
 
   useEffect(() => {
@@ -1268,7 +1289,7 @@ export function ProMorningCanvas({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [decisionAiLocked, fetchSuggestionsToTray, suggestLoading, traySuggestions])
+  }, [decisionAiLocked, fetchSuggestionsToTray, intelligenceGated, suggestLoading, traySuggestions])
 
   useEffect(() => {
     if (trayRefreshLockedUntil <= Date.now()) return
@@ -1368,7 +1389,7 @@ export function ProMorningCanvas({
 
   const applyBlueprint = useCallback(
     (bp: TaskBlueprintChip) => {
-      if (blueprintsLocked) return
+      if (blueprintsLocked || intelligenceGated) return
       const slot = firstEmptySlot()
       if (slot === null) {
         window.dispatchEvent(
@@ -1400,7 +1421,7 @@ export function ProMorningCanvas({
       }
       void runGhostwriterForRow(slot, text, bp.actionPlan)
     },
-    [blueprintsLocked, firstEmptySlot, prefersReducedMotion, runGhostwriterForRow, setTasks]
+    [blueprintsLocked, firstEmptySlot, intelligenceGated, prefersReducedMotion, runGhostwriterForRow, setTasks]
   )
 
   useEffect(() => {
@@ -1515,7 +1536,7 @@ export function ProMorningCanvas({
       }
       if (e.key === 'Enter' && e.shiftKey) {
         e.preventDefault()
-        void runGhostwriterForRow(index)
+        if (!strategicLocked && !intelligenceGated) void runGhostwriterForRow(index)
         if (index + 1 < slotCount) {
           const nextEl = document.querySelector<HTMLTextAreaElement>(`[data-pro-task-slot="${index + 1}"]`)
           nextEl?.focus()
@@ -1526,7 +1547,7 @@ export function ProMorningCanvas({
         return
       }
     },
-    [openRefine, runGhostwriterForRow, slotCount]
+    [intelligenceGated, openRefine, runGhostwriterForRow, slotCount, strategicLocked]
   )
 
   useEffect(() => {
@@ -1775,6 +1796,11 @@ export function ProMorningCanvas({
   const brainDumpSubtitle = `Capture your thoughts. Speak or type freely, then Mrs. Deer will help distill your Core Objective and ${baseStreamSlots} Needle Movers.`
 
   const morningBrainDumpBlock = voiceLocked ? null : (
+    <FreemiumStandbyFrame
+      active={intelligenceGated}
+      caption="Brain Dump & AI Distillation is a Pro+ feature."
+      blockPointerOnContent={intelligenceGated}
+    >
     <div
       className="relative z-[45] w-full"
       data-tutorial={tutorialMode ? 'morning-brain-dump' : undefined}
@@ -1810,6 +1836,7 @@ export function ProMorningCanvas({
             saveHint={draftLabel ?? undefined}
             cockpitVisual
             className="mb-0"
+            proDistillLocked={intelligenceGated}
           />
         </>
       ) : (
@@ -1831,9 +1858,11 @@ export function ProMorningCanvas({
           interruptListeningEpoch={brainDumpInterruptEpoch}
           saveHint={draftLabel ?? undefined}
           className="mb-0"
+          proDistillLocked={intelligenceGated}
         />
       )}
     </div>
+    </FreemiumStandbyFrame>
   )
 
   return (
@@ -1920,7 +1949,6 @@ export function ProMorningCanvas({
       }
       aria-label="Pro morning strategic canvas"
     >
-      <StrategicProLockOverlay active={lockStrategicUx} variant="morning_prism">
       <div
         id="morning-daily-pivot"
         data-tutorial={tutorialMode ? 'morning-intention' : undefined}
@@ -1947,17 +1975,33 @@ export function ProMorningCanvas({
 
         {!tutorialMode && !decision.decision.trim() && !strategyPrismOpen && !decisionAiLocked ? (
           <div className="mb-3">
-            <button
-              type="button"
-              onClick={invokeStrategyPrism}
-              title="Shortcut: ⌘J or Ctrl+J (also listed at bottom of page)"
-              className="inline-flex w-full max-w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-yellow-200/60 bg-yellow-50/30 px-3 py-2.5 text-left text-sm text-yellow-950/90 transition hover:border-yellow-300 hover:bg-yellow-50/50 dark:border-yellow-800/50 dark:bg-yellow-950/20 dark:text-yellow-50 dark:hover:border-yellow-600/80 dark:hover:bg-yellow-950/35 sm:justify-start"
-            >
-              <Sparkles className="h-4 w-4 shrink-0 text-[#ef725c] dark:text-[#f0886c]" aria-hidden />
-              <span>
-                <span className="font-medium">Stuck?</span> Ask Mrs. Deer for three strategic angles.
-              </span>
-            </button>
+            {intelligenceGated ? (
+              <FreemiumStandbyFrame active blockPointerOnContent>
+                <button
+                  type="button"
+                  disabled
+                  title="Pro+ strategic angles"
+                  className="inline-flex w-full max-w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border-2 border-dashed border-yellow-200/60 bg-yellow-50/30 px-3 py-2.5 text-left text-sm text-yellow-950/90 opacity-80 dark:border-yellow-800/50 dark:bg-yellow-950/20 dark:text-yellow-50 sm:justify-start"
+                >
+                  <Sparkles className="h-4 w-4 shrink-0 text-[#ef725c] dark:text-[#f0886c]" aria-hidden />
+                  <span>
+                    <span className="font-medium">Stuck?</span> Ask Mrs. Deer for three strategic angles.
+                  </span>
+                </button>
+              </FreemiumStandbyFrame>
+            ) : (
+              <button
+                type="button"
+                onClick={invokeStrategyPrism}
+                title="Shortcut: ⌘J or Ctrl+J (also listed at bottom of page)"
+                className="inline-flex w-full max-w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-yellow-200/60 bg-yellow-50/30 px-3 py-2.5 text-left text-sm text-yellow-950/90 transition hover:border-yellow-300 hover:bg-yellow-50/50 dark:border-yellow-800/50 dark:bg-yellow-950/20 dark:text-yellow-50 dark:hover:border-yellow-600/80 dark:hover:bg-yellow-950/35 sm:justify-start"
+              >
+                <Sparkles className="h-4 w-4 shrink-0 text-[#ef725c] dark:text-[#f0886c]" aria-hidden />
+                <span>
+                  <span className="font-medium">Stuck?</span> Ask Mrs. Deer for three strategic angles.
+                </span>
+              </button>
+            )}
           </div>
         ) : null}
 
@@ -2161,6 +2205,7 @@ export function ProMorningCanvas({
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             className="mb-0"
           >
+            <FreemiumStandbyFrame active={intelligenceGated} blockPointerOnContent={intelligenceGated}>
             <AnimatePresence mode="wait" initial={false}>
               {showSuggestConsultantLoading ? (
                 <motion.div
@@ -2183,6 +2228,7 @@ export function ProMorningCanvas({
                 <motion.button
                   key="suggest-consultant-invite"
                   type="button"
+                  disabled={intelligenceGated}
                   onClick={() => void fetchSuggestionsToTray()}
                   title="Shortcut: ⌘K or Ctrl+K (also listed at bottom of page)"
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
@@ -2202,6 +2248,7 @@ export function ProMorningCanvas({
                 </motion.button>
               )}
             </AnimatePresence>
+            </FreemiumStandbyFrame>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -2333,16 +2380,14 @@ export function ProMorningCanvas({
           </motion.div>
         ) : null}
       </AnimatePresence>
-      </StrategicProLockOverlay>
 
       <div
         className={
           cockpitOnboarding
-            ? `p-4 md:p-5 ${DASHBOARD_MORNING_CARD} border-l-4 border-l-orange-500/70 dark:border-l-orange-400/50 ${lockStrategicUx ? 'relative isolate' : ''}`
-            : `rounded-xl border-2 border-gray-200 bg-white p-5 dark:border-gray-600 dark:bg-gray-900/40 ${lockStrategicUx ? 'relative isolate' : ''}`
+            ? `p-4 md:p-5 ${DASHBOARD_MORNING_CARD} border-l-4 border-l-orange-500/70 dark:border-l-orange-400/50`
+            : `rounded-xl border-2 border-gray-200 bg-white p-5 dark:border-gray-600 dark:bg-gray-900/40`
         }
       >
-        <StrategicProLockOverlay active={lockStrategicUx} variant="morning_prism">
         <h3
           className={
             cockpitOnboarding
@@ -2374,6 +2419,7 @@ export function ProMorningCanvas({
           )}
         </p>
         {showBlueprintsSection ? (
+          <FreemiumStandbyFrame active={intelligenceGated} blockPointerOnContent={intelligenceGated}>
           <div
             className="mb-8 border-b border-slate-100 pb-8 dark:border-slate-700/80"
             role="region"
@@ -2433,12 +2479,12 @@ export function ProMorningCanvas({
               ))}
             </div>
           </div>
+          </FreemiumStandbyFrame>
         ) : null}
-        </StrategicProLockOverlay>
         <ul
           className={`${
             cockpitOnboarding && !compactRows ? 'space-y-6' : morningTaskListGapClass(compactRows || slimEmptyRows)
-          } ${lockStrategicUx ? 'relative z-50' : ''}`}
+          }`}
           data-tutorial={tutorialMode ? 'power-list' : undefined}
         >
           {Array.from({ length: slotCount }, (_, index) => {
@@ -2478,7 +2524,7 @@ export function ProMorningCanvas({
                 rowActions={
                   showUndoBar ? null : (
                     <>
-                      {!voiceLocked && speechSupported ? (
+                      {!voiceLocked && !rowMicHidden && speechSupported ? (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -2601,7 +2647,7 @@ export function ProMorningCanvas({
                               focusedProTaskSlotRef.current = index
                             }}
                             onBlur={() => {
-                              if (!strategicLocked) void runGhostwriterForRow(index)
+                              if (!strategicLocked && !intelligenceGated) void runGhostwriterForRow(index)
                             }}
                             onKeyDown={(e) => onRowKeyDown(e, index)}
                             placeholder={
@@ -3278,18 +3324,16 @@ export function ProMorningCanvas({
               {streamTasksPhrase} by hand each day — same outcome, a little more typing.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
-              <Button
+              <button
                 type="button"
-                variant="primary"
-                className="flex-1 min-w-[8rem]"
-                style={{ backgroundColor: colors.coral.DEFAULT }}
+                className={`flex-1 min-w-[8rem] ${viewProPlansCtaClassName}`}
                 onClick={() => {
                   setBlueprintUpgradeOpen(false)
                   router.push('/pricing')
                 }}
               >
                 View Pro plans
-              </Button>
+              </button>
               <Button type="button" variant="outline" className="flex-1 min-w-[8rem]" onClick={() => setBlueprintUpgradeOpen(false)}>
                 Not now
               </Button>

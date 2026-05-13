@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { AlertTriangle } from 'lucide-react'
+import { Lock } from 'lucide-react'
+import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 
 type TrialExpiryBannerProps = {
   /** When true, show the soft-amber banner with pricing CTA. */
@@ -16,20 +17,22 @@ export function TrialExpiryBanner({ visible }: TrialExpiryBannerProps) {
 
   return (
     <div
-      className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/60 dark:bg-amber-950/25"
+      className="mb-4 rounded-xl border border-indigo-400/30 bg-gradient-to-br from-indigo-950 via-indigo-900 to-slate-950 px-4 py-3.5 text-white shadow-md dark:border-indigo-500/35"
       role="region"
       aria-label="Pro trial ended"
     >
       <div className="flex flex-wrap items-start gap-3">
-        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
+        <span
+          className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-500/25 ring-1 ring-amber-200/35"
+          aria-hidden
+        >
+          <Lock className="h-5 w-5 text-amber-100" strokeWidth={2.25} />
+        </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-amber-950 dark:text-amber-100">
+          <p className="text-sm font-medium leading-snug text-white/95">
             Your Pro trial has ended. Mrs. Deer&apos;s strategic tools are offline, but your tasks are safe.
           </p>
-          <Link
-            href="/pricing"
-            className="mt-2 inline-flex text-sm font-semibold text-[#152b50] underline-offset-2 hover:underline dark:text-sky-200"
-          >
+          <Link href="/pricing" className={`mt-3 ${viewProPlansCtaClassName}`}>
             View Pro plans
           </Link>
         </div>

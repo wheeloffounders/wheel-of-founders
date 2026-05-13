@@ -10,6 +10,7 @@ import { syncRemindersToGoogleCalendar } from '@/lib/google-calendar'
 import { isWhitelistAdminEmail } from '@/lib/admin-emails'
 import { getBlogTrialGiftProfilePatch, WOF_PRO_TRIAL_WELCOME_COOKIE } from '@/lib/blog-trial-gift-profile'
 import { WOF_BLOG_TRIAL_GIFT_COOKIE } from '@/lib/blog-trial-gift-session'
+import { applyLegacyBetaRetirementIfNeeded } from '@/lib/beta-retirement'
 
 function authCallbackSuccessRedirect(
   requestUrl: URL,
@@ -227,6 +228,9 @@ export async function GET(request: NextRequest) {
           trial_starts_at: nowIso,
           trial_ends_at: trialEnds,
           ...(blogTrialGiftCookie ? { is_pro_trial: true } : {}),
+          subscription_override: 'none',
+          is_beta_retired: true,
+          is_beta: false,
           is_admin: user.email && isWhitelistAdminEmail(user.email) ? true : false,
           admin_role: user.email && isWhitelistAdminEmail(user.email) ? 'super_admin' : null,
         }
@@ -283,6 +287,11 @@ export async function GET(request: NextRequest) {
         await (db.from('user_profiles') as any)
           .update({ login_count: nextLoginCount, updated_at: new Date().toISOString() })
           .eq('id', user.id)
+        try {
+          await applyLegacyBetaRetirementIfNeeded(user.id)
+        } catch (e) {
+          console.error('[auth/callback] beta retirement migration failed', e)
+        }
       }
 
       let blogTrialGiftApplied = Boolean(blogTrialGiftCookie && isNewUser)

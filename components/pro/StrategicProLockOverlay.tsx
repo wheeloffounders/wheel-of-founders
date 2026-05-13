@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { Lock } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { colors } from '@/lib/design-tokens'
+import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 
 export type StrategicProLockVariant = 'morning_prism' | 'insights_analytics'
 
@@ -53,11 +53,7 @@ export function StrategicProLockOverlay({ active, children, variant = 'morning_p
         </div>
         <p className="max-w-sm text-sm font-semibold text-[#152b50] dark:text-sky-100">{copy.title}</p>
         <p className="max-w-sm text-xs leading-relaxed text-slate-600 dark:text-slate-300">{copy.description}</p>
-        <Link
-          href="/pricing"
-          className="pointer-events-auto inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:opacity-95"
-          style={{ backgroundColor: colors.coral.DEFAULT }}
-        >
+        <Link href="/pricing" className={`pointer-events-auto ${viewProPlansCtaClassName}`}>
           {copy.ctaLabel}
         </Link>
       </div>

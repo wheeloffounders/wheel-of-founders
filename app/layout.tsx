@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import { Suspense, type ReactNode } from 'react'
 import { Analytics } from '@vercel/analytics/next'
+import { RadarInboundBootstrap } from '@/components/RadarInboundBootstrap'
+import { BetaRetirementBootstrap } from '@/components/BetaRetirementBootstrap'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
@@ -112,6 +114,8 @@ export default async function RootLayout({
         <DevModeBadge />
         <PostHogProvider />
         <Analytics />
+        <RadarInboundBootstrap />
+        <BetaRetirementBootstrap />
         <SupabaseAuthDebugListener />
         <PageViewTracker />
         <ServiceWorkerRegister />

@@ -46,6 +46,9 @@ export interface UserProfile {
   subscription_tier?: string | null
   created_at?: string | null
   is_pro_trial?: boolean | null
+  subscription_override?: string | null
+  is_beta_retired?: boolean | null
+  is_beta?: boolean | null
 }
 
 /**
@@ -87,6 +90,10 @@ function isMorningFreemiumAuditPath(): boolean {
 /** True when we would apply freemium restrictions (explicit free tier + Pro flags off). */
 export function isFreemiumMorningUser(user: UserProfile | null | undefined): boolean {
   if (resolveProEntitlement(user).isPro) return false
+  const ov = String(user?.subscription_override ?? 'none')
+    .trim()
+    .toLowerCase()
+  if (ov === 'free') return true
   if (GLOBAL_BETA_OVERRIDE) return false
   return isFreemiumMorningUserCore(user)
 }
@@ -105,7 +112,10 @@ export function isMorningFeatureLocked(
   user: UserProfile | null | undefined
 ): boolean {
   const auditPath = isMorningFreemiumAuditPath()
-  if (GLOBAL_BETA_OVERRIDE && !auditPath) return false
+  const ov = String(user?.subscription_override ?? 'none')
+    .trim()
+    .toLowerCase()
+  if (GLOBAL_BETA_OVERRIDE && !auditPath && ov !== 'free') return false
 
   const effectiveUser = auditPath ? FREEMIUM_MORNING_AUDIT_USER : user
   if (!isFreemiumMorningUserCore(effectiveUser)) return false
@@ -149,7 +159,10 @@ export function isEmergencyFeatureLocked(
   user: UserProfile | null | undefined
 ): boolean {
   const auditPath = isEmergencyFreemiumAuditPath()
-  if (GLOBAL_BETA_OVERRIDE && !auditPath) return false
+  const ov = String(user?.subscription_override ?? 'none')
+    .trim()
+    .toLowerCase()
+  if (GLOBAL_BETA_OVERRIDE && !auditPath && ov !== 'free') return false
 
   const effectiveUser = auditPath ? FREEMIUM_EMERGENCY_AUDIT_USER : user
   if (!isFreemiumMorningUserCore(effectiveUser)) return false
@@ -165,8 +178,13 @@ export function isEmergencyFeatureLocked(
 
 export const getFeatureAccess = (user: UserProfile | null | undefined): FeatureAccess => {
   const ent = resolveProEntitlement(user, Date.now(), resolveOptsForClient())
-  const isProEntitled = ent.isPro || GLOBAL_BETA_OVERRIDE
-  const isFreeStrict = user?.tier === 'free' && user?.pro_features_enabled === false && !isProEntitled
+  const ov = String(user?.subscription_override ?? 'none')
+    .trim()
+    .toLowerCase()
+  const isProEntitled = ent.isPro || (GLOBAL_BETA_OVERRIDE && ov !== 'free')
+  const isFreeStrict =
+    !isProEntitled &&
+    (ov === 'free' || (user?.tier === 'free' && user?.pro_features_enabled === false))
 
   return {
     // History viewing limits

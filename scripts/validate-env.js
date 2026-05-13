@@ -39,7 +39,23 @@ const required = [
 
 const missing = required.filter((key) => !process.env[key])
 
+const isVercelPreview =
+  process.env.VERCEL === '1' && String(process.env.VERCEL_ENV || '').toLowerCase() === 'preview'
+
 if (missing.length > 0) {
+  if (isVercelPreview) {
+    console.warn(
+      '\x1b[33m%s\x1b[0m',
+      '⚠️  Vercel Preview: Supabase variables are not set for this environment. Continuing the build so you get an artifact, but login and API routes will fail until you add them.'
+    )
+    missing.forEach((key) => console.warn(`   - ${key}`))
+    console.warn(
+      '\nFix: Vercel → Project → Settings → Environment Variables → each key → Environments → enable Preview (often same values as Production, or a dedicated preview Supabase project).'
+    )
+    console.warn('Local sync helper: ./scripts/fix-preview-supabase-env.sh\n')
+    process.exit(0)
+  }
+
   console.error('\x1b[31m%s\x1b[0m', '❌ Missing required environment variables:')
   missing.forEach((key) => console.error(`   - ${key}`))
   console.error(
