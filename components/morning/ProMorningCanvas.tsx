@@ -2,7 +2,6 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import { format, parseISO, subDays } from 'date-fns'
 import { flushSync } from 'react-dom'
@@ -37,6 +36,10 @@ import {
   type MorningBrainDumpResult,
   type BrainDumpTask,
 } from '@/lib/morning/process-morning-brain-dump'
+import {
+  PRO_GATE_BADGE_SURFACE_CLASS,
+  PRO_GATE_BLUEPRINT_SPARKLE_CLASS,
+} from '@/lib/morning/pro-gate-badge-styles'
 import {
   appendOverflowLines,
   countFilledBaseSlots,
@@ -255,6 +258,10 @@ const TRAY_CELEBRATION_LINES = [
   'Strategic alignment achieved. ✨',
 ] as const
 
+/** Merged Clear the Path — sky-600 command cap, sky-200 drafting grid (matches BrainDumpCard shell). */
+const MORNING_BRAIN_DUMP_CARD_SHELL =
+  'overflow-hidden rounded-xl border-x border-b border-slate-200/70 border-t-4 border-t-sky-600 bg-white shadow-xl [background-image:linear-gradient(to_right,rgba(186,230,253,0.44)_1px,transparent_1px),linear-gradient(to_bottom,rgba(186,230,253,0.44)_1px,transparent_1px)] [background-size:24px_24px] dark:border-slate-600/80 dark:border-t-sky-500 dark:bg-slate-950/45 dark:shadow-[0_22px_55px_rgba(0,0,0,0.5)] dark:[background-image:linear-gradient(to_right,rgba(186,230,253,0.22)_1px,transparent_1px),linear-gradient(to_bottom,rgba(186,230,253,0.22)_1px,transparent_1px)]'
+
 /** Dashboard widget parity: white surface + subtle lift (see `components/ui/card`) */
 const DASHBOARD_MORNING_CARD =
   'rounded-none border-2 border-gray-200 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.07)] dark:border-gray-700 dark:bg-gray-800 dark:shadow-[0_4px_24px_rgba(0,0,0,0.35)]'
@@ -303,7 +310,6 @@ export function ProMorningCanvas({
   suggestedTemplates = [],
 }: ProMorningCanvasProps) {
   const cockpitOnboarding = tutorialMode || streamlinedOnboarding
-  const router = useRouter()
   const tasksRef = useRef(tasks)
   tasksRef.current = tasks
   const { headerTitle: pivotHeaderTitle, sectionTitle: streamSectionTitle } = useMemo(
@@ -1787,35 +1793,46 @@ export function ProMorningCanvas({
 
   const morningActionBlurb = (
     <>
-      Capture your thoughts. Speak or type freely, then Mrs. Deer will help distill your{' '}
+      Speak freely to capture your thoughts. Mrs. Deer will help distill them into your{' '}
       <span className="font-medium text-indigo-600 dark:text-indigo-400">Core Objective</span> and{' '}
       <span className="font-medium text-orange-600 dark:text-orange-400">{baseStreamSlots} Needle Movers</span>.
     </>
   )
 
-  const brainDumpSubtitle = `Capture your thoughts. Speak or type freely, then Mrs. Deer will help distill your Core Objective and ${baseStreamSlots} Needle Movers.`
+  const brainDumpSubtitle = `Speak freely to capture your thoughts. Mrs. Deer will help distill them into your Core Objective and ${baseStreamSlots} Needle Movers.`
 
-  const morningBrainDumpBlock = voiceLocked ? null : (
-    <FreemiumStandbyFrame
-      active={intelligenceGated}
-      caption="Brain Dump & AI Distillation is a Pro+ feature."
-      blockPointerOnContent={intelligenceGated}
+  const brainDumpProHeaderBadge = intelligenceGated ? (
+    <Link
+      href="/pricing"
+      className={`relative z-[60] shrink-0 self-center cursor-pointer transition hover:scale-105 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-950 ${PRO_GATE_BADGE_SURFACE_CLASS}`}
+      aria-label="Upgrade to Pro — view plans"
+      title="Brain Dump & AI Distillation is a Pro+ feature."
     >
-    <div
-      className="relative z-[45] w-full"
-      data-tutorial={tutorialMode ? 'morning-brain-dump' : undefined}
-    >
-      {cockpitOnboarding ? (
-        <>
-          <div
-            className={`mb-4 py-2 px-4 md:py-2.5 md:px-5 ${DASHBOARD_MORNING_CARD} border-l-4 border-indigo-500 bg-white dark:bg-gray-800`}
-          >
-            <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
-              <Brain className="h-5 w-5 shrink-0 text-[#152b50] dark:text-sky-200" aria-hidden />
-              Clear the Path
-            </h2>
-            <p className="mt-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">{morningActionBlurb}</p>
-          </div>
+      Pro
+    </Link>
+  ) : null
+
+  /** Clear the Path title + copy (+ Pro link when gated) — top band inside merged brain-dump card. */
+  const clearThePathHeaderInner = (
+    <>
+      <h2 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2 text-lg font-bold tracking-tight text-slate-800 dark:text-slate-100">
+        <Brain className="h-5 w-5 shrink-0 self-center text-slate-800 dark:text-slate-200" aria-hidden />
+        <span className="min-w-0 self-center leading-none">Clear the Path</span>
+        {brainDumpProHeaderBadge}
+      </h2>
+      <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+        {cockpitOnboarding ? morningActionBlurb : brainDumpSubtitle}
+      </p>
+    </>
+  )
+
+  const morningBrainDumpBlock = voiceLocked ? null : cockpitOnboarding ? (
+    <div className="relative z-[45] w-full" data-tutorial={tutorialMode ? 'morning-brain-dump' : undefined}>
+      <div className={MORNING_BRAIN_DUMP_CARD_SHELL}>
+        <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-700/80 md:px-5 md:py-4">
+          {clearThePathHeaderInner}
+        </div>
+        <div className={intelligenceGated ? 'opacity-[0.72] pointer-events-none' : undefined}>
           <BrainDumpCard
             context="morning"
             title="Morning brain dump"
@@ -1835,11 +1852,46 @@ export function ProMorningCanvas({
             interruptListeningEpoch={brainDumpInterruptEpoch}
             saveHint={draftLabel ?? undefined}
             cockpitVisual
-            className="mb-0"
+            className="mb-0 border-0 shadow-none ring-0 bg-transparent dark:bg-transparent"
             proDistillLocked={intelligenceGated}
           />
-        </>
-      ) : (
+        </div>
+      </div>
+    </div>
+  ) : intelligenceGated ? (
+    <div className="relative z-[45] w-full" data-tutorial={tutorialMode ? 'morning-brain-dump' : undefined}>
+      <div className={MORNING_BRAIN_DUMP_CARD_SHELL}>
+        <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-700/80 md:px-5 md:py-4">
+          {clearThePathHeaderInner}
+        </div>
+        <div className="opacity-[0.72] pointer-events-none">
+          <BrainDumpCard
+            context="morning"
+            title="Clear the Path"
+            hideHeader
+            subtitle=""
+            value={morningBrainDumpText}
+            onChange={setMorningBrainDumpText}
+            accent="sage"
+            id="morning-brain-dump"
+            enableSortIntoReview
+            sortLoading={brainDumpProcessing || saving}
+            ghostSortStatusMessage="Clearing the path..."
+            onSortBegin={() => setBrainDumpProcessing(true)}
+            onSortCancel={() => setBrainDumpProcessing(false)}
+            onSortIntoReview={(text) => void runMorningBrainDumpSortFromCard(text)}
+            onListeningChange={handleBrainDumpListeningChange}
+            interruptListeningEpoch={brainDumpInterruptEpoch}
+            saveHint={draftLabel ?? undefined}
+            className="mb-0 border-0 shadow-none ring-0 bg-transparent dark:bg-transparent"
+            proDistillLocked={intelligenceGated}
+          />
+        </div>
+      </div>
+    </div>
+  ) : (
+    <div className="relative z-[45] w-full" data-tutorial={tutorialMode ? 'morning-brain-dump' : undefined}>
+      <div className={`p-4 md:p-5 ${MORNING_BRAIN_DUMP_CARD_SHELL}`}>
         <BrainDumpCard
           context="morning"
           title="Clear the Path"
@@ -1858,11 +1910,10 @@ export function ProMorningCanvas({
           interruptListeningEpoch={brainDumpInterruptEpoch}
           saveHint={draftLabel ?? undefined}
           className="mb-0"
-          proDistillLocked={intelligenceGated}
+          proDistillLocked={false}
         />
-      )}
+      </div>
     </div>
-    </FreemiumStandbyFrame>
   )
 
   return (
@@ -1954,8 +2005,8 @@ export function ProMorningCanvas({
         data-tutorial={tutorialMode ? 'morning-intention' : undefined}
         className={
           cockpitOnboarding
-            ? `scroll-mt-4 p-4 md:p-5 ${DASHBOARD_MORNING_CARD} border-l-4 border-l-[#152b50] dark:border-l-sky-500/60`
-            : 'scroll-mt-4 rounded-xl border-2 border-[#152b50]/20 bg-white p-5 dark:border-sky-400/25 dark:bg-gray-900/40'
+            ? 'scroll-mt-4 rounded-xl bg-white p-4 shadow-sm dark:bg-gray-900/50 dark:shadow-sm md:p-5'
+            : 'scroll-mt-4 rounded-xl bg-white p-5 shadow-sm dark:bg-gray-900/45 dark:shadow-sm'
         }
       >
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -2430,12 +2481,14 @@ export function ProMorningCanvas({
                 Blueprints
               </span>
               {blueprintsLocked ? (
-                <span
-                  className="inline-flex items-center gap-0.5 rounded-full bg-amber-100/90 px-2 py-0.5 text-[10px] font-bold text-amber-950 dark:bg-amber-950/50 dark:text-amber-100"
+                <Link
+                  href="/pricing"
+                  className={`cursor-pointer transition hover:scale-105 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-950 ${PRO_GATE_BADGE_SURFACE_CLASS}`}
+                  aria-label="Upgrade to Pro for Blueprints"
                   title="Pro feature"
                 >
-                  <span aria-hidden>✨</span> Pro
-                </span>
+                  Pro
+                </Link>
               ) : null}
             </div>
             <div className="-mx-1 flex gap-2 overflow-x-auto pb-1 pt-0.5">
@@ -2452,7 +2505,7 @@ export function ProMorningCanvas({
                   }}
                   className={`relative max-w-[200px] shrink-0 rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2 text-left transition-colors dark:border-slate-700 dark:bg-slate-800/40 ${
                     blueprintsLocked
-                      ? 'cursor-pointer opacity-80 ring-1 ring-amber-200/60 dark:ring-amber-800/40'
+                      ? 'cursor-pointer opacity-80 ring-1 ring-indigo-300/50 dark:ring-sky-400/35'
                       : 'hover:bg-slate-100 dark:hover:bg-slate-800/70'
                   }`}
                 >
@@ -2460,7 +2513,7 @@ export function ProMorningCanvas({
                     <span className="text-sm">{PRO_ACTION_PLAN_EMOJI[bp.actionPlan]}</span>
                     {blueprintsLocked ? (
                       <span
-                        className="absolute -right-2 -top-2 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-400 px-0.5 text-[9px] font-bold leading-none text-amber-950 shadow-sm dark:bg-amber-500 dark:text-amber-950"
+                        className={`absolute -right-2 -top-2 flex h-[18px] min-w-[18px] items-center justify-center px-0.5 text-[9px] font-bold leading-none ${PRO_GATE_BLUEPRINT_SPARKLE_CLASS}`}
                         aria-hidden
                       >
                         ✨
@@ -2775,7 +2828,7 @@ export function ProMorningCanvas({
                     type="button"
                     onClick={addStrategicStreamSlot}
                     aria-label="Add Strategic Action"
-                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200/80 py-2.5 text-[13px] font-medium text-slate-400 transition-all hover:bg-slate-50/80 hover:text-slate-600 dark:border-slate-800 dark:text-slate-500 dark:hover:bg-slate-900/50 dark:hover:text-slate-300"
+                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-[#152B50]/50 bg-[#152B50] px-4 py-2.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-[#1a3560] active:scale-[0.99] dark:border-sky-400/35 dark:bg-[#152B50] dark:hover:bg-[#1a3560]"
                   >
                     <Plus className="h-4 w-4 shrink-0" strokeWidth={2.25} aria-hidden />
                     Add Strategic Action
@@ -3324,16 +3377,13 @@ export function ProMorningCanvas({
               {streamTasksPhrase} by hand each day — same outcome, a little more typing.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
-              <button
-                type="button"
-                className={`flex-1 min-w-[8rem] ${viewProPlansCtaClassName}`}
-                onClick={() => {
-                  setBlueprintUpgradeOpen(false)
-                  router.push('/pricing')
-                }}
+              <Link
+                href="/pricing"
+                className={`flex-1 min-w-[8rem] text-center ${viewProPlansCtaClassName}`}
+                onClick={() => setBlueprintUpgradeOpen(false)}
               >
                 View Pro plans
-              </button>
+              </Link>
               <Button type="button" variant="outline" className="flex-1 min-w-[8rem]" onClick={() => setBlueprintUpgradeOpen(false)}>
                 Not now
               </Button>

@@ -1,13 +1,29 @@
 'use client'
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { Brain, Check, Loader2, Mic, MicOff } from 'lucide-react'
 
 import { colors } from '@/lib/design-tokens'
+import {
+  PRO_BRAND_ACTION_ENABLED_SURFACE_CLASS,
+  PRO_GATE_BADGE_SURFACE_CLASS,
+} from '@/lib/morning/pro-gate-badge-styles'
 import { cn } from '@/components/ui/utils'
 import { AutosizeTextarea } from '@/components/morning/AutosizeTextarea'
 
 const SAGE = '#5A7D66'
+
+/** Idle mic in dashed blueprint CTA — matches sky text/icon. */
+const MIC_WORKSPACE_ACCENT = 'text-sky-600 dark:text-sky-400 shrink-0'
+
+/** Ghost + cockpit: Brain Dump idle = soft sky pad; hover = white lift + stronger sky text. */
+const GHOST_BRAIN_DUMP_DASHED_BTN =
+  'rounded-2xl border-2 border-dashed border-sky-300 bg-sky-50 text-sky-600 shadow-sm transition-all hover:border-sky-400 hover:bg-white hover:text-sky-700 hover:shadow-md dark:border-sky-600/55 dark:bg-sky-950/35 dark:text-sky-300 dark:shadow-none dark:hover:border-sky-500 dark:hover:bg-slate-950 dark:hover:text-sky-200 dark:hover:shadow-md'
+
+/** Ghost + cockpit: sky-600 command cap, sky-200 drafting grid (readable, low vibration). */
+const GHOST_COCKPIT_ENGINE_SHELL =
+  'rounded-none border-x border-b border-slate-200/70 border-t-4 border-t-sky-600 bg-white px-5 py-4 shadow-xl [background-image:linear-gradient(to_right,rgba(186,230,253,0.44)_1px,transparent_1px),linear-gradient(to_bottom,rgba(186,230,253,0.44)_1px,transparent_1px)] [background-size:24px_24px] dark:border-slate-600/80 dark:border-t-sky-500 dark:bg-slate-950/40 dark:shadow-[0_20px_50px_rgba(0,0,0,0.45)] dark:[background-image:linear-gradient(to_right,rgba(186,230,253,0.22)_1px,transparent_1px),linear-gradient(to_bottom,rgba(186,230,253,0.22)_1px,transparent_1px)] sm:py-5'
 
 /** Matches `ProMorningCanvas` decision textarea + dashed brain-dump control styling. */
 const TEXTAREA_CLASSES =
@@ -22,7 +38,7 @@ const TEXTAREA_EMERGENCY_CLASSES =
 
 const CONTEXT_PLACEHOLDER: Record<BrainDumpContext, string> = {
   morning:
-    "Speak or type everything on your mind. Don't worry about grammar—Mrs. Deer will sort the threads.",
+    'Speak freely to capture your thoughts. Mrs. Deer will help distill them into your Core Objective and Needle Movers.',
   evening:
     "What's still rattling around? Worries, half-thoughts, things you don't want carrying into sleep...",
   emergency: "Get it all out. What's the immediate noise? Don't worry about grammar, just dump it.",
@@ -36,13 +52,13 @@ const EVENING_SORT_PLACEHOLDER =
 const EMERGENCY_SORT_PLACEHOLDER =
   "Speaking is active... Name the fire, what's at stake, and what you need next."
 
-/** Morning + sort: hints live in the field, not the header. */
+/** Morning + sort: placeholder for assistive tech / hidden field (capture is voice-only). */
 const MORNING_SORT_PLACEHOLDER =
-  "Speak or type everything on your mind. Don't worry about grammar—Mrs. Deer will sort the threads."
+  'Speak freely to capture your thoughts. Mrs. Deer will help distill them into your Core Objective and Needle Movers.'
 
 const HELPER_COPY: Record<BrainDumpContext, string> = {
   morning:
-    'Speak freely—or type below. Words appear in the box as you go. Tap again when done.',
+    'Speak freely to capture your thoughts. Mrs. Deer will help distill them into your Core Objective and Needle Movers.',
   evening:
     'Speak freely—or type below. Words appear in the box as you go. Tap again when done.',
   emergency:
@@ -436,10 +452,13 @@ export function BrainDumpCard({
       onClick={onDoneSpeaking}
       disabled={sortLoading || proDistillLocked}
       aria-label="Finish and sort — send capture to your reflection and cards"
+      aria-busy={sortLoading}
       className={`flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl border-[3px] px-4 py-3.5 text-base font-bold shadow-md transition active:scale-[0.99] sm:min-h-14 sm:text-lg ${
-        sortLoading || proDistillLocked
+        proDistillLocked
           ? 'cursor-not-allowed border-slate-300 bg-slate-100 text-slate-400 opacity-60 dark:border-slate-600 dark:bg-slate-800'
-          : 'border-[#ef725c] bg-[#5A7D66] text-white shadow-[0_4px_20px_rgba(90,125,102,0.45)] hover:bg-[#4d6b57] focus:outline-none focus:ring-4 focus:ring-[#ef725c]/35 dark:border-[#f0886c] dark:bg-[#4a6b55] dark:hover:bg-[#3d5a47]'
+          : `border-white/40 ${PRO_BRAND_ACTION_ENABLED_SURFACE_CLASS} ${
+              sortLoading ? 'cursor-wait opacity-[0.92] brightness-[0.98]' : ''
+            }`
       }`}
     >
       <Check className="h-7 w-7 shrink-0 opacity-95" strokeWidth={2.5} aria-hidden />
@@ -471,9 +490,11 @@ export function BrainDumpCard({
                 onClick={onBrainDumpMicClick}
                 aria-label="Add more — continue voice brain dump"
                 title="Keep going — your new words are added to what you already said."
-                className="flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 py-2.5 text-sm font-medium text-slate-600 transition-all hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-900/50"
+                className={`flex w-full items-center justify-center gap-3 py-2.5 text-sm font-medium ${GHOST_BRAIN_DUMP_DASHED_BTN} ${
+                  !supportsSpeech || sortLoading || proDistillLocked ? 'cursor-not-allowed opacity-50' : ''
+                }`}
               >
-                <Mic className="h-5 w-5 shrink-0" strokeWidth={2.25} aria-hidden />
+                <Mic className={`h-5 w-5 ${MIC_WORKSPACE_ACCENT}`} strokeWidth={2.25} aria-hidden />
                 <span>Add more (voice)</span>
               </button>
             ) : null}
@@ -492,11 +513,11 @@ export function BrainDumpCard({
                 ? 'Voice requires a supported browser'
                 : 'Tap to speak; your words appear as you go. Tap Done when finished.'
             }
-            className={`flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-dashed py-3 font-medium transition-all border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900/50 ${
+            className={`flex w-full items-center justify-center gap-3 py-3 font-medium ${GHOST_BRAIN_DUMP_DASHED_BTN} ${
               !supportsSpeech || sortLoading || proDistillLocked ? 'cursor-not-allowed opacity-50' : ''
             }`}
           >
-            <Mic className="h-6 w-6" strokeWidth={2.25} aria-hidden />
+            <Mic className={`h-6 w-6 ${MIC_WORKSPACE_ACCENT}`} strokeWidth={2.25} aria-hidden />
             <span>Brain Dump</span>
           </button>
         ) : null
@@ -537,11 +558,11 @@ export function BrainDumpCard({
               ? 'Voice requires a supported browser'
               : 'Tap to speak freely; tap again when done'
           }
-          className={`flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-dashed py-3 font-medium transition-all border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900/50 ${
+          className={`flex w-full items-center justify-center gap-3 py-3 font-medium ${GHOST_BRAIN_DUMP_DASHED_BTN} ${
             !supportsSpeech || sortLoading || proDistillLocked ? 'cursor-not-allowed opacity-50' : ''
           }`}
         >
-          <Mic className="h-6 w-6" strokeWidth={2.25} aria-hidden />
+          <Mic className={`h-6 w-6 ${MIC_WORKSPACE_ACCENT}`} strokeWidth={2.25} aria-hidden />
           <span>Brain Dump</span>
         </button>
       )}
@@ -599,7 +620,7 @@ export function BrainDumpCard({
           : 'space-y-3',
         cockpitVisual &&
           isGhostVoiceBlock &&
-          'rounded-none border-2 border-gray-200 bg-white px-4 py-2 shadow-[0_4px_20px_rgba(0,0,0,0.07)] dark:border-gray-700 dark:bg-gray-800 dark:shadow-[0_4px_24px_rgba(0,0,0,0.35)]',
+          GHOST_COCKPIT_ENGINE_SHELL,
         className
       )}
       data-brain-dump-context={context}
@@ -613,15 +634,35 @@ export function BrainDumpCard({
         <header className={isGhostVoiceBlock ? 'shrink-0' : undefined}>
           <h2
             id={`${id}-heading`}
-            className="text-xl font-semibold leading-none text-gray-900 dark:text-white sm:text-2xl"
+            className={
+              isGhostVoiceBlock
+                ? 'text-xl font-bold leading-none text-slate-800 dark:text-slate-100 sm:text-2xl'
+                : 'text-xl font-semibold leading-none text-gray-900 dark:text-white sm:text-2xl'
+            }
           >
-            <span className="flex items-center gap-2">
+            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2 sm:gap-x-2.5">
               <Brain
-                className="h-5 w-5 shrink-0 sm:h-6 sm:w-6"
-                style={{ color: borderAccent }}
+                className={cn(
+                  'h-5 w-5 shrink-0 self-center sm:h-6 sm:w-6',
+                  isGhostVoiceBlock ? 'text-slate-800 dark:text-slate-200' : '',
+                )}
+                style={isGhostVoiceBlock ? undefined : { color: borderAccent }}
                 aria-hidden
               />
-              <span className="min-w-0 leading-tight">{title}</span>
+              <span className="min-w-0 self-center leading-none sm:leading-tight">{title}</span>
+              {proDistillLocked ? (
+                <Link
+                  href="/pricing"
+                  className={cn(
+                    'shrink-0 self-center cursor-pointer transition hover:scale-105 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-950',
+                    PRO_GATE_BADGE_SURFACE_CLASS,
+                  )}
+                  aria-label="Upgrade to Pro — view plans"
+                  title="Brain Dump & AI Distillation is a Pro+ feature."
+                >
+                  Pro
+                </Link>
+              ) : null}
             </span>
           </h2>
           {saveHint ? (
@@ -631,7 +672,7 @@ export function BrainDumpCard({
             <p
               className={
                 isGhostVoiceBlock
-                  ? 'mb-2 mt-1.5 max-w-prose text-sm leading-relaxed text-muted-foreground'
+                  ? 'mb-2 mt-1.5 max-w-prose text-sm leading-relaxed text-slate-600 dark:text-slate-400'
                   : 'mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-300'
               }
             >
@@ -644,7 +685,10 @@ export function BrainDumpCard({
       <div
         className={
           isGhostVoiceBlock
-            ? 'flex min-h-0 flex-1 flex-col justify-center gap-2 pb-4'
+            ? cn(
+                'flex min-h-0 flex-1 flex-col justify-center',
+                cockpitVisual ? 'gap-3 px-0.5 pb-7 pt-2 sm:pb-8' : 'gap-2 pb-4',
+              )
             : 'space-y-2'
         }
       >
@@ -732,7 +776,7 @@ export function BrainDumpCard({
             textareaRef.current?.blur()
             onSortIntoReview?.()
           }}
-              disabled={sortLoading || value.trim().length < 8 || proDistillLocked}
+          disabled={sortLoading || value.trim().length < 8 || proDistillLocked}
           title={
             proDistillLocked
               ? 'Brain Dump & AI Distillation is a Pro+ feature.'
@@ -742,10 +786,10 @@ export function BrainDumpCard({
           }
           className={`flex w-full items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
             sortLoading || value.trim().length < 8 || proDistillLocked
-              ? 'border-[#152B50] bg-[#152B50] text-white hover:bg-[#1a3560] dark:border-sky-200/40 dark:bg-slate-700 dark:hover:bg-slate-600'
-              : value.trim().length >= 20
-                ? 'motion-safe:animate-pulse border-[#5A7D66] bg-[#5A7D66] text-white shadow-[0_0_24px_rgba(90,125,102,0.35)] hover:bg-[#4d6b57] dark:border-emerald-400/50 dark:bg-[#4a6b55] dark:hover:bg-[#3d5a47]'
-                : 'border-[#152B50] bg-[#152B50] text-white hover:bg-[#1a3560] dark:border-sky-200/40 dark:bg-slate-700 dark:hover:bg-slate-600'
+              ? 'border-slate-300 bg-slate-100 text-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400'
+              : `border-white/35 ${PRO_BRAND_ACTION_ENABLED_SURFACE_CLASS} ${
+                  value.trim().length >= 20 ? 'motion-safe:animate-pulse' : ''
+                }`
           }`}
         >
           {context === 'emergency'

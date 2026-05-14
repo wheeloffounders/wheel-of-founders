@@ -14,12 +14,24 @@ interface PricingCardProps {
   period?: string
   yearlyPrice?: string
   yearlyTotal?: string
+  /** Annual-first layout: anchor monthly above, hero annual price, savings pill. */
+  annualFirstPricing?: {
+    monthlyAnchor: string
+    heroPrice: string
+    heroSuffix: string
+    subline: string
+    savingsBadge: string
+    /** Pro: emerald savings pill; Duo: slate to match “Best for teams” badge. */
+    savingsBadgeTone?: 'emerald' | 'slate'
+  }
   features: string[]
   cta: string
   popular?: boolean
   badge?: string
   href?: string
   isCurrentTier?: boolean
+  /** Quiet tier: solid white surface (Duo) vs transparent (Free). */
+  quietSurface?: 'transparent' | 'white'
 }
 
 function PricingCard({
@@ -28,95 +40,216 @@ function PricingCard({
   period,
   yearlyPrice,
   yearlyTotal,
+  annualFirstPricing,
   features,
   cta,
   popular,
   badge,
   href,
   isCurrentTier,
+  quietSurface = 'transparent',
 }: PricingCardProps) {
+  const popularCtaClass =
+    'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-sm transition hover:brightness-110 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-950'
+
+  const duoSolidCtaClass =
+    'bg-slate-900 text-white shadow-sm transition hover:bg-slate-950 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:bg-slate-900 dark:hover:bg-slate-800 dark:focus-visible:ring-offset-gray-950'
+
+  const outlineGhostCtaClass =
+    'border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-transparent dark:text-slate-200 dark:hover:bg-slate-800/40'
+
+  const manageTierCtaClass =
+    'border border-slate-400 bg-white text-slate-800 transition hover:bg-slate-50 dark:border-slate-500 dark:bg-slate-900/40 dark:text-slate-100 dark:hover:bg-slate-800/60'
+
+  const ctaBaseLayout = 'flex min-h-[48px] w-full items-center justify-center rounded-lg px-6 py-3 text-center text-base font-semibold transition'
+
+  const quietShellClass =
+    quietSurface === 'white'
+      ? 'border border-slate-200 bg-white shadow-none hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-slate-600'
+      : 'border border-slate-200 bg-transparent shadow-none hover:border-slate-300 dark:border-slate-700 dark:bg-transparent dark:hover:border-slate-600'
+
+  const savingsBadgeClass =
+    annualFirstPricing?.savingsBadgeTone === 'slate'
+      ? 'inline-flex shrink-0 items-center rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white dark:bg-slate-600'
+      : 'inline-flex shrink-0 items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200'
+
+  const heroSuffixClass =
+    annualFirstPricing && annualFirstPricing.heroSuffix.length > 6
+      ? 'shrink-0 text-sm font-semibold leading-none text-slate-700 dark:text-slate-300'
+      : 'shrink-0 text-base font-semibold leading-none text-slate-700 dark:text-slate-300'
+
+  const hasTopBadges = Boolean(popular || (badge && !popular) || isCurrentTier)
+
   const content = (
     <div
-      className={`relative bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 border-2 transition-all ${
-        popular ? 'border-[#ef725c] scale-105' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+      className={`relative flex h-full min-h-0 flex-col rounded-2xl p-8 transition-all ${
+        popular
+          ? 'scale-105 border-2 border-sky-400 bg-sky-50/50 shadow-[0_0_30px_rgba(14,165,233,0.3)] backdrop-blur-md dark:border-sky-400 dark:bg-sky-950/35 dark:shadow-[0_0_34px_rgba(56,189,248,0.35)]'
+          : quietShellClass
       } ${isCurrentTier ? 'ring-2 ring-[#152b50] ring-offset-2' : ''}`}
     >
-      {popular && (
-        <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-          <span className="bg-gradient-to-r from-[#ef725c] to-[#152b50] text-white px-4 py-1 rounded-full text-xs font-semibold">
-            Most Popular
-          </span>
+      {hasTopBadges ? (
+        <div className="pointer-events-none absolute -top-4 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5">
+          {popular ? (
+            <span className="rounded-full bg-sky-500 px-4 py-1 text-xs font-semibold text-white shadow-sm dark:bg-sky-500">
+              Most Popular
+            </span>
+          ) : null}
+          {badge && !popular ? (
+            <span className="rounded-full bg-slate-600 px-4 py-1 text-xs font-semibold text-white dark:bg-slate-500">
+              {badge}
+            </span>
+          ) : null}
+          {isCurrentTier ? (
+            <span className="rounded-full bg-[#10b981] px-3 py-1 text-xs font-semibold text-white">
+              Current
+            </span>
+          ) : null}
         </div>
-      )}
-      {badge && !popular && (
-        <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-          <span className="bg-[#152b50] text-white px-4 py-1 rounded-full text-xs font-semibold">
-            {badge}
-          </span>
-        </div>
-      )}
-      {isCurrentTier && (
-        <div className="absolute -top-2 -right-2">
-          <span className="bg-[#10b981] text-white px-3 py-1 rounded-full text-xs font-semibold">
-            Current
-          </span>
-        </div>
-      )}
+      ) : null}
 
-      <div className="flex items-center gap-3 mb-4">
-        <div className={`p-2 rounded-lg ${popular ? 'bg-[#ef725c]/10' : 'bg-gray-50 dark:bg-gray-900'}`}>
-          <div className={popular ? 'text-[#ef725c]' : 'text-gray-700 dark:text-gray-300'}>
-            {name === 'Duo' ? <Users className="w-6 h-6" /> : name === 'Pro' ? <Sparkles className="w-6 h-6" /> : <Zap className="w-6 h-6" />}
+      <div className="flex min-h-0 flex-1 flex-col pt-1">
+        <div className="mb-4 flex items-center gap-3">
+          <div
+            className={`rounded-lg p-2 ${
+              popular ? 'bg-sky-100/80 dark:bg-sky-900/45' : 'bg-slate-50 dark:bg-slate-800/30'
+            }`}
+          >
+            <div
+              className={
+                popular
+                  ? 'text-sky-600 dark:text-sky-400'
+                  : 'text-slate-500 dark:text-slate-400'
+              }
+            >
+              {name === 'Duo' ? <Users className="w-6 h-6" /> : name === 'Pro' ? <Sparkles className="w-6 h-6" /> : <Zap className="w-6 h-6" />}
+            </div>
           </div>
+          <h2
+            className={`text-2xl font-bold ${
+              popular ? 'text-slate-900 dark:text-slate-50' : 'text-slate-700 dark:text-slate-300'
+            }`}
+          >
+            {name}
+          </h2>
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{name}</h2>
-      </div>
 
       <div className="mb-6">
-        <div className="flex items-baseline gap-2">
-          <span className="text-4xl font-bold text-gray-900 dark:text-white">{price}</span>
-          {period && <span className="text-sm text-gray-500 dark:text-gray-400">/{period}</span>}
-        </div>
-        {yearlyPrice && <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{yearlyPrice}</p>}
-        {yearlyTotal && <p className="text-xs text-gray-500 dark:text-gray-400">{yearlyTotal}</p>}
+        {annualFirstPricing ? (
+          <div className="flex h-[7.25rem] flex-col">
+            <div className="flex h-[1.375rem] flex-none items-end">
+              <p className="text-sm leading-5 text-slate-400 dark:text-slate-500">{annualFirstPricing.monthlyAnchor}</p>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-nowrap items-center gap-x-2 gap-y-0 overflow-x-auto">
+              <span className={savingsBadgeClass}>{annualFirstPricing.savingsBadge}</span>
+              <span className="shrink-0 text-4xl font-bold tabular-nums tracking-tight text-slate-900 dark:text-slate-50">
+                {annualFirstPricing.heroPrice}
+              </span>
+              <span className={heroSuffixClass}>{annualFirstPricing.heroSuffix}</span>
+            </div>
+            <div className="flex h-[1.375rem] flex-none items-start pt-1">
+              <p className="text-sm leading-5 text-slate-500 dark:text-slate-400">{annualFirstPricing.subline}</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex min-h-[7.25rem] flex-col justify-center">
+            <div className="flex items-baseline gap-2">
+              <span
+                className={`text-4xl font-bold ${
+                  popular ? 'text-slate-900 dark:text-slate-50' : 'text-slate-800 dark:text-slate-200'
+                }`}
+              >
+                {price}
+              </span>
+              {period && (
+                <span
+                  className={`text-sm ${
+                    popular ? 'text-slate-900 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500'
+                  }`}
+                >
+                  /{period}
+                </span>
+              )}
+            </div>
+            {yearlyPrice && (
+              <p
+                className={`mt-1 text-sm ${
+                  popular ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'
+                }`}
+              >
+                {yearlyPrice}
+              </p>
+            )}
+            {yearlyTotal && (
+              <p
+                className={`text-xs ${
+                  popular ? 'text-slate-500 dark:text-slate-500' : 'text-slate-400 dark:text-slate-500'
+                }`}
+              >
+                {yearlyTotal}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
-      <ul className="space-y-3 mb-8">
+      <ul className="mb-0 min-h-0 flex-1 space-y-3">
         {features.map((feature, idx) => (
           <li key={idx} className="flex items-start gap-3">
-            <Check className="w-5 h-5 text-[#10b981] flex-shrink-0 mt-0.5" />
-            <span className="text-gray-700 dark:text-gray-300">{feature}</span>
+            <Check
+              className={`mt-0.5 h-5 w-5 flex-shrink-0 ${
+                popular ? 'text-sky-500 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500'
+              }`}
+            />
+            <span
+              className={
+                popular ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500'
+              }
+            >
+              {feature}
+            </span>
           </li>
         ))}
       </ul>
 
-      {href ? (
-        <Link
-          href={href}
-          className={`block w-full py-3 px-6 rounded-lg font-semibold text-center transition ${
-            popular
-              ? 'bg-gradient-to-r from-[#ef725c] to-[#152b50] text-white hover:opacity-90'
-              : isCurrentTier
-              ? 'bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 cursor-default'
-              : 'bg-[#152b50] text-white hover:bg-[#1a3565]'
-          }`}
-        >
-          {cta}
-        </Link>
-      ) : (
-        <button
-          disabled={isCurrentTier}
-          className={`w-full py-3 px-6 rounded-lg font-semibold transition ${
-            popular
-              ? 'bg-gradient-to-r from-[#ef725c] to-[#152b50] text-white hover:opacity-90'
-              : isCurrentTier
-              ? 'bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 cursor-default'
-              : 'bg-[#152b50] text-white hover:bg-[#1a3565]'
-          }`}
-        >
-          {isCurrentTier ? 'Current Plan' : cta}
-        </button>
-      )}
+      <div className="mt-auto w-full shrink-0 pt-8">
+        {href ? (
+          <Link
+            href={href}
+            className={`${ctaBaseLayout} ${
+              popular
+                ? popularCtaClass
+                : isCurrentTier && href
+                  ? manageTierCtaClass
+                  : isCurrentTier
+                    ? 'cursor-default bg-slate-50 text-slate-500 dark:bg-slate-800/50 dark:text-slate-500'
+                    : name === 'Duo'
+                      ? duoSolidCtaClass
+                      : outlineGhostCtaClass
+            }`}
+          >
+            {cta}
+          </Link>
+        ) : (
+          <button
+            disabled={isCurrentTier}
+            className={`${ctaBaseLayout} ${
+              popular
+                ? popularCtaClass
+                : isCurrentTier && href
+                  ? manageTierCtaClass
+                  : isCurrentTier
+                    ? 'cursor-default bg-slate-50 text-slate-500 dark:bg-slate-800/50 dark:text-slate-500'
+                    : name === 'Duo'
+                      ? duoSolidCtaClass
+                      : outlineGhostCtaClass
+            }`}
+          >
+            {isCurrentTier ? 'Current Plan' : cta}
+          </button>
+        )}
+      </div>
+      </div>
     </div>
   )
 
@@ -164,19 +297,11 @@ export default function PricingPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
-      <div className="text-center mb-12">
-        <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">Choose Your Plan</h1>
-        <p className="text-xl text-gray-700 dark:text-gray-300 mb-2">
-          During beta, all users get <strong>Pro</strong> access free
-        </p>
-        {(currentTier === 'beta' || hasDuo) && (
-          <p className="text-sm text-[#ef725c] font-medium">
-            You&apos;re currently on {hasDuo ? 'Duo' : 'Beta'} (Pro features unlocked)
-          </p>
-        )}
+      <div className="mb-12 text-center">
+        <h1 className="text-4xl font-bold text-gray-900 dark:text-white">Choose Your Plan</h1>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+      <div className="grid max-w-5xl mx-auto grid-cols-1 items-stretch gap-6 md:grid-cols-3">
         <PricingCard
           name="Free"
           price="$0"
@@ -187,10 +312,7 @@ export default function PricingPage() {
 
         <PricingCard
           name="Pro"
-          price="$39"
-          period="month"
-          yearlyPrice="$29/mo"
-          yearlyTotal="$348/year"
+          price="$29"
           features={[
             'Unlimited insights',
             'Unlimited tasks',
@@ -198,6 +320,14 @@ export default function PricingPage() {
             'Advanced patterns',
             'Priority support',
           ]}
+          annualFirstPricing={{
+            monthlyAnchor: 'Billed monthly: $39',
+            heroPrice: '$29',
+            heroSuffix: '/mo',
+            subline: 'billed annually ($348/year)',
+            savingsBadge: 'SAVE 25%',
+            savingsBadgeTone: 'emerald',
+          }}
           cta="Upgrade to Pro"
           popular
           href="/checkout?plan=individual"
@@ -206,10 +336,7 @@ export default function PricingPage() {
 
         <PricingCard
           name="Duo"
-          price="$33"
-          period="month per person"
-          yearlyPrice="$25/mo per person"
-          yearlyTotal="$600/year total"
+          price="$25"
           features={[
             'Two Pro accounts',
             'Separate private data',
@@ -217,10 +344,19 @@ export default function PricingPage() {
             'Save up to 35% vs two individuals',
             'Perfect for co-founders',
           ]}
+          annualFirstPricing={{
+            monthlyAnchor: 'Billed monthly: $33',
+            heroPrice: '$25',
+            heroSuffix: '/mo per person',
+            subline: 'billed annually ($600/year)',
+            savingsBadge: 'SAVE 24%',
+            savingsBadgeTone: 'slate',
+          }}
           cta={hasDuo ? 'Manage Duo' : 'Start Duo'}
           badge="Best for teams"
           href={hasDuo ? '/settings/duo' : '/checkout?plan=duo'}
           isCurrentTier={hasDuo}
+          quietSurface="white"
         />
       </div>
 

@@ -3,6 +3,9 @@
 # Editor local history (some extensions write these under the repo; built-in Timeline usually stores outside the project)
 .history/
 
+# Local-only session notes (never push)
+.local/
+
 # dependencies
 /node_modules
 /.pnp

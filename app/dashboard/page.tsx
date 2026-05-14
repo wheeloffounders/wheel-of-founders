@@ -458,19 +458,19 @@ function DashboardContent() {
           {showFreemiumPaywallCard && (
             <div
               id="dashboard-paywall-card"
-              className="relative mt-8 rounded-xl border-2 border-purple-300 bg-gradient-to-r from-purple-50 to-pink-50 p-6 shadow-lg dark:border-purple-500/60 dark:from-[#1A202C] dark:to-[#1A202C]"
+              className="relative mt-8 rounded-xl border border-sky-300 bg-sky-50/50 p-6 shadow-[0_0_18px_rgba(14,165,233,0.15)] backdrop-blur-sm dark:border-sky-500/45 dark:bg-sky-950/30 dark:shadow-[0_0_18px_rgba(56,189,248,0.18)]"
             >
               <div className="mb-4 flex items-center gap-3">
-                <Sparkles className="h-8 w-8 shrink-0 text-purple-600" />
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">
+                <Sparkles className="h-8 w-8 shrink-0 text-sky-600 dark:text-sky-400" />
+                <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">
                   Unlock AI Coaching Moments
                 </h2>
               </div>
-              <p className="mb-4 text-gray-700 dark:text-gray-300">
+              <p className="mb-4 text-slate-800 dark:text-slate-200">
                 Pro+ includes personalized coaching with Mrs. Deer, your AI companion&apos;s Gentle Architect
                 framework:
               </p>
-              <div className="max-md:sticky max-md:bottom-0 z-20 max-md:-mx-2 max-md:rounded-t-xl max-md:border-t max-md:border-purple-200/80 max-md:bg-gradient-to-t max-md:from-purple-50 max-md:via-purple-50/98 max-md:to-purple-50/80 max-md:px-2 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:pt-4 dark:max-md:border-purple-800/50 dark:max-md:from-[#1A202C] dark:max-md:via-[#1A202C]/98 dark:max-md:to-[#1A202C]/85">
+              <div className="max-md:sticky max-md:bottom-0 z-20 max-md:-mx-2 max-md:rounded-t-xl max-md:border-t max-md:border-sky-200/90 max-md:bg-gradient-to-t max-md:from-sky-50/98 max-md:via-sky-50/95 max-md:to-sky-50/85 max-md:px-2 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:pt-4 dark:max-md:border-sky-800/50 dark:max-md:from-sky-950/95 dark:max-md:via-sky-950/90 dark:max-md:to-slate-950/90">
                 <Link
                   ref={paywallCtaRef}
                   id="dashboard-pro-upgrade-cta"
@@ -485,7 +485,7 @@ function DashboardContent() {
                   </button>
                 </Link>
               </div>
-              <ul className="mb-2 mt-5 list-none space-y-2 text-gray-700 dark:text-gray-300">
+              <ul className="mb-2 mt-5 list-none space-y-2 text-slate-800 dark:text-slate-200">
                 {[
                   'Daily morning reflection (Gentle Architect)',
                   'Plan analysis after each morning',
@@ -497,9 +497,9 @@ function DashboardContent() {
                     <button
                       type="button"
                       onClick={scrollToPaywallUpgrade}
-                      className="w-full rounded-lg py-1.5 pl-6 text-left text-sm underline-offset-2 transition hover:bg-purple-100/60 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 dark:hover:bg-purple-950/40 dark:focus-visible:ring-offset-gray-900"
+                      className="w-full rounded-lg py-1.5 pl-6 text-left text-sm underline-offset-2 transition hover:bg-sky-100/70 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:hover:bg-sky-950/50 dark:focus-visible:ring-offset-gray-900"
                     >
-                      <span className="-ml-4 mr-2 select-none text-purple-600 dark:text-purple-400" aria-hidden>
+                      <span className="-ml-4 mr-2 select-none text-sky-500 dark:text-sky-400" aria-hidden>
                         •
                       </span>
                       {label}

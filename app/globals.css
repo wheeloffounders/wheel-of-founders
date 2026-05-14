@@ -6,6 +6,8 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /** Official Pro brand — indigo → violet → pink (`bg-pro-brand`). */
+  --background-image-pro-brand: linear-gradient(to right, #6366f1, #a855f7, #ec4899);
 }
 
 html {

@@ -127,7 +127,7 @@ import { useMediaQuery } from '@/lib/hooks/useMediaQuery'
 import { fetchUserProfileBundle } from '@/lib/user-profile-bundle-cache'
 import { PageSidebar } from '@/components/layout/PageSidebar'
 import { getActionPlanGuidance } from '@/lib/action-plan-guidance'
-import { showFreemiumAuditLinks } from '@/lib/env'
+import { showFreemiumAuditLinks, showDebugTools } from '@/lib/env'
 import { useDebouncedAutoSave, type DraftSaveStatus } from '@/lib/hooks/useDebouncedAutoSave'
 import { useEmergencyMode } from '@/components/emergency/EmergencyModeProvider'
 
@@ -408,6 +408,8 @@ export default function MorningPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [hasPlan, setHasPlan] = useState(false)
+  /** True after a successful plan commit so post–Plan Review UI can mount before `hasPlan` catches up. */
+  const [postMorningLayoutUnlock, setPostMorningLayoutUnlock] = useState(false)
   const [editingTasks, setEditingTasks] = useState(false)
   const [editingDecision, setEditingDecision] = useState(false)
   const [planCreatedAt, setPlanCreatedAt] = useState<Date | null>(null)
@@ -497,20 +499,7 @@ export default function MorningPage() {
   /** Pro canvas for all authenticated users (free morning layout removed). */
   const morningPlanView = 'pro' as const
 
-  const morningEntitlement = useMemo(
-    () =>
-      resolveProEntitlement(
-        {
-          ...tierProfileRow,
-          tier: tierProfileRow?.tier ?? freemiumSessionUser?.tier ?? null,
-          pro_features_enabled: freemiumSessionUser?.pro_features_enabled,
-        },
-        Date.now(),
-        { simulateExpired: trialSimExpired }
-      ),
-    [tierProfileRow, freemiumSessionUser, trialSimExpired]
-  )
-
+  /** Trial UX (badges, “7 days left”, sim expired) — computed before morning entitlement so we can align insight gates. */
   const trialUx = useMemo(
     () =>
       getTrialStatus(
@@ -524,6 +513,26 @@ export default function MorningPage() {
     [tierProfileRow, freemiumSessionUser, trialSimExpired]
   )
 
+  /**
+   * Stripe/tier/resolveProEntitlement, with **trialing** aligned to trial UX so insight blur/toasts don’t disagree
+   * (e.g. “7 days of Pro left” while `resolveProEntitlement` was still false before trial dates exist).
+   */
+  const morningEntitlement = useMemo(() => {
+    const ent = resolveProEntitlement(
+      {
+        ...tierProfileRow,
+        tier: tierProfileRow?.tier ?? freemiumSessionUser?.tier ?? null,
+        pro_features_enabled: freemiumSessionUser?.pro_features_enabled,
+      },
+      Date.now(),
+      { simulateExpired: trialSimExpired }
+    )
+    return {
+      ...ent,
+      isPro: ent.isPro || trialUx.status === 'trialing',
+    }
+  }, [tierProfileRow, freemiumSessionUser, trialSimExpired, trialUx.status])
+
   const freemiumUserStrategic = useMemo((): UserProfile | null => {
     if (!freemiumSessionUser) return null
     if (trialUx.status !== 'expired') return freemiumSessionUser
@@ -535,39 +544,52 @@ export default function MorningPage() {
     [tierAllowsPostMorningInsight, trialUx.status]
   )
 
-  /** Freemium: show morning “Gentle Architect” teaser immediately (no DB / journey wait). */
-  const showFreemiumMorningInsightTeaser = useMemo(
-    () => !trialUx.isPro && trialUx.status !== 'expired',
-    [trialUx.isPro, trialUx.status]
+  /** Main scroll layout (excludes first-time empty plan branch where morning Mrs. Deer is omitted). */
+  const onMainMorningLayout = useMemo(
+    () => !loading && !(isFirstTime && !hasPlan),
+    [loading, isFirstTime, hasPlan]
   )
 
-  /** Freemium: post–Plan Review card once they have a saved plan (fetch is Pro-gated). */
+  /**
+   * Freemium insight teaser: non–Pro-by-entitlement, except first-week expired + non-tutorial card.
+   * `morningEntitlement.isPro` includes `trialUx.status === 'trialing'` so grace trials aren’t treated as freemium here.
+   */
+  const showFreemiumMorningInsightTeaser = useMemo(
+    () => !morningEntitlement.isPro && !(trialUx.status === 'expired' && !isTutorial),
+    [morningEntitlement.isPro, trialUx.status, isTutorial]
+  )
+
+  /** Freemium post–Plan Review teaser (same gate as morning). */
   const showFreemiumPostMorningInsightTeaser = useMemo(
-    () => !trialUx.isPro && trialUx.status !== 'expired',
-    [trialUx.isPro, trialUx.status]
+    () => !morningEntitlement.isPro && !(trialUx.status === 'expired' && !isTutorial),
+    [morningEntitlement.isPro, trialUx.status, isTutorial]
   )
 
   const showPostMorningCoachSlot = useMemo(() => {
-    if (!hasPlan) return false
-    if (showFreemiumPostMorningInsightTeaser) return true
-    return (
-      showPostMorningInsightTier &&
-      Boolean(
-        postMorningInsight?.trim() ||
-          isStreamingPostMorning ||
-          streamingError ||
-          postMorningInsightFetchFailed
-      )
+    if (showFreemiumPostMorningInsightTeaser && (hasPlan || postMorningLayoutUnlock)) return true
+    if (!hasPlan && !postMorningLayoutUnlock) return false
+    const hasPersistedOrLiveCopy = Boolean(
+      postMorningInsight?.trim() ||
+        isStreamingPostMorning ||
+        streamingError ||
+        postMorningInsightFetchFailed
     )
+    if (hasPersistedOrLiveCopy) return true
+    return false
   }, [
     hasPlan,
+    postMorningLayoutUnlock,
     showFreemiumPostMorningInsightTeaser,
-    showPostMorningInsightTier,
     postMorningInsight,
     isStreamingPostMorning,
     streamingError,
     postMorningInsightFetchFailed,
   ])
+
+  const postMorningInsightIsTeaser = useMemo(
+    () => !morningEntitlement.isPro && !isStreamingPostMorning,
+    [morningEntitlement.isPro, isStreamingPostMorning]
+  )
 
   const postMorningCoachMessage = useMemo(() => {
     if (isStreamingPostMorning) return streamingInsight?.trim() || '…'
@@ -587,19 +609,28 @@ export default function MorningPage() {
     showFreemiumPostMorningInsightTeaser,
   ])
 
+  const showFirstWeekExpiredUpgradeCard = trialUx.status === 'expired' && !isTutorial
   const showMorningBeforeCoach = useMemo(
     () =>
-      !(trialUx.status === 'expired' && !isTutorial) &&
-      (Boolean(morningInsight?.trim()) || showFreemiumMorningInsightTeaser),
-    [trialUx.status, isTutorial, morningInsight, showFreemiumMorningInsightTeaser]
+      onMainMorningLayout &&
+      (Boolean(morningInsight?.trim()) || !morningEntitlement.isPro || trialUx.status === 'trialing'),
+    [onMainMorningLayout, morningInsight, morningEntitlement.isPro, trialUx.status]
   )
 
   const morningBeforeCoachMessage = useMemo(() => {
     const trimmed = morningInsight?.trim()
     if (trimmed) return trimmed
-    if (showFreemiumMorningInsightTeaser) return FREEMIUM_MORNING_BEFORE_INSIGHT_PLACEHOLDER
+    if (showFreemiumMorningInsightTeaser || trialUx.status === 'trialing') {
+      return FREEMIUM_MORNING_BEFORE_INSIGHT_PLACEHOLDER
+    }
     return ''
-  }, [morningInsight, showFreemiumMorningInsightTeaser])
+  }, [morningInsight, showFreemiumMorningInsightTeaser, trialUx.status])
+
+  /** True when the user does not have Pro product entitlement (Stripe / tier / trial window), not trial UX badge alone. */
+  const morningBeforeInsightFreemiumLocked = useMemo(
+    () => !morningEntitlement.isPro,
+    [morningEntitlement.isPro]
+  )
 
   /** Tutorial-only mood/energy when the check-in card is shown (non-streamlined). */
   const [tutorialCheckInMood, setTutorialCheckInMood] = useState<number | null>(3)
@@ -769,7 +800,7 @@ export default function MorningPage() {
     () =>
       missionShieldMessage ? (
         <div
-          className="mb-4 flex gap-3 rounded-xl border border-[#152b50]/20 bg-slate-50 p-4 text-sm text-[#1a2f4a] shadow-sm dark:border-sky-800/40 dark:bg-sky-950/50 dark:text-sky-100"
+          className="mb-4 flex gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4 text-sm text-[#1a2f4a] shadow-sm dark:border-slate-700/50 dark:bg-slate-900/40 dark:text-slate-100"
           role="status"
         >
           <Shield className="mt-0.5 h-5 w-5 shrink-0 text-[#152b50] dark:text-sky-300" aria-hidden />
@@ -2419,6 +2450,7 @@ export default function MorningPage() {
   /** Wipe local plan state when the URL / selected day changes (client nav does not remount the page). */
   useLayoutEffect(() => {
     if (!planDate) return
+    setPostMorningLayoutUnlock(false)
     setTasks([])
     setDecision(INITIAL_DECISION)
     setDecisionDbId(null)
@@ -2839,10 +2871,13 @@ export default function MorningPage() {
       }
       if (finalizePostponedError) throw finalizePostponedError
 
-      // For first-time flow, don't set hasPlan yet — stay in simplified view until insight/modal
-      if (!isFirstTime) {
-        setHasPlan(true)
-      }
+      flushSync(() => {
+        setPostMorningLayoutUnlock(true)
+        if (!isFirstTime) {
+          setHasPlan(true)
+        }
+      })
+
       setEditingTasks(false)
       setEditingDecision(false)
 
@@ -3001,6 +3036,41 @@ export default function MorningPage() {
     window.scrollTo(0, 0)
   }, [isFirstTime, hasPlan, showFirstDayBadgeModal])
 
+  /** Dev-only: confirms which branch renders and whether morning insight slot should mount (see main `return` vs `isFirstTime && !hasPlan`). */
+  useEffect(() => {
+    if (!showDebugTools) return
+    const firstTimeNoPlanBranch = isFirstTime && !hasPlan
+    console.log('[Morning DEBUG] AICoach insight slots', {
+      onMainMorningLayout,
+      firstTimeNoPlanBranch,
+      showMorningBeforeCoach,
+      morningBeforeMessageLen: morningBeforeCoachMessage?.length ?? 0,
+      morningBeforeInsightFreemiumLocked,
+      trialIsPro: trialUx.isPro,
+      morningEntitlementIsPro: morningEntitlement.isPro,
+      trialStatus: trialUx.status,
+      showFreemiumMorningInsightTeaser,
+      showPostMorningCoachSlot,
+      postMorningLayoutUnlock,
+      showFirstWeekExpiredUpgradeCard,
+    })
+  }, [
+    loading,
+    isFirstTime,
+    hasPlan,
+    onMainMorningLayout,
+    showMorningBeforeCoach,
+    morningBeforeCoachMessage,
+    morningBeforeInsightFreemiumLocked,
+    trialUx.isPro,
+    morningEntitlement.isPro,
+    trialUx.status,
+    showFreemiumMorningInsightTeaser,
+    showPostMorningCoachSlot,
+    postMorningLayoutUnlock,
+    showFirstWeekExpiredUpgradeCard,
+  ])
+
   const showMicroLessonToast = useCallback(async (fallback: string) => {
     try {
       const headers = await getClientAuthHeaders()
@@ -3066,7 +3136,7 @@ export default function MorningPage() {
     )
   }
 
-  // Simplified first-time flow: minimal form, no advanced options
+  // Kill switch for main layout: this branch has no AICoachPrompt (morning_before). Main tree starts below after loading.
   if (isFirstTime && !hasPlan) {
     return (
       <div
@@ -3114,7 +3184,7 @@ export default function MorningPage() {
             tutorialCheckInEnergy={tutorialCheckInEnergy}
             onTutorialCheckInMoodChange={setTutorialCheckInMood}
             onTutorialCheckInEnergyChange={setTutorialCheckInEnergy}
-            morningIntelligenceGated={!trialUx.isPro}
+            morningIntelligenceGated={!morningEntitlement.isPro}
             hideTaskRowMic={trialUx.isPro}
             streamlinedOnboarding
             stickySaveBar={streamlinedMorningOnboarding || blogEntryStickySave}
@@ -3286,26 +3356,18 @@ export default function MorningPage() {
         </>
       ) : null}
 
-      {/* Pro flow: Slot 1 — Morning spark (briefing), then Slot 2 — voice portal; pivot + stream follow in ProMorningCanvas. */}
-      {trialUx.status === 'expired' && !isTutorial ? (
-        <Card className="mb-6 border-[#152b50]/20 bg-gradient-to-br from-white via-slate-50/80 to-slate-50 dark:border-sky-900/30 dark:from-gray-900 dark:via-gray-900/95 dark:to-gray-950">
-          <CardContent className="pt-6 pb-6">
-            <p className="text-sm leading-relaxed text-gray-800 dark:text-gray-100">
-              You&apos;ve completed your first week! To keep using my strategic alignment and emergency tools,
-              let&apos;s officially move you to a Pro plan.
-            </p>
-            <Link href="/pricing" className={`mt-4 inline-flex ${viewProPlansCtaClassName}`}>
-              View Pro plans
-            </Link>
-          </CardContent>
-        </Card>
-      ) : showMorningBeforeCoach ? (
-        <AICoachPrompt
-          message={morningBeforeCoachMessage}
-          trigger="morning_before"
-          onClose={() => {}}
-          insightFreemiumLocked={!trialUx.isPro}
-        />
+      {/* Pro flow — morning spark (Tease & Convert: `morningEntitlement` merges trialing; blur props use `trialUx.isPro` via suppressInsightTeaserBlur). */}
+      {showMorningBeforeCoach ? (
+        <div className="w-full shrink-0">
+          <AICoachPrompt
+            message={morningBeforeCoachMessage}
+            trigger="morning_before"
+            onClose={() => {}}
+            insightFreemiumLocked={!morningEntitlement.isPro}
+            isTeaser={!morningEntitlement.isPro && morningBeforeInsightFreemiumLocked}
+            suppressInsightTeaserBlur={trialUx.isPro}
+          />
+        </div>
       ) : null}
 
       <div ref={setBrainDumpPortalHost} className="mb-4 w-full" />
@@ -3416,7 +3478,7 @@ export default function MorningPage() {
             tutorialCheckInEnergy={tutorialCheckInEnergy}
             onTutorialCheckInMoodChange={setTutorialCheckInMood}
             onTutorialCheckInEnergyChange={setTutorialCheckInEnergy}
-            morningIntelligenceGated={!trialUx.isPro}
+            morningIntelligenceGated={!morningEntitlement.isPro}
             hideTaskRowMic={trialUx.isPro}
             streamlinedOnboarding={streamlinedMorningOnboarding}
             stickySaveBar={streamlinedMorningOnboarding || blogEntryStickySave}
@@ -3432,9 +3494,9 @@ export default function MorningPage() {
         </div>
       )}
 
-      {/* Mrs. Deer AI Coach - Plan Review: post-morning insight at BOTTOM, after Power List and Decision Log */}
+      {/* Plan review — same Tease & Convert props as morning-before */}
       {showPostMorningCoachSlot ? (
-        <div data-tutorial="mrs-deer-insight" className="scroll-mt-4">
+        <div data-tutorial="mrs-deer-insight" className="scroll-mt-4 shrink-0">
           <AICoachPrompt
             key={
               postMorningInsightId ??
@@ -3466,7 +3528,9 @@ export default function MorningPage() {
             insightId={postMorningInsightId ?? undefined}
             auditStreaming={isStreamingPostMorning}
             toneAdjustLocked={toneCalibrationLockedMorning}
-            insightFreemiumLocked={!trialUx.isPro}
+            insightFreemiumLocked={!morningEntitlement.isPro}
+            isTeaser={postMorningInsightIsTeaser}
+            suppressInsightTeaserBlur={trialUx.isPro}
           />
           {!isStreamingPostMorning && (streamingError || postMorningInsightFetchFailed) ? (
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -3608,8 +3672,8 @@ export default function MorningPage() {
         }
       />
 
-      {/* Quick Actions */}
-      <Card className="mb-8">
+      {/* Quick Actions — keep below insight cards in stacking order */}
+      <Card className="relative z-0 mb-8">
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
@@ -3770,6 +3834,20 @@ export default function MorningPage() {
           setShowCalendarReminderModal(false)
         }}
       />
+
+      {showFirstWeekExpiredUpgradeCard ? (
+        <Card className="mb-6 border-slate-100 bg-gradient-to-br from-white via-slate-50/80 to-slate-50 shadow-sm dark:border-slate-700/60 dark:from-gray-900 dark:via-gray-900/95 dark:to-gray-950">
+          <CardContent className="pt-6 pb-6">
+            <p className="text-sm leading-relaxed text-gray-800 dark:text-gray-100">
+              You&apos;ve completed your first week! To keep using my strategic alignment and emergency tools,
+              let&apos;s officially move you to a Pro plan.
+            </p>
+            <Link href="/pricing" className={`mt-4 inline-flex ${viewProPlansCtaClassName}`}>
+              View Pro plans
+            </Link>
+          </CardContent>
+        </Card>
+      ) : null}
 
         </div>
       </div>
