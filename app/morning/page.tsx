@@ -64,6 +64,7 @@ import { getTrialStatus } from '@/lib/auth/trial-status'
 import { isTrialExpirySimulationEnabled } from '@/lib/trial-simulation'
 import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 import { ProMorningCanvas } from '@/components/morning/ProMorningCanvas'
+import { MorningEmergencyPauseChip } from '@/components/morning/MorningEmergencyPauseChip'
 import type { DecisionStrategyOption } from '@/lib/morning/pro-morning-oracle'
 import {
   hasPrebakedDecisionStrategiesInAutosave,
@@ -472,6 +473,13 @@ export default function MorningPage() {
     isEmergencyActive && !isEmergencyFeatureLocked('morning_pause_grayscale', freemiumSessionUser)
       ? 'grayscale-[0.5] opacity-70 transition-[filter,opacity] duration-300'
       : ''
+
+  const showEmergencyPauseChip = useMemo(
+    () =>
+      isEmergencyActive &&
+      isEmergencyFeatureLocked('morning_pause_grayscale', freemiumSessionUser),
+    [isEmergencyActive, freemiumSessionUser],
+  )
 
   const morningInsightsReady = useMemo(
     () =>
@@ -3150,6 +3158,7 @@ export default function MorningPage() {
           />
         ) : null}
         {proTrialWelcomeBanner}
+        <MorningEmergencyPauseChip visible={showEmergencyPauseChip} />
         {entryContextNudge}
         {missionShieldBanner}
         {isResume && (
@@ -3318,6 +3327,7 @@ export default function MorningPage() {
         </div>
       ) : null}
       {proTrialWelcomeBanner}
+      <MorningEmergencyPauseChip visible={showEmergencyPauseChip} />
       {entryContextNudge}
       {missionShieldBanner}
       {!isFirstTime && (

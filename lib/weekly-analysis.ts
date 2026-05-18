@@ -299,3 +299,10 @@ export function detectAllTopicPatterns(
     .map(([topic, count]) => ({ topic, count }))
     .sort((a, b) => b.count - a.count)
 }
+
+/** Plain-text body for freemium pattern quote teaser (matches unlocked PatternQuestion copy). */
+export function buildPatternQuoteAnalysisCopy(pattern: PatternForQuestion, dayLabel: string): string {
+  return `You mentioned ${pattern.topic} ${pattern.count} times this week—more than any other topic. On ${dayLabel} you said: "${pattern.example}"
+
+Is it working? What's different from before? What would tell you it's truly working?`
+}

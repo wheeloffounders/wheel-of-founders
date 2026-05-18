@@ -18,6 +18,7 @@ import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 import { PRO_GATE_BADGE_SURFACE_CLASS } from '@/lib/morning/pro-gate-badge-styles'
 import { showDebugTools } from '@/lib/env'
 import { cn } from '@/components/ui/utils'
+import { InsightTeaserBlur } from '@/components/insights/InsightTeaserBlur'
 import { NextStepPrompt } from './NextStepPrompt'
 import { InsightFeedback } from './InsightFeedback'
 import { CalibrationRow } from './CalibrationRow'
@@ -75,13 +76,6 @@ const TRIGGER_TO_INSIGHT_TYPE: Record<string, string> = {
 /** Morning / Plan Review “letter” — yellow dashed frame only; no navy/sky card border. */
 const MORNING_INSIGHT_SURFACE =
   'rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50/30 p-6 shadow-sm dark:border-amber-800/55 dark:bg-amber-950/10'
-
-const TEASER_MASK_STYLE = {
-  maskImage: 'linear-gradient(to bottom, black 20%, transparent 90%)',
-  WebkitMaskImage: 'linear-gradient(to bottom, black 20%, transparent 90%)',
-} as const
-
-const TEASER_SHARP_PREVIEW_CHARS = 120
 
 export function AICoachPrompt({
   message,
@@ -171,59 +165,7 @@ export function AICoachPrompt({
         </div>
       </div>
     ) : teaserEligible ? (
-      <div className="relative isolate min-h-[176px] overflow-hidden rounded-lg pb-16">
-        {rawFiltered.length <= TEASER_SHARP_PREVIEW_CHARS ? (
-          <div
-            className="pointer-events-none select-none overflow-hidden rounded-md"
-            style={TEASER_MASK_STYLE}
-          >
-            <div className={cn(isTeaser && 'blur-[2px]')}>{markdownBlock}</div>
-          </div>
-        ) : (
-          <>
-            <div className="pointer-events-none select-none">
-              <p className="text-sm font-medium leading-relaxed text-gray-950 dark:text-gray-50">
-                {rawFiltered.slice(0, TEASER_SHARP_PREVIEW_CHARS).trim()}
-                …
-              </p>
-            </div>
-            <div
-              className="relative mt-2 max-h-[7.5rem] overflow-hidden rounded-md"
-              style={TEASER_MASK_STYLE}
-            >
-              <div
-                className={cn(
-                  isTeaser && 'blur-[2px] select-none pointer-events-none',
-                  'text-gray-900 dark:text-gray-100',
-                )}
-              >
-                <MarkdownText className="text-sm leading-relaxed [&_p]:mb-1.5 [&_p:last-child]:mb-0 [&_p]:leading-relaxed">
-                  {rawFiltered.slice(TEASER_SHARP_PREVIEW_CHARS)}
-                </MarkdownText>
-              </div>
-            </div>
-          </>
-        )}
-        <div
-          className="pointer-events-none absolute inset-x-0 bottom-12 h-14 bg-gradient-to-t from-amber-50/95 via-amber-50/40 to-transparent dark:from-amber-950/70 dark:via-amber-950/30 dark:to-transparent"
-          aria-hidden
-        />
-        <div className="absolute inset-x-3 bottom-2 z-20 flex justify-center">
-          <Link
-            href="/pricing"
-            className={cn(
-              'pointer-events-auto inline-flex max-w-[min(100%,22rem)] items-center justify-center rounded-full border border-amber-400/50',
-              'bg-gradient-to-r from-amber-100/95 via-white/92 to-amber-50/95 px-4 py-2.5 text-center text-xs font-semibold leading-snug text-amber-950',
-              'shadow-lg shadow-amber-900/10 backdrop-blur-md ring-1 ring-amber-300/55 transition',
-              'hover:border-amber-500/60 hover:from-amber-50 hover:to-white hover:ring-amber-400/70',
-              'dark:border-amber-500/35 dark:from-amber-950/88 dark:via-violet-950/45 dark:to-amber-950/75 dark:text-amber-50',
-              'dark:shadow-black/40 dark:ring-amber-400/20 dark:hover:from-amber-900/92 dark:hover:to-violet-950/55',
-            )}
-          >
-            Unlock Full Strategic Review
-          </Link>
-        </div>
-      </div>
+      <InsightTeaserBlur message={rawFiltered} markdownRemainder />
     ) : (
       markdownBlock
     )

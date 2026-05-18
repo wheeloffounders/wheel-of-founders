@@ -240,6 +240,13 @@ export function BrainDumpCard({
     stopListening()
   }, [interruptListeningEpoch, stopListening])
 
+  /** Emergency voice capture: after parent clears transcript post-sort, drop the sort overlay state only. */
+  useEffect(() => {
+    if (context !== 'emergency' || !voiceCaptureOnly || !enableSortIntoReview) return
+    if (sortLoading || value.trim().length > 0 || !ghostHideFieldForSort) return
+    setGhostHideFieldForSort(false)
+  }, [context, voiceCaptureOnly, enableSortIntoReview, sortLoading, value, ghostHideFieldForSort])
+
   const toggleListening = useCallback(() => {
     const SpeechRecognition = getSpeechRecognition()
     if (!SpeechRecognition) return

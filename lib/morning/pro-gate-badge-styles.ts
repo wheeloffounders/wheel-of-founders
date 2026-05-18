@@ -34,6 +34,16 @@ export const PRO_GATE_BLUEPRINT_SPARKLE_CLASS = [
   'dark:shadow-[0_0_12px_rgba(236,72,153,0.35)] dark:ring-white/20',
 ].join(' ')
 
+/** Freemium blueprint row — pill over faded chips (gradient + lock icon). */
+export const PRO_GATE_BLUEPRINT_LOCK_OVERLAY_BADGE_CLASS = [
+  'inline-flex items-center gap-1 rounded-full px-2.5 py-1',
+  PRO_GATE_BRAND_FILL_CLASS,
+  'text-[10px] font-bold uppercase tracking-wide shadow-lg shadow-purple-500/25',
+  'transition hover:scale-105 hover:brightness-110',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white',
+  'dark:focus-visible:ring-offset-gray-950',
+].join(' ')
+
 /**
  * Enabled Pro distillation / typed Sort CTAs (Finish & Sort, etc.).
  * Callers supply layout (`flex`, padding, radius) and border width; this supplies brand fill + interaction.

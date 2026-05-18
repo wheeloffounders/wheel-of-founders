@@ -69,7 +69,7 @@ export async function getEligibleUsersForQuarterlyInsightCron(
     const hasFeature = getFeatureAccess({
       tier: p.tier,
       pro_features_enabled: p.pro_features_enabled,
-    }).personalMonthlyInsight
+    }).personalQuarterlyInsight
     if (!hasFeature) continue
 
     if (testBypass) {

@@ -2,17 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { AutoExpandTextarea } from '@/components/AutoExpandTextarea'
+import { InsightPeriodSection } from '@/components/insights/InsightPeriodSection'
+import type { InsightPeriodAccent } from '@/lib/insights/insight-period-card-styles'
 
 export type QuarterlyIntentionProps = {
-  /** Value from `user_profiles.quarterly_intention` */
   initialValue?: string
-  /** Persist to server (blur + save button) */
   onSave: (value: string) => Promise<void>
   placeholder?: string
-  /** When false, show locked copy (e.g. &lt; 45 days — parent should gate page, but safe fallback) */
   unlocked?: boolean
+  accent?: InsightPeriodAccent
 }
 
 export function QuarterlyIntention({
@@ -20,6 +19,7 @@ export function QuarterlyIntention({
   onSave,
   placeholder = 'I commit to...',
   unlocked = true,
+  accent = 'transformation',
 }: QuarterlyIntentionProps) {
   const [intention, setIntention] = useState(initialValue)
   const [saving, setSaving] = useState(false)
@@ -57,51 +57,43 @@ export function QuarterlyIntention({
 
   if (!unlocked) {
     return (
-      <Card className="border-dashed border-gray-300 dark:border-gray-600">
-        <CardHeader>
-          <CardTitle className="text-[#152b50] dark:text-white">Quarterly Intention</CardTitle>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            Unlocks after 45 days with entries on your founder journey—same as this Trajectory view.
-          </p>
-        </CardHeader>
-      </Card>
+      <InsightPeriodSection title="Quarterly Intention" accent={accent}>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Unlocks after 45 days with entries on your founder journey—same as this Trajectory view.
+        </p>
+      </InsightPeriodSection>
     )
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-[#152b50] dark:text-white">Set Your Quarterly Intention</CardTitle>
-        <p className="text-sm text-gray-700 dark:text-gray-300">
-          One focus to carry you through the quarter. Saved to your profile—Mrs. Deer will use it once you reach day 45.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <AutoExpandTextarea
-          value={intention}
-          onChange={(e) => setIntention(e.target.value)}
-          onBlur={handleBlur}
-          placeholder={placeholder}
-          minRows={4}
-          className="w-full min-h-[100px] p-4 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-1 border-gray-200 dark:border-gray-600 dark:bg-gray-900/40"
-        />
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <Button
-            variant="primary"
-            type="button"
-            onClick={handleSaveClick}
-            disabled={!intention.trim() || saving}
-            className="w-full sm:w-auto"
-          >
-            {saving ? 'Saving…' : savedFlash ? 'Saved' : 'Save my commitment'}
-          </Button>
-          {savedFlash ? (
-            <span className="text-xs text-emerald-600 dark:text-emerald-400">Synced to your profile.</span>
-          ) : (
-            <span className="text-xs text-gray-500 dark:text-gray-400">Saves when you leave the field or tap Save.</span>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+    <InsightPeriodSection title="Set Your Quarterly Intention" accent={accent}>
+      <p className="mb-4 text-sm text-gray-700 dark:text-gray-300">
+        One focus to carry you through the quarter. Saved to your profile—Mrs. Deer will use it once you reach day 45.
+      </p>
+      <AutoExpandTextarea
+        value={intention}
+        onChange={(e) => setIntention(e.target.value)}
+        onBlur={handleBlur}
+        placeholder={placeholder}
+        minRows={4}
+        className="w-full min-h-[100px] rounded-lg border-2 border-gray-200 p-4 focus:outline-none focus:ring-2 focus:ring-offset-1 dark:border-gray-600 dark:bg-gray-900/40"
+      />
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <Button
+          variant="primary"
+          type="button"
+          onClick={handleSaveClick}
+          disabled={!intention.trim() || saving}
+          className="w-full sm:w-auto"
+        >
+          {saving ? 'Saving…' : savedFlash ? 'Saved' : 'Save my commitment'}
+        </Button>
+        {savedFlash ? (
+          <span className="text-xs text-emerald-600 dark:text-emerald-400">Synced to your profile.</span>
+        ) : (
+          <span className="text-xs text-gray-500 dark:text-gray-400">Saves when you leave the field or tap Save.</span>
+        )}
+      </div>
+    </InsightPeriodSection>
   )
 }

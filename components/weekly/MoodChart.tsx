@@ -35,8 +35,8 @@ export function MoodChart({ days, avgMood, avgEnergy, moodTrend, energyTrend }: 
       {/* Summary row */}
       <div className="grid grid-cols-2 gap-4">
         {avgMood != null && (
-          <div className="flex items-center gap-3 p-4 border-2" style={{ borderColor: colors.navy.DEFAULT }}>
-            <Heart className="w-6 h-6 flex-shrink-0" style={{ color: colors.coral.DEFAULT }} />
+          <div className="flex items-center gap-3 rounded-lg bg-gray-50/80 p-4 dark:bg-gray-900/40">
+            <Heart className="h-6 w-6 shrink-0" style={{ color: colors.coral.DEFAULT }} />
             <div>
               <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
                 MOOD AVG
@@ -58,8 +58,8 @@ export function MoodChart({ days, avgMood, avgEnergy, moodTrend, energyTrend }: 
           </div>
         )}
         {avgEnergy != null && (
-          <div className="flex items-center gap-3 p-4 border-2" style={{ borderColor: colors.navy.DEFAULT }}>
-            <Battery className="w-6 h-6 flex-shrink-0" style={{ color: colors.amber.DEFAULT }} />
+          <div className="flex items-center gap-3 rounded-lg bg-gray-50/80 p-4 dark:bg-gray-900/40">
+            <Battery className="h-6 w-6 shrink-0" style={{ color: colors.amber.DEFAULT }} />
             <div>
               <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
                 ENERGY AVG

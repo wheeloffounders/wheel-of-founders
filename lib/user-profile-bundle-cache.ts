@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
 
 export const MORNING_USER_PROFILE_SELECT =
-  'created_at, timezone, tier, calendar_reminder_time, calendar_reminder_type, primary_goal_text, has_seen_morning_tour, badges, current_streak, struggles, trial_starts_at, trial_ends_at, stripe_subscription_status, pro_features_enabled, subscription_override, is_beta_retired, is_beta' as const
+  'created_at, timezone, tier, calendar_reminder_time, calendar_reminder_type, primary_goal_text, has_seen_morning_tour, badges, current_streak, struggles, trial_starts_at, trial_ends_at, stripe_subscription_status, subscription_tier, pro_features_enabled, subscription_override, is_beta_retired, is_beta' as const
 
 export type MorningUserProfileBundle = {
   created_at?: string | null
@@ -23,6 +23,7 @@ export type MorningUserProfileBundle = {
   trial_starts_at?: string | null
   trial_ends_at?: string | null
   stripe_subscription_status?: string | null
+  subscription_tier?: string | null
   pro_features_enabled?: boolean | null
   subscription_override?: string | null
   is_beta_retired?: boolean | null

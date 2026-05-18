@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { format, startOfWeek, endOfWeek, isSunday, addDays, addWeeks, subWeeks, isSameWeek } from 'date-fns'
 import {
@@ -19,13 +19,16 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
-import { getFeatureAccess } from '@/lib/features'
+import {
+  getFeatureAccess,
+  isWeeklyInsightFeatureLocked,
+  isWeeklyInsightProSurfaceLocked,
+  type UserProfile,
+} from '@/lib/features'
 import { trackEvent } from '@/lib/analytics'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
-import { MrsDeerMessageBubble } from '@/components/MrsDeerMessageBubble'
 import { MarkdownText } from '@/components/MarkdownText'
 import { MoodChart } from '@/components/weekly/MoodChart'
 import {
@@ -51,10 +54,15 @@ import { LockedFeature } from '@/components/LockedFeature'
 import { InsightLetterClosing } from '@/components/insights/InsightLetterClosing'
 import { getWeeklyInsightProgress } from '@/lib/progress'
 import { resolveEmailDisplayName } from '@/lib/email/personalization-display'
-import type { ProEntitlementProfile } from '@/lib/auth/is-pro'
-import { getTrialStatus } from '@/lib/auth/trial-status'
-import { isTrialExpirySimulationEnabled } from '@/lib/trial-simulation'
-import { StrategicProLockOverlay } from '@/components/pro/StrategicProLockOverlay'
+import {
+  fetchUserProfileBundle,
+  invalidateUserProfileBundle,
+  type MorningUserProfileBundle,
+} from '@/lib/user-profile-bundle-cache'
+import { FREEMIUM_WEEKLY_REFLECTION_PLACEHOLDER } from '@/lib/weekly/freemium-weekly-insight-placeholder'
+import { WeeklyInsightSection } from '@/components/weekly/WeeklyInsightSection'
+import { WeeklyInsightTeaserLock } from '@/components/weekly/WeeklyInsightTeaserLock'
+import { weeklyInsightAccentMap } from '@/lib/insights/insight-period-accent-rotation'
 
 const MOOD_LABELS: Record<number, string> = {
   1: 'Tough',
@@ -127,6 +135,24 @@ function parseLessons(val: unknown, date: string): LessonWithDate[] {
   return lessons
 }
 
+function profileFromBundle(
+  bundle: MorningUserProfileBundle | null,
+  session?: { tier?: string; pro_features_enabled?: boolean }
+): UserProfile {
+  return {
+    tier: bundle?.tier ?? session?.tier,
+    pro_features_enabled: bundle?.pro_features_enabled ?? session?.pro_features_enabled,
+    subscription_override: bundle?.subscription_override ?? null,
+    subscription_tier: bundle?.subscription_tier ?? null,
+    is_beta_retired: bundle?.is_beta_retired ?? null,
+    is_beta: bundle?.is_beta ?? null,
+    trial_starts_at: bundle?.trial_starts_at ?? null,
+    trial_ends_at: bundle?.trial_ends_at ?? null,
+    stripe_subscription_status: bundle?.stripe_subscription_status ?? null,
+    created_at: bundle?.created_at ?? null,
+  }
+}
+
 export default function WeeklyPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -150,26 +176,16 @@ export default function WeeklyPage() {
     null,
   )
   const [insightGreetingName, setInsightGreetingName] = useState<string>('Founder')
-  const [trialStrategicLocked, setTrialStrategicLocked] = useState(false)
+  const [profileUser, setProfileUser] = useState<UserProfile | null>(null)
 
   const lastCompletedWeekStart = format(subWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), 1), 'yyyy-MM-dd')
 
   useEffect(() => {
     let cancelled = false
-    ;(async () => {
+    void (async () => {
       const session = await getUserSession()
-      if (!session?.user?.id) return
-      const { data } = await supabase
-        .from('user_profiles')
-        .select(
-          'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at, subscription_override, is_beta_retired, is_beta'
-        )
-        .eq('id', session.user.id)
-        .maybeSingle()
-      if (cancelled) return
-      const p = data as ProEntitlementProfile | null
-      const locked = getTrialStatus(p, { simulateExpired: isTrialExpirySimulationEnabled() }).status === 'expired'
-      setTrialStrategicLocked(locked)
+      const row = await fetchUserProfileBundle()
+      if (!cancelled) setProfileUser(profileFromBundle(row, session?.user))
     })()
     return () => {
       cancelled = true
@@ -178,23 +194,29 @@ export default function WeeklyPage() {
 
   useEffect(() => {
     const onSim = () => {
+      invalidateUserProfileBundle()
       void (async () => {
         const session = await getUserSession()
-        if (!session?.user?.id) return
-        const { data } = await supabase
-          .from('user_profiles')
-          .select(
-            'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at, subscription_override, is_beta_retired, is_beta'
-          )
-          .eq('id', session.user.id)
-          .maybeSingle()
-        const p = data as ProEntitlementProfile | null
-        setTrialStrategicLocked(getTrialStatus(p, { simulateExpired: isTrialExpirySimulationEnabled() }).status === 'expired')
+        const row = await fetchUserProfileBundle({ force: true })
+        setProfileUser(profileFromBundle(row, session?.user))
       })()
     }
     window.addEventListener('wof-trial-sim-changed', onSim)
     return () => window.removeEventListener('wof-trial-sim-changed', onSim)
   }, [])
+
+  const aiSynthesisLocked = useMemo(
+    () => isWeeklyInsightFeatureLocked('ai_synthesis', profileUser),
+    [profileUser]
+  )
+  const patternQuoteLocked = useMemo(
+    () => isWeeklyInsightFeatureLocked('pattern_quote_analysis', profileUser),
+    [profileUser]
+  )
+  const quarterlyMemoryLocked = useMemo(
+    () => isWeeklyInsightFeatureLocked('quarterly_memory_selection', profileUser),
+    [profileUser]
+  )
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -280,10 +302,11 @@ export default function WeeklyPage() {
         return
       }
 
-      const features = getFeatureAccess({
-        tier: session.user.tier,
-        pro_features_enabled: session.user.pro_features_enabled,
-      })
+      const bundle = await fetchUserProfileBundle()
+      const profileForAccess = profileFromBundle(bundle, session.user)
+      if (!profileUser) setProfileUser(profileForAccess)
+
+      const features = getFeatureAccess(profileForAccess)
 
       const weekStart = new Date(effectiveWeekStart)
       const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
@@ -536,6 +559,7 @@ export default function WeeklyPage() {
   }
 
   const handleToggleFavoriteWin = (index: number) => {
+    if (quarterlyMemoryLocked) return
     const next = favoriteWinIndices.includes(index)
       ? favoriteWinIndices.filter((i) => i !== index)
       : [...favoriteWinIndices, index].sort((a, b) => a - b)
@@ -544,6 +568,7 @@ export default function WeeklyPage() {
   }
 
   const handleToggleKeyLesson = (index: number) => {
+    if (quarterlyMemoryLocked) return
     const next = keyLessonIndices.includes(index)
       ? keyLessonIndices.filter((i) => i !== index)
       : [...keyLessonIndices, index].sort((a, b) => a - b)
@@ -683,6 +708,11 @@ export default function WeeklyPage() {
 
   const displayPrompt = weeklyPromptOverride ?? data?.weeklyPrompt ?? null
 
+  const weeklyReflectionTeaserMessage = useMemo(() => {
+    const trimmed = displayPrompt?.trim()
+    return trimmed || FREEMIUM_WEEKLY_REFLECTION_PLACEHOLDER
+  }, [displayPrompt])
+
   const handleCopySummary = async () => {
     if (!data) return
     const text = [
@@ -760,6 +790,7 @@ export default function WeeklyPage() {
 
   const selectedWeekStart = new Date(data.dateRange.start)
   const currentWeekStr = format(selectedWeekStart, 'yyyy-MM-dd')
+  const weeklyAccents = weeklyInsightAccentMap(currentWeekStr)
   const hasCurrentWeekInsight = periods.includes(currentWeekStr)
   const showWeekInProgress =
     !hasCurrentWeekInsight &&
@@ -833,116 +864,119 @@ export default function WeeklyPage() {
         </p>
       )}
 
+
       {/* Before Sunday: Progress Snapshot - only when viewing current week with no insight yet */}
       {showWeekInProgress && (
-        <Card highlighted className="mb-8" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
-              <Target className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
-              Week in Progress
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <p className="text-lg font-semibold text-gray-900 dark:text-white">
+        <WeeklyInsightSection title="Week in Progress" accent={weeklyAccents.progress} className="mb-8">
+          <div className="space-y-3">
+            <p className="text-lg font-semibold text-gray-900 dark:text-white">
                 Needle Movers: {data.needleMoversCompleted}/{data.needleMoversTotal} ({needlePct}%)
               </p>
-              <p className="text-sm text-gray-600 dark:text-white">
-                Pace: {pace}
-              </p>
-              {bestDayName && (
-                <p className="text-sm mt-1 text-gray-900 dark:text-white">
+              <p className="text-sm text-gray-600 dark:text-gray-300">Pace: {pace}</p>
+              {bestDayName ? (
+                <p className="text-sm text-gray-900 dark:text-white">
                   Your best day so far: {bestDayName} ({bestDayData?.needleMoversCompleted ?? 0})
                 </p>
-              )}
-            </div>
-            <MrsDeerMessageBubble expression="thoughtful">
-              <p className="leading-relaxed text-gray-900 dark:text-white">
-                {generateProgressInsight(data.needleMoversCompleted, data.needleMoversTotal, bestDayName)}
-              </p>
-            </MrsDeerMessageBubble>
-          </CardContent>
-        </Card>
+              ) : null}
+            <p className="border-t border-slate-100 pt-4 text-sm leading-relaxed text-gray-800 dark:border-slate-700/80 dark:text-gray-200">
+              {generateProgressInsight(data.needleMoversCompleted, data.needleMoversTotal, bestDayName)}
+            </p>
+          </div>
+        </WeeklyInsightSection>
       )}
 
       {/* Full Analysis - when not viewing current week in progress (or when current week has insight) */}
       {!showWeekInProgress && (
-        <div className="space-y-8">
+        <div className="space-y-10">
           <CelebrationHeader
             quote={generateCelebrationQuote(data.wins, data.lessons)}
             dateRange={`${format(new Date(data.dateRange.start), 'MMM d')} – ${format(new Date(data.dateRange.end), 'MMM d, yyyy')}`}
             greetingName={insightGreetingName}
           />
 
-          {/* 1. Mrs. Deer, your AI companion's insight FIRST (auto-generated or from cron) */}
-          {(displayPrompt || (data.wins.length > 0 || data.lessons.length > 0)) && (
-            <Card highlighted className="mb-8 bg-[#f8f4f0] dark:bg-amber-900/30" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
-              <CardHeader>
-                <div className="flex items-center justify-between gap-4">
-                  <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
-                    <Sparkles className="w-6 h-6" style={{ color: colors.amber.DEFAULT }} />
-                    Mrs. Deer, your AI companion&apos;s Weekly Reflection
-                  </CardTitle>
-                  {data.canRegenerateInsights && (
-                    <button
-                      type="button"
-                      onClick={handleGenerateInsight}
-                      disabled={generating}
-                      aria-label="Refresh insight"
-                      className="text-sm px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50"
-                      style={{ backgroundColor: colors.coral.DEFAULT, color: 'white' }}
-                    >
-                      {generating ? '…' : '↻ Refresh Insight'}
-                    </button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {displayPrompt ? (
+          {(aiSynthesisLocked ||
+            displayPrompt ||
+            data.wins.length > 0 ||
+            data.lessons.length > 0) && (
+            <WeeklyInsightSection
+              title="Mrs. Deer's Weekly Reflection"
+              accent={weeklyAccents.reflection}
+              headerActions={
+                data.canRegenerateInsights && !aiSynthesisLocked ? (
+                  <button
+                    type="button"
+                    onClick={handleGenerateInsight}
+                    disabled={generating}
+                    aria-label="Refresh insight"
+                    className="rounded-lg px-3 py-1.5 text-sm font-medium text-white transition disabled:opacity-50"
+                    style={{ backgroundColor: colors.coral.DEFAULT }}
+                  >
+                    {generating ? '…' : '↻ Refresh'}
+                  </button>
+                ) : null
+              }
+            >
+                {aiSynthesisLocked ? (
+                  <div className="space-y-4">
+                    <MrsDeerAvatar expression="thoughtful" size="large" />
+                    <WeeklyInsightTeaserLock
+                      message={weeklyReflectionTeaserMessage}
+                      markdown
+                      ctaHeadingId="weekly-reflection-pro-cta"
+                      ctaDescription="Mrs. Deer connects the dots between your startup metrics, your daily energy, and parenting milestones to reveal the patterns hidden in your busy weeks."
+                      ctaFooter={
+                        <>
+                          Use{' '}
+                          <span className="font-medium text-gray-800 dark:text-gray-200">Your Top Wins</span> and{' '}
+                          <span className="font-medium text-gray-800 dark:text-gray-200">Your Key Insights</span>{' '}
+                          below to review your raw weekly history.
+                        </>
+                      }
+                    />
+                  </div>
+                ) : displayPrompt ? (
                   <>
-                    <div className="flex flex-col gap-4">
-                      <div className="flex justify-start">
-                        <MrsDeerAvatar expression="thoughtful" size="large" />
-                      </div>
-                      <MarkdownText className="leading-relaxed text-gray-900 dark:text-gray-100 dark:text-gray-100">
+                    <div className="space-y-4">
+                      <MrsDeerAvatar expression="thoughtful" size="large" />
+                      <MarkdownText className="leading-relaxed text-gray-900 dark:text-gray-100">
                         {displayPrompt}
                       </MarkdownText>
                     </div>
                     {!feedbackSent ? (
-                      <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-gray-200 dark:border-gray-700 dark:border-gray-700">
-                        <span className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mr-2">Was this helpful?</span>
+                      <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4 dark:border-slate-700/80">
+                        <span className="mr-2 text-sm text-gray-700 dark:text-gray-300">Was this helpful?</span>
                         <button
                           type="button"
                           onClick={() => handleInsightFeedback('helpful')}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 dark:border-gray-700 text-sm font-medium hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 transition"
+                          className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium transition hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-900/80"
                         >
-                          <ThumbsUp className="w-4 h-4" />
+                          <ThumbsUp className="h-4 w-4" />
                           Yes
                         </button>
                         <button
                           type="button"
                           onClick={() => handleInsightFeedback('not_quite_right')}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 dark:border-gray-700 text-sm font-medium hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 transition"
+                          className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium transition hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-900/80"
                         >
-                          <ThumbsDown className="w-4 h-4" />
+                          <ThumbsDown className="h-4 w-4" />
                           Not quite
                         </button>
                         <button
                           type="button"
                           onClick={() => setInsightFeedback(insightFeedback === 'custom' ? null : 'custom')}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition ${insightFeedback === 'custom' ? 'border-[#EF725C] bg-[#FFF0EC] dark:bg-[#1E293B]' : 'border-gray-200 dark:border-gray-700 dark:border-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:bg-gray-800'}`}
+                          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition ${insightFeedback === 'custom' ? 'border-[#EF725C] bg-[#FFF0EC] dark:bg-[#1E293B]' : 'border-gray-200 hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-900/80'}`}
                         >
-                          <MessageCircle className="w-4 h-4" />
+                          <MessageCircle className="h-4 w-4" />
                           Actually...
                         </button>
                         {insightFeedback === 'custom' && (
-                          <div className="w-full mt-2 flex gap-2">
+                          <div className="mt-2 flex w-full gap-2">
                             <input
                               type="text"
                               value={customFeedbackText}
                               onChange={(e) => setCustomFeedbackText(e.target.value)}
                               placeholder="What I really learned was..."
-                              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-[#ef725c] focus:border-transparent"
+                              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-[#ef725c] dark:border-gray-600"
                             />
                             <Button
                               size="sm"
@@ -955,26 +989,34 @@ export default function WeeklyPage() {
                         )}
                       </div>
                     ) : (
-                      <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 pt-2">Thanks for your feedback! It helps Mrs. Deer, your AI companion get better.</p>
+                      <p className="pt-2 text-sm text-gray-700 dark:text-gray-300">
+                        Thanks for your feedback! It helps Mrs. Deer get better.
+                      </p>
                     )}
                   </>
                 ) : generateError ? (
-                  <div className={`rounded-lg p-4 border ${
-                    generateError.includes('started')
-                      ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
-                      : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-                  }`}>
-                    <p className={`text-sm ${generateError.includes('started') ? 'text-blue-800 dark:text-blue-200' : 'font-medium text-red-800 dark:text-red-200'}`}>
+                  <div
+                    className={`rounded-lg p-4 ${
+                      generateError.includes('started')
+                        ? 'bg-blue-50 dark:bg-blue-900/20'
+                        : 'bg-red-50 dark:bg-red-900/20'
+                    }`}
+                  >
+                    <p
+                      className={`text-sm ${generateError.includes('started') ? 'text-blue-800 dark:text-blue-200' : 'font-medium text-red-800 dark:text-red-200'}`}
+                    >
                       {generateError.includes('started') ? '' : 'AI insight failed'}
                     </p>
-                    <p className={`text-sm mt-1 ${generateError.includes('started') ? 'text-blue-800 dark:text-blue-200' : 'text-red-700 dark:text-red-300 font-mono'}`}>
+                    <p
+                      className={`mt-1 text-sm ${generateError.includes('started') ? 'text-blue-800 dark:text-blue-200' : 'font-mono text-red-700 dark:text-red-300'}`}
+                    >
                       {generateError}
                     </p>
                     {!generateError.includes('started') && (
                       <button
                         type="button"
                         onClick={handleGenerateInsight}
-                        className="mt-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                        className="mt-3 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
                         disabled={generating}
                       >
                         Try again
@@ -982,132 +1024,84 @@ export default function WeeklyPage() {
                     )}
                   </div>
                 ) : (
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
                     {generating ? (
-                      <div className="flex flex-col items-center gap-4 w-full py-4">
+                      <div className="flex w-full flex-col items-center gap-4 py-4">
                         <MrsDeerAvatar expression="thoughtful" size="large" />
-                        <p className="text-sm text-gray-600 dark:text-white text-center">
+                        <p className="text-center text-sm text-gray-600 dark:text-gray-300">
                           {generateError?.includes('started')
                             ? 'Your insight is being generated in the background. You can navigate away and come back later.'
-                            : 'Mrs. Deer, your AI companion is reflecting on your week...'}
+                            : 'Mrs. Deer is reflecting on your week...'}
                         </p>
                         <div className="flex gap-1">
-                          <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: colors.coral.DEFAULT }} />
-                          <span className="w-2 h-2 rounded-full animate-pulse delay-100" style={{ backgroundColor: colors.coral.DEFAULT }} />
-                          <span className="w-2 h-2 rounded-full animate-pulse delay-200" style={{ backgroundColor: colors.coral.DEFAULT }} />
+                          <span className="h-2 w-2 animate-pulse rounded-full" style={{ backgroundColor: colors.coral.DEFAULT }} />
+                          <span className="h-2 w-2 animate-pulse rounded-full delay-100" style={{ backgroundColor: colors.coral.DEFAULT }} />
+                          <span className="h-2 w-2 animate-pulse rounded-full delay-200" style={{ backgroundColor: colors.coral.DEFAULT }} />
                         </div>
                       </div>
                     ) : (
-                      <p className="text-gray-600 dark:text-gray-400 text-sm">
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
                         Your weekly reflection will appear here. It&apos;s generated every Monday for the previous week.
-                        {data.canRegenerateInsights && ' Use the refresh button above to generate it now.'}
+                        {data.canRegenerateInsights && ' Use Refresh above to generate it now.'}
                       </p>
                     )}
                   </div>
                 )}
-              </CardContent>
-            </Card>
+            </WeeklyInsightSection>
           )}
 
-          {((patternForQuestion || allTopics.length > 0) || data.avgMood != null || data.avgEnergy != null) && (
-            <StrategicProLockOverlay active={trialStrategicLocked} variant="insights_analytics">
-              <div className="space-y-8">
-                {(patternForQuestion || allTopics.length > 0) && (
-                  <Card className="mb-8">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
-                        <Sparkles className="w-5 h-5" style={{ color: colors.amber.DEFAULT }} />
-                        Patterns Mrs. Deer, your AI companion noticed
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <MrsDeerMessageBubble expression="thoughtful">
-                        <PatternQuestion pattern={patternForQuestion} allTopics={allTopics} />
-                      </MrsDeerMessageBubble>
-                    </CardContent>
-                  </Card>
-                )}
+          {(patternForQuestion || allTopics.length > 0) && (
+            <WeeklyInsightSection title="Patterns Noticed" accent={weeklyAccents.patterns}>
+                <PatternQuestion
+                  pattern={patternForQuestion}
+                  allTopics={allTopics}
+                  quoteAnalysisLocked={patternQuoteLocked}
+                />
+            </WeeklyInsightSection>
+          )}
 
-                {(data.avgMood != null || data.avgEnergy != null) && (
-                  <Card className="mb-8">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
-                        <Heart className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
-                        Mood & Energy
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <MoodChart
-                        days={moodChartDays}
-                        avgMood={data.avgMood}
-                        avgEnergy={data.avgEnergy}
-                      />
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            </StrategicProLockOverlay>
+          {(data.avgMood != null || data.avgEnergy != null) && (
+            <WeeklyInsightSection title="Mood & Energy" accent={weeklyAccents.mood}>
+                <MoodChart days={moodChartDays} avgMood={data.avgMood} avgEnergy={data.avgEnergy} />
+            </WeeklyInsightSection>
           )}
 
           {data.primaryGoal && (
-            <Card className="mb-8">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
-                  <Target className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
-                  Your Goal
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+            <WeeklyInsightSection title="Your Goal & Intention" accent={weeklyAccents.goal}>
                 <GoalProgress
                   primaryGoal={data.primaryGoal}
                   progressItems={goalProgressItems}
                   missingItem={goalMissing}
                   mrsDeerQuestion={goalMrsDeerQuestion}
                 />
-              </CardContent>
-            </Card>
+            </WeeklyInsightSection>
           )}
 
           {data.wins.length > 0 && (
-            <Card className="mb-8">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
-                  <Award className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
-                  Your Top Wins
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+            <WeeklyInsightSection title="Your Top Wins" accent={weeklyAccents.wins}>
                 <WinReflection
                   wins={data.wins}
                   favoriteIndices={favoriteWinIndices}
                   onToggle={handleToggleFavoriteWin}
+                  selectionLocked={quarterlyMemoryLocked}
                 />
-              </CardContent>
-            </Card>
+            </WeeklyInsightSection>
           )}
 
           {data.lessons.length > 0 && (
-            <Card className="mb-8">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
-                  <Lightbulb className="w-5 h-5" style={{ color: colors.amber.DEFAULT }} />
-                  Your Key Insight
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+            <WeeklyInsightSection title="Your Key Insights" accent={weeklyAccents.insights}>
                 <LessonInput
                   lessons={data.lessons}
                   keyIndices={keyLessonIndices}
                   onToggle={handleToggleKeyLesson}
+                  selectionLocked={quarterlyMemoryLocked}
                 />
-              </CardContent>
-            </Card>
+            </WeeklyInsightSection>
           )}
 
           <InsightLetterClosing cadence="week" className="mt-2" />
         </div>
       )}
-
       {data.tasksTotal === 0 &&
         data.firesTotal === 0 &&
         data.wins.length === 0 &&

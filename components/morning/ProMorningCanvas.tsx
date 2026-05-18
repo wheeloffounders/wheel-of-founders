@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createPortal } from 'react-dom'
 import { format, parseISO, subDays } from 'date-fns'
 import { flushSync } from 'react-dom'
-import { Brain, Mic, MicOff, Pencil, Plus, Sparkles, Trash2, X } from 'lucide-react'
+import { Brain, Crosshair, Lock, Mic, MicOff, Pencil, Plus, Sparkles, Target, Trash2, X } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
@@ -38,7 +38,7 @@ import {
 } from '@/lib/morning/process-morning-brain-dump'
 import {
   PRO_GATE_BADGE_SURFACE_CLASS,
-  PRO_GATE_BLUEPRINT_SPARKLE_CLASS,
+  PRO_GATE_BLUEPRINT_LOCK_OVERLAY_BADGE_CLASS,
 } from '@/lib/morning/pro-gate-badge-styles'
 import {
   appendOverflowLines,
@@ -48,7 +48,7 @@ import {
   mergeNewTasksIntoRows,
   sanitizeOverflowLine,
 } from '@/lib/morning/morning-brain-dump-merge'
-import { BrainDumpCard } from '@/components/BrainDumpCard'
+import { MorningBrainDumpSection } from '@/components/morning/MorningBrainDumpSection'
 import { MorningSaveProcessingOverlay } from '@/components/morning/MorningSaveProcessingOverlay'
 import {
   dedupeRedundantWhyLines,
@@ -57,6 +57,13 @@ import {
 } from '@/lib/morning/sanitize-ai-json-text'
 import { ProMorningAIError } from '@/lib/morning/pro-morning-api'
 import { resolveStruggleMorningTitles } from '@/lib/morning/struggle-morning-titles'
+import {
+  MORNING_BLUEPRINTS_SUBCARD_CLASS,
+  MORNING_LOOP_CARD_CLASS,
+  MORNING_LOOP_CARD_CORAL_ACCENT,
+  MORNING_LOOP_CARD_NAVY_ACCENT,
+  MORNING_LOOP_SECTION_TITLE_CLASS,
+} from '@/lib/morning/morning-loop-card-styles'
 import type { UserProfile } from '@/lib/features'
 import { isMorningFeatureLocked } from '@/lib/features'
 import { getTrialStatus } from '@/lib/auth/trial-status'
@@ -257,10 +264,6 @@ const TRAY_CELEBRATION_LINES = [
   'Excellent choices. Your day is set.',
   'Strategic alignment achieved. ✨',
 ] as const
-
-/** Merged Clear the Path — sky-600 command cap, sky-200 drafting grid (matches BrainDumpCard shell). */
-const MORNING_BRAIN_DUMP_CARD_SHELL =
-  'overflow-hidden rounded-xl border-x border-b border-slate-200/70 border-t-4 border-t-sky-600 bg-white shadow-xl [background-image:linear-gradient(to_right,rgba(186,230,253,0.44)_1px,transparent_1px),linear-gradient(to_bottom,rgba(186,230,253,0.44)_1px,transparent_1px)] [background-size:24px_24px] dark:border-slate-600/80 dark:border-t-sky-500 dark:bg-slate-950/45 dark:shadow-[0_22px_55px_rgba(0,0,0,0.5)] dark:[background-image:linear-gradient(to_right,rgba(186,230,253,0.22)_1px,transparent_1px),linear-gradient(to_bottom,rgba(186,230,253,0.22)_1px,transparent_1px)]'
 
 /** Dashboard widget parity: white surface + subtle lift (see `components/ui/card`) */
 const DASHBOARD_MORNING_CARD =
@@ -1799,121 +1802,23 @@ export function ProMorningCanvas({
     </>
   )
 
-  const brainDumpSubtitle = `Speak freely to capture your thoughts. Mrs. Deer will help distill them into your Core Objective and ${baseStreamSlots} Needle Movers.`
-
-  const brainDumpProHeaderBadge = intelligenceGated ? (
-    <Link
-      href="/pricing"
-      className={`relative z-[60] shrink-0 self-center cursor-pointer transition hover:scale-105 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-950 ${PRO_GATE_BADGE_SURFACE_CLASS}`}
-      aria-label="Upgrade to Pro — view plans"
-      title="Brain Dump & AI Distillation is a Pro+ feature."
-    >
-      Pro
-    </Link>
-  ) : null
-
-  /** Clear the Path title + copy (+ Pro link when gated) — top band inside merged brain-dump card. */
-  const clearThePathHeaderInner = (
-    <>
-      <h2 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2 text-lg font-bold tracking-tight text-slate-800 dark:text-slate-100">
-        <Brain className="h-5 w-5 shrink-0 self-center text-slate-800 dark:text-slate-200" aria-hidden />
-        <span className="min-w-0 self-center leading-none">Clear the Path</span>
-        {brainDumpProHeaderBadge}
-      </h2>
-      <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-        {cockpitOnboarding ? morningActionBlurb : brainDumpSubtitle}
-      </p>
-    </>
-  )
-
-  const morningBrainDumpBlock = voiceLocked ? null : cockpitOnboarding ? (
-    <div className="relative z-[45] w-full" data-tutorial={tutorialMode ? 'morning-brain-dump' : undefined}>
-      <div className={MORNING_BRAIN_DUMP_CARD_SHELL}>
-        <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-700/80 md:px-5 md:py-4">
-          {clearThePathHeaderInner}
-        </div>
-        <div className={intelligenceGated ? 'opacity-[0.72] pointer-events-none' : undefined}>
-          <BrainDumpCard
-            context="morning"
-            title="Morning brain dump"
-            hideHeader
-            subtitle=""
-            value={morningBrainDumpText}
-            onChange={setMorningBrainDumpText}
-            accent="sage"
-            id="morning-brain-dump"
-            enableSortIntoReview
-            sortLoading={brainDumpProcessing || saving}
-            ghostSortStatusMessage="Clearing the path..."
-            onSortBegin={() => setBrainDumpProcessing(true)}
-            onSortCancel={() => setBrainDumpProcessing(false)}
-            onSortIntoReview={(text) => void runMorningBrainDumpSortFromCard(text)}
-            onListeningChange={handleBrainDumpListeningChange}
-            interruptListeningEpoch={brainDumpInterruptEpoch}
-            saveHint={draftLabel ?? undefined}
-            cockpitVisual
-            className="mb-0 border-0 shadow-none ring-0 bg-transparent dark:bg-transparent"
-            proDistillLocked={intelligenceGated}
-          />
-        </div>
-      </div>
-    </div>
-  ) : intelligenceGated ? (
-    <div className="relative z-[45] w-full" data-tutorial={tutorialMode ? 'morning-brain-dump' : undefined}>
-      <div className={MORNING_BRAIN_DUMP_CARD_SHELL}>
-        <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-700/80 md:px-5 md:py-4">
-          {clearThePathHeaderInner}
-        </div>
-        <div className="opacity-[0.72] pointer-events-none">
-          <BrainDumpCard
-            context="morning"
-            title="Clear the Path"
-            hideHeader
-            subtitle=""
-            value={morningBrainDumpText}
-            onChange={setMorningBrainDumpText}
-            accent="sage"
-            id="morning-brain-dump"
-            enableSortIntoReview
-            sortLoading={brainDumpProcessing || saving}
-            ghostSortStatusMessage="Clearing the path..."
-            onSortBegin={() => setBrainDumpProcessing(true)}
-            onSortCancel={() => setBrainDumpProcessing(false)}
-            onSortIntoReview={(text) => void runMorningBrainDumpSortFromCard(text)}
-            onListeningChange={handleBrainDumpListeningChange}
-            interruptListeningEpoch={brainDumpInterruptEpoch}
-            saveHint={draftLabel ?? undefined}
-            className="mb-0 border-0 shadow-none ring-0 bg-transparent dark:bg-transparent"
-            proDistillLocked={intelligenceGated}
-          />
-        </div>
-      </div>
-    </div>
-  ) : (
-    <div className="relative z-[45] w-full" data-tutorial={tutorialMode ? 'morning-brain-dump' : undefined}>
-      <div className={`p-4 md:p-5 ${MORNING_BRAIN_DUMP_CARD_SHELL}`}>
-        <BrainDumpCard
-          context="morning"
-          title="Clear the Path"
-          subtitle={brainDumpSubtitle}
-          value={morningBrainDumpText}
-          onChange={setMorningBrainDumpText}
-          accent="sage"
-          id="morning-brain-dump"
-          enableSortIntoReview
-          sortLoading={brainDumpProcessing || saving}
-          ghostSortStatusMessage="Clearing the path..."
-          onSortBegin={() => setBrainDumpProcessing(true)}
-          onSortCancel={() => setBrainDumpProcessing(false)}
-          onSortIntoReview={(text) => void runMorningBrainDumpSortFromCard(text)}
-          onListeningChange={handleBrainDumpListeningChange}
-          interruptListeningEpoch={brainDumpInterruptEpoch}
-          saveHint={draftLabel ?? undefined}
-          className="mb-0"
-          proDistillLocked={false}
-        />
-      </div>
-    </div>
+  const morningBrainDumpBlock = (
+    <MorningBrainDumpSection
+      morningBrainDumpLocked={intelligenceGated}
+      value={morningBrainDumpText}
+      onChange={setMorningBrainDumpText}
+      sortLoading={brainDumpProcessing || saving}
+      onSortBegin={() => setBrainDumpProcessing(true)}
+      onSortCancel={() => setBrainDumpProcessing(false)}
+      onSortIntoReview={(text) => void runMorningBrainDumpSortFromCard(text)}
+      onListeningChange={handleBrainDumpListeningChange}
+      interruptListeningEpoch={brainDumpInterruptEpoch}
+      saveHint={draftLabel ?? undefined}
+      cockpitVisual={cockpitOnboarding}
+      subtitle={cockpitOnboarding ? morningActionBlurb : undefined}
+      streamTasksPhrase={streamTasksPhrase}
+      data-tutorial={tutorialMode ? 'morning-brain-dump' : undefined}
+    />
   )
 
   return (
@@ -2003,20 +1908,20 @@ export function ProMorningCanvas({
       <div
         id="morning-daily-pivot"
         data-tutorial={tutorialMode ? 'morning-intention' : undefined}
-        className={
+        className={[
+          'scroll-mt-4',
           cockpitOnboarding
-            ? 'scroll-mt-4 rounded-xl bg-white p-4 shadow-sm dark:bg-gray-900/50 dark:shadow-sm md:p-5'
-            : 'scroll-mt-4 rounded-xl bg-white p-5 shadow-sm dark:bg-gray-900/45 dark:shadow-sm'
-        }
+            ? `p-4 md:p-5 ${DASHBOARD_MORNING_CARD} border-l-4 border-l-[#152b50] dark:border-l-[#152b50]`
+            : `${MORNING_LOOP_CARD_CLASS} ${MORNING_LOOP_CARD_NAVY_ACCENT}`,
+        ].join(' ')}
       >
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2
-            className={
-              cockpitOnboarding
-                ? 'text-lg font-semibold text-gray-900 dark:text-white'
-                : 'text-lg font-semibold text-[#152b50] dark:text-sky-100'
-            }
-          >
+          <h2 className={MORNING_LOOP_SECTION_TITLE_CLASS}>
+            <Target
+              className="h-5 w-5 shrink-0"
+              style={{ color: colors.navy.DEFAULT }}
+              aria-hidden
+            />
             {pivotHeaderTitle}
           </h2>
           <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
@@ -2435,19 +2340,28 @@ export function ProMorningCanvas({
       <div
         className={
           cockpitOnboarding
-            ? `p-4 md:p-5 ${DASHBOARD_MORNING_CARD} border-l-4 border-l-orange-500/70 dark:border-l-orange-400/50`
-            : `rounded-xl border-2 border-gray-200 bg-white p-5 dark:border-gray-600 dark:bg-gray-900/40`
+            ? `p-4 md:p-5 ${DASHBOARD_MORNING_CARD} border-l-4 border-l-[#ef725c] dark:border-l-[#ef725c]`
+            : `${MORNING_LOOP_CARD_CLASS} ${MORNING_LOOP_CARD_CORAL_ACCENT}`
         }
       >
-        <h3
-          className={
-            cockpitOnboarding
-              ? 'mb-2 text-sm font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400'
-              : 'mb-1 text-sm font-semibold tracking-wide text-gray-500 dark:text-gray-400'
-          }
-        >
-          {streamSectionTitle}
-        </h3>
+        <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <h2 className={MORNING_LOOP_SECTION_TITLE_CLASS}>
+            <Crosshair
+              className="h-5 w-5 shrink-0"
+              style={{ color: colors.coral.DEFAULT }}
+              aria-hidden
+            />
+            {streamSectionTitle}
+          </h2>
+          {!cockpitOnboarding ? (
+            <span
+              className="text-[10px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500"
+              title={`You have ${baseStreamSlots} free priority slots each morning`}
+            >
+              Daily focus · {baseStreamSlots} slots available
+            </span>
+          ) : null}
+        </div>
         <p className="mb-6 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
           {cockpitOnboarding ? (
             <>
@@ -2472,27 +2386,29 @@ export function ProMorningCanvas({
         {showBlueprintsSection ? (
           <FreemiumStandbyFrame active={intelligenceGated} blockPointerOnContent={intelligenceGated}>
           <div
-            className="mb-8 border-b border-slate-100 pb-8 dark:border-slate-700/80"
+            className={`mb-6 ${MORNING_BLUEPRINTS_SUBCARD_CLASS}`}
             role="region"
             aria-label="Task blueprints"
           >
-            <div className="mb-2 flex flex-wrap items-center gap-2 px-1">
+            <motion.div className="mb-2 px-1">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Blueprints
               </span>
-              {blueprintsLocked ? (
-                <Link
-                  href="/pricing"
-                  className={`cursor-pointer transition hover:scale-105 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-950 ${PRO_GATE_BADGE_SURFACE_CLASS}`}
-                  aria-label="Upgrade to Pro for Blueprints"
-                  title="Pro feature"
-                >
-                  Pro
-                </Link>
-              ) : null}
-            </div>
-            <div className="-mx-1 flex gap-2 overflow-x-auto pb-1 pt-0.5">
-              {blueprintChipsRow.map((bp) => (
+            </motion.div>
+            <div className="relative min-h-[4.5rem]">
+              <motion.div
+                className={[
+                  '-mx-1 flex gap-2 overflow-x-auto pb-1 pt-0.5',
+                  blueprintsLocked
+                    ? '[mask-image:linear-gradient(to_right,black_0%,black_52%,rgba(0,0,0,0.35)_72%,transparent_100%)] [-webkit-mask-image:linear-gradient(to_right,black_0%,black_52%,rgba(0,0,0,0.35)_72%,transparent_100%)]'
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              >
+              {blueprintChipsRow.map((bp, chipIndex) => {
+                const gatedPreview = blueprintsLocked && chipIndex >= 3
+                return (
                 <button
                   key={bp.blueprintKey}
                   type="button"
@@ -2503,22 +2419,15 @@ export function ProMorningCanvas({
                     }
                     applyBlueprint(bp)
                   }}
-                  className={`relative max-w-[200px] shrink-0 rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2 text-left transition-colors dark:border-slate-700 dark:bg-slate-800/40 ${
-                    blueprintsLocked
-                      ? 'cursor-pointer opacity-80 ring-1 ring-indigo-300/50 dark:ring-sky-400/35'
-                      : 'hover:bg-slate-100 dark:hover:bg-slate-800/70'
-                  }`}
+                  className={[
+                    'relative max-w-[200px] shrink-0 rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2 text-left transition-[opacity,filter,background-color] dark:border-slate-700 dark:bg-slate-800/40',
+                    gatedPreview
+                      ? 'pointer-events-auto cursor-pointer opacity-40 blur-[2px] saturate-50'
+                      : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/70',
+                  ].join(' ')}
                 >
-                  <span className="relative inline-flex items-center" aria-hidden>
-                    <span className="text-sm">{PRO_ACTION_PLAN_EMOJI[bp.actionPlan]}</span>
-                    {blueprintsLocked ? (
-                      <span
-                        className={`absolute -right-2 -top-2 flex h-[18px] min-w-[18px] items-center justify-center px-0.5 text-[9px] font-bold leading-none ${PRO_GATE_BLUEPRINT_SPARKLE_CLASS}`}
-                        aria-hidden
-                      >
-                        ✨
-                      </span>
-                    ) : null}
+                  <span className="text-sm" aria-hidden>
+                    {PRO_ACTION_PLAN_EMOJI[bp.actionPlan]}
                   </span>{' '}
                   <span className="text-xs font-medium leading-snug text-slate-800 dark:text-slate-100">
                     {bp.description}
@@ -2529,15 +2438,37 @@ export function ProMorningCanvas({
                       : `${bp.count}× · ${matrixKeyToPrismActionLabel(bp.actionPlan)}`}
                   </span>
                 </button>
-              ))}
+                )
+              })}
+              </motion.div>
+              {blueprintsLocked ? (
+                <>
+                  <motion.div
+                    className="pointer-events-none absolute inset-y-0 right-0 z-[1] w-[46%] min-w-[8rem] bg-gradient-to-l from-white via-white/75 to-transparent dark:from-gray-900 dark:via-gray-900/70"
+                    aria-hidden
+                  />
+                  <Link
+                    href="/pricing"
+                    className={`absolute right-2 top-1/2 z-10 -translate-y-1/2 ${PRO_GATE_BLUEPRINT_LOCK_OVERLAY_BADGE_CLASS}`}
+                    aria-label="Upgrade to Pro for Blueprints"
+                    title="Pro feature — recurring blueprints"
+                  >
+                    <Lock className="h-3 w-3 shrink-0 text-white" strokeWidth={2.5} aria-hidden />
+                    Pro
+                  </Link>
+                </>
+              ) : null}
             </div>
           </div>
           </FreemiumStandbyFrame>
         ) : null}
         <ul
-          className={`${
-            cockpitOnboarding && !compactRows ? 'space-y-6' : morningTaskListGapClass(compactRows || slimEmptyRows)
-          }`}
+          className={[
+            cockpitOnboarding && !compactRows ? 'space-y-6' : morningTaskListGapClass(compactRows || slimEmptyRows),
+            showBlueprintsSection ? 'mt-10' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
           data-tutorial={tutorialMode ? 'power-list' : undefined}
         >
           {Array.from({ length: slotCount }, (_, index) => {

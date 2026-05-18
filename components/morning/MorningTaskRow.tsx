@@ -27,10 +27,11 @@ export function buildMorningTaskRowLiClassName(opts: {
     : isRefined
       ? 'border-l-[3px] border-l-[#ef725c] bg-[#fff7f4]/90 dark:border-l-[#f0886c] dark:bg-white/[0.06]'
       : isBaseRow
-        ? 'border-l-[3px] border-l-[#152b50]/25 bg-[#152b50]/[0.06] dark:border-l-sky-400/35 dark:bg-sky-500/[0.08]'
-        : 'border-l-[3px] border-l-transparent'
+        ? 'border-l-0 bg-transparent pl-0 dark:bg-transparent'
+        : 'border-l-[3px] border-l-transparent bg-white dark:bg-gray-800'
   const pad = compact ? 'py-0.5' : 'py-1'
-  return `group flex w-full min-w-0 flex-col gap-1.5 overflow-visible rounded-none ${pad} pl-2 transition-[background-color,border-color,opacity,filter] ${border}`
+  const inset = isBaseRow && !dashboardRail && !isRefined ? 'pl-0' : 'pl-2'
+  return `group flex w-full min-w-0 flex-col gap-1.5 overflow-visible rounded-none ${pad} ${inset} transition-[background-color,border-color,opacity,filter] ${border}`
 }
 
 export type MorningTaskRowShellProps = {
@@ -76,7 +77,13 @@ export function MorningTaskRowShell(props: MorningTaskRowShellProps) {
             </>
           ) : (
             <>
-              <span className={`tabular-nums ${numText} text-gray-400`}>{index + 1}.</span>
+              <span
+                className={`tabular-nums ${numText} ${
+                  isBaseRow ? 'font-semibold text-sky-600 dark:text-sky-400' : 'text-gray-400'
+                }`}
+              >
+                {index + 1}.
+              </span>
               <span className={`${emojiSize} leading-none`} aria-hidden>
                 {actionMatrixEmoji}
               </span>

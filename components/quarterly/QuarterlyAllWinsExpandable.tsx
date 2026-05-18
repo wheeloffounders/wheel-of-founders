@@ -1,36 +1,42 @@
 'use client'
 
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { InsightPeriodSection } from '@/components/insights/InsightPeriodSection'
 import type { WinWithReviewDate } from '@/lib/quarterly/getQuarterlyData'
+import type { InsightPeriodAccent } from '@/lib/insights/insight-period-card-styles'
 
 interface QuarterlyAllWinsExpandableProps {
   wins: WinWithReviewDate[]
   quarterLabel: string
-  /** Stable anchor for in-page links (e.g. #quarterly-all-wins) */
+  accent?: InsightPeriodAccent
   anchorId?: string
 }
 
-export function QuarterlyAllWinsExpandable({ wins, quarterLabel, anchorId = 'quarterly-all-wins' }: QuarterlyAllWinsExpandableProps) {
+export function QuarterlyAllWinsExpandable({
+  wins,
+  quarterLabel,
+  accent = 'progress',
+  anchorId = 'quarterly-all-wins',
+}: QuarterlyAllWinsExpandableProps) {
   if (wins.length === 0) return null
 
   return (
-    <Card id={anchorId} className="scroll-mt-24 border-t border-gray-200 dark:border-gray-700">
-      <CardHeader>
-        <CardTitle className="text-[#152b50] dark:text-slate-100">All wins · {quarterLabel}</CardTitle>
-        <p className="text-sm text-gray-700 dark:text-gray-300">{wins.length} moment{wins.length === 1 ? '' : 's'} from your evening reviews</p>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <InsightPeriodSection
+      id={anchorId}
+      title={`All wins · ${quarterLabel}`}
+      accent={accent}
+      cardClassName="scroll-mt-24"
+    >
+      <p className="mb-4 text-sm text-gray-700 dark:text-gray-300">
+        {wins.length} moment{wins.length === 1 ? '' : 's'} from your evening reviews
+      </p>
+      <ul className="divide-y divide-slate-100 dark:divide-slate-700/80">
         {wins.map((w, i) => (
-          <div
-            key={`${w.reviewDate}-${i}`}
-            className="p-4 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50"
-            style={{ borderRadius: 0 }}
-          >
+          <li key={`${w.reviewDate}-${i}`} className="py-4 first:pt-0 last:pb-0">
             <p className="text-gray-900 dark:text-gray-100">{w.text}</p>
-            <p className="text-xs mt-2 text-gray-600 dark:text-gray-400">{w.reviewDate}</p>
-          </div>
+            <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">{w.reviewDate}</p>
+          </li>
         ))}
-      </CardContent>
-    </Card>
+      </ul>
+    </InsightPeriodSection>
   )
 }

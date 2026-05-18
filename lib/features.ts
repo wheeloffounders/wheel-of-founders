@@ -1,4 +1,5 @@
 import { resolveProEntitlement } from '@/lib/auth/is-pro'
+import { getTrialStatus } from '@/lib/auth/trial-status'
 import { isTrialExpirySimulationEnabled } from '@/lib/trial-simulation'
 
 function resolveOptsForClient() {
@@ -21,6 +22,7 @@ export interface FeatureAccess {
   dailyPostEveningPrompt: boolean // Post-Evening Reflection Insight
   personalWeeklyInsight: boolean  // Personalized weekly (Sunday 6 PM)
   personalMonthlyInsight: boolean // Personalized monthly (1st of month)
+  personalQuarterlyInsight: boolean // Personalized quarterly trajectory
   
   // LIVE AI CHAT IS DISABLED FOR ALL TIERS
   liveAICoach: boolean           // Always false - no live chat
@@ -150,10 +152,186 @@ const FREEMIUM_EMERGENCY_AUDIT_USER: UserProfile = {
   pro_features_enabled: false,
 }
 
+/** Options for voice brain-dump UI (Pro billboard vs interactive mic). */
+export type EmergencyVoiceBrainDumpLockOptions = {
+  /** `/emergency/free` — always show locked free-tier preview regardless of session tier. */
+  forceFreemiumAuditPath?: boolean
+}
+
+/**
+ * Voice-only Emergency Brain Dump: locked unless trial UX + entitlement both say Pro.
+ * Matches bottom nav (“7 days of Pro left” / “Pro trial ended”) — not only `tier === 'free'`,
+ * so beta/dev rows with Day-8 sim still see the glass billboard.
+ *
+ * `/emergency/free` audit path forces the locked billboard regardless of session tier.
+ */
+export function isEmergencyVoiceBrainDumpLocked(
+  user: UserProfile | null | undefined,
+  options?: EmergencyVoiceBrainDumpLockOptions
+): boolean {
+  if (options?.forceFreemiumAuditPath) return true
+  if (!user) {
+    if (isTrialExpirySimulationEnabled()) return true
+    return false
+  }
+
+  const sim = isTrialExpirySimulationEnabled()
+  const ov = String(user.subscription_override ?? 'none').trim().toLowerCase()
+  if (ov === 'pro') return false
+
+  const trialUx = getTrialStatus(user, { simulateExpired: sim })
+  if (trialUx.isPro) return false
+
+  const entitlement = resolveProEntitlement(user, Date.now(), { simulateExpired: sim })
+  if (entitlement.isPro) return false
+
+  return true
+}
+
+/**
+ * Strict emergency Pro gate — brain dump, protocol voice, AI triage, refine (same bundle + trial UX as nav).
+ * Prefer this over `isEmergencyFeatureLocked` on `/emergency` (beta override bypasses the latter).
+ */
+export function isEmergencyProSurfaceLocked(
+  user: UserProfile | null | undefined,
+  options?: EmergencyVoiceBrainDumpLockOptions
+): boolean {
+  return isEmergencyVoiceBrainDumpLocked(user, options)
+}
+
 /**
  * Per-feature lock for emergency + related UX (morning pause while a Hot fire is active).
  * When `GLOBAL_BETA_OVERRIDE` is true, locks are off unless the path includes `/emergency/free` (audit).
  */
+/** Weekly insight: AI synthesis, pattern quote intersections, quarterly memory starring. */
+export type WeeklyInsightFreemiumFeature =
+  | 'ai_synthesis'
+  | 'pattern_quote_analysis'
+  | 'quarterly_memory_selection'
+
+export type WeeklyInsightProLockOptions = {
+  /** `/weekly/free` — force freemium locks for UI audit. */
+  forceFreemiumAuditPath?: boolean
+}
+
+function isWeeklyInsightFreemiumAuditPath(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.location.pathname.includes('/weekly/free')
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Weekly insight Pro gate — AI narrative, pattern quote analysis, win/lesson starring.
+ * Uses trial UX + entitlement (same bundle as emergency/morning strict surfaces).
+ */
+export function isWeeklyInsightProSurfaceLocked(
+  user: UserProfile | null | undefined,
+  options?: WeeklyInsightProLockOptions
+): boolean {
+  if (options?.forceFreemiumAuditPath || isWeeklyInsightFreemiumAuditPath()) return true
+  if (!user) {
+    if (isTrialExpirySimulationEnabled()) return true
+    return false
+  }
+
+  const sim = isTrialExpirySimulationEnabled()
+  const ov = String(user.subscription_override ?? 'none').trim().toLowerCase()
+  if (ov === 'pro') return false
+
+  const trialUx = getTrialStatus(user, { simulateExpired: sim })
+  if (trialUx.isPro) return false
+
+  const entitlement = resolveProEntitlement(user, Date.now(), { simulateExpired: sim })
+  if (entitlement.isPro) return false
+
+  return true
+}
+
+export function isWeeklyInsightFeatureLocked(
+  feature: WeeklyInsightFreemiumFeature,
+  user: UserProfile | null | undefined,
+  options?: WeeklyInsightProLockOptions
+): boolean {
+  if (!isWeeklyInsightProSurfaceLocked(user, options)) return false
+  return (
+    feature === 'ai_synthesis' ||
+    feature === 'pattern_quote_analysis' ||
+    feature === 'quarterly_memory_selection'
+  )
+}
+
+/** Monthly insight: AI synthesis, AI transformation pairs. */
+export type MonthlyInsightFreemiumFeature = 'ai_synthesis' | 'transformation_pairs'
+
+export type MonthlyInsightProLockOptions = {
+  /** `/monthly-insight/free` — force freemium locks for UI audit. */
+  forceFreemiumAuditPath?: boolean
+}
+
+function isMonthlyInsightFreemiumAuditPath(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.location.pathname.includes('/monthly-insight/free')
+  } catch {
+    return false
+  }
+}
+
+export function isMonthlyInsightProSurfaceLocked(
+  user: UserProfile | null | undefined,
+  options?: MonthlyInsightProLockOptions
+): boolean {
+  if (options?.forceFreemiumAuditPath || isMonthlyInsightFreemiumAuditPath()) return true
+  return isWeeklyInsightProSurfaceLocked(user)
+}
+
+export function isMonthlyInsightFeatureLocked(
+  feature: MonthlyInsightFreemiumFeature,
+  user: UserProfile | null | undefined,
+  options?: MonthlyInsightProLockOptions
+): boolean {
+  if (!isMonthlyInsightProSurfaceLocked(user, options)) return false
+  return feature === 'ai_synthesis' || feature === 'transformation_pairs'
+}
+
+/** Quarterly trajectory: AI synthesis + deep narrative sections. */
+export type QuarterlyInsightFreemiumFeature = 'ai_synthesis' | 'narrative_depth'
+
+export type QuarterlyInsightProLockOptions = {
+  /** `/quarterly/free` or `/quarterly-insight/free` — force freemium locks for UI audit. */
+  forceFreemiumAuditPath?: boolean
+}
+
+function isQuarterlyInsightFreemiumAuditPath(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    const path = window.location.pathname
+    return path.includes('/quarterly/free') || path.includes('/quarterly-insight/free')
+  } catch {
+    return false
+  }
+}
+
+export function isQuarterlyInsightProSurfaceLocked(
+  user: UserProfile | null | undefined,
+  options?: QuarterlyInsightProLockOptions
+): boolean {
+  if (options?.forceFreemiumAuditPath || isQuarterlyInsightFreemiumAuditPath()) return true
+  return isWeeklyInsightProSurfaceLocked(user)
+}
+
+export function isQuarterlyInsightFeatureLocked(
+  feature: QuarterlyInsightFreemiumFeature,
+  user: UserProfile | null | undefined,
+  options?: QuarterlyInsightProLockOptions
+): boolean {
+  if (!isQuarterlyInsightProSurfaceLocked(user, options)) return false
+  return feature === 'ai_synthesis' || feature === 'narrative_depth'
+}
+
 export function isEmergencyFeatureLocked(
   feature: EmergencyFreemiumFeature,
   user: UserProfile | null | undefined
@@ -201,6 +379,7 @@ export const getFeatureAccess = (user: UserProfile | null | undefined): FeatureA
     dailyPostEveningPrompt: isProEntitled, // Post-evening reflection
     personalWeeklyInsight: isProEntitled, // Personalized weekly
     personalMonthlyInsight: isProEntitled, // Personalized monthly
+    personalQuarterlyInsight: isProEntitled, // Personalized quarterly
 
     // LIVE AI CHAT DISABLED
     liveAICoach: false, // No live chat for any tier

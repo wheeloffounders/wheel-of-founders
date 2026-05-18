@@ -1,28 +1,18 @@
 'use client'
 
-import { Link2 } from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { colors } from '@/lib/design-tokens'
+import { InsightPeriodSection } from '@/components/insights/InsightPeriodSection'
 import type { TransformationThread as TThread } from '@/lib/quarterly/buildQuarterlyNarrative'
+import type { InsightPeriodAccent } from '@/lib/insights/insight-period-card-styles'
 
 interface TransformationThreadProps {
   thread: TThread
+  accent?: InsightPeriodAccent
 }
 
-export function TransformationThread({ thread }: TransformationThreadProps) {
+export function TransformationThread({ thread, accent = 'goal' }: TransformationThreadProps) {
   return (
-    <Card
-      className="border-t border-gray-200 dark:border-gray-700"
-      highlighted
-      style={{ borderLeft: `3px solid ${colors.navy.DEFAULT}` }}
-    >
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-[#152b50] dark:text-slate-100">
-          <Link2 className="w-5 h-5" style={{ color: colors.amber.DEFAULT }} />
-          The Transformation Thread
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4 text-gray-800 dark:text-gray-200 leading-relaxed">
+    <InsightPeriodSection title="The Transformation Thread" accent={accent}>
+      <div className="space-y-4 leading-relaxed text-gray-800 dark:text-gray-200">
         <p className="font-medium text-gray-900 dark:text-gray-100">Across these months, one thread runs through everything:</p>
         <p>
           You stopped asking {thread.oldQuestion}.<br />
@@ -30,9 +20,10 @@ export function TransformationThread({ thread }: TransformationThreadProps) {
         </p>
         <p>{thread.body}</p>
         <p>
-          That&apos;s not {thread.oldFraming}. That&apos;s {thread.newFraming}. And it&apos;s the foundation of everything you&apos;re building.
+          That&apos;s not {thread.oldFraming}. That&apos;s {thread.newFraming}. And it&apos;s the foundation of everything you&apos;re
+          building.
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </InsightPeriodSection>
   )
 }

@@ -1,9 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { BarChart3 } from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { InsightPeriodSection } from '@/components/insights/InsightPeriodSection'
 import { colors } from '@/lib/design-tokens'
+import type { InsightPeriodAccent } from '@/lib/insights/insight-period-card-styles'
 
 export type QuarterGlanceStats = {
   totalTasks: number
@@ -17,11 +17,12 @@ export type QuarterGlanceStats = {
 
 interface QuarterAtAGlanceProps {
   stats: QuarterGlanceStats
+  accent?: InsightPeriodAccent
   viewAllWinsHref?: string
   onViewAllWinsClick?: () => void
 }
 
-export function QuarterAtAGlance({ stats, viewAllWinsHref, onViewAllWinsClick }: QuarterAtAGlanceProps) {
+export function QuarterAtAGlance({ stats, accent = 'goal', viewAllWinsHref, onViewAllWinsClick }: QuarterAtAGlanceProps) {
   const tasksLine = `Tasks: ${stats.completedTasks}/${stats.totalTasks} · ${stats.completionRate}% completion`
   const nmLine =
     stats.needleMovers > 0
@@ -30,21 +31,11 @@ export function QuarterAtAGlance({ stats, viewAllWinsHref, onViewAllWinsClick }:
   const refLine = `Reflections: ${stats.reviewsCount} evening reviews · ${stats.decisions} decisions logged`
 
   const linkClass =
-    'text-sm font-medium underline-offset-2 hover:underline inline-flex items-center gap-1 mt-4'
+    'mt-4 inline-flex items-center gap-1 text-sm font-medium underline-offset-2 hover:underline'
 
   return (
-    <Card
-      className="border-t border-gray-200 dark:border-gray-700"
-      highlighted
-      style={{ borderLeft: `3px solid ${colors.navy.DEFAULT}` }}
-    >
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-[#152b50] dark:text-slate-100">
-          <BarChart3 className="w-5 h-5" style={{ color: colors.coral.DEFAULT }} />
-          Quarter at a Glance
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2 text-sm text-gray-800 dark:text-gray-200">
+    <InsightPeriodSection title="Quarter at a Glance" accent={accent}>
+      <div className="space-y-2 text-sm text-gray-800 dark:text-gray-200">
         <p>{tasksLine}</p>
         <p>{nmLine}</p>
         <p>{refLine}</p>
@@ -58,7 +49,7 @@ export function QuarterAtAGlance({ stats, viewAllWinsHref, onViewAllWinsClick }:
             View all wins from this quarter →
           </button>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </InsightPeriodSection>
   )
 }

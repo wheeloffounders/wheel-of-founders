@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   format,
@@ -14,7 +14,11 @@ import { Calendar, Download, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getUserSession, type SessionWithProfile } from '@/lib/auth'
 import { calculateStreak } from '@/lib/streak'
-import { getFeatureAccess } from '@/lib/features'
+import {
+  getFeatureAccess,
+  isMonthlyInsightFeatureLocked,
+  type UserProfile,
+} from '@/lib/features'
 import { generateTransformationPairs, detectWinThemes } from '@/lib/weekly-analysis'
 import type { WinWithDate } from '@/lib/weekly-analysis'
 import { ThemeChart } from '@/components/insights/ThemeChart'
@@ -31,6 +35,35 @@ import { colors } from '@/lib/design-tokens'
 import { showRefreshButton } from '@/lib/env'
 import { resolveEmailDisplayName } from '@/lib/email/personalization-display'
 import { InsightLetterClosing } from '@/components/insights/InsightLetterClosing'
+import { InsightPeriodSection } from '@/components/insights/InsightPeriodSection'
+import {
+  fetchUserProfileBundle,
+  invalidateUserProfileBundle,
+  type MorningUserProfileBundle,
+} from '@/lib/user-profile-bundle-cache'
+import {
+  FREEMIUM_MONTHLY_REFLECTION_PLACEHOLDER,
+  FREEMIUM_MONTHLY_TRANSFORMATION_PLACEHOLDER,
+} from '@/lib/monthly/freemium-monthly-insight-placeholder'
+import { monthlyInsightAccentMap } from '@/lib/insights/insight-period-accent-rotation'
+
+function profileFromBundle(
+  bundle: MorningUserProfileBundle | null,
+  session?: { tier?: string; pro_features_enabled?: boolean }
+): UserProfile {
+  return {
+    tier: bundle?.tier ?? session?.tier,
+    pro_features_enabled: bundle?.pro_features_enabled ?? session?.pro_features_enabled,
+    subscription_override: bundle?.subscription_override ?? null,
+    subscription_tier: bundle?.subscription_tier ?? null,
+    is_beta_retired: bundle?.is_beta_retired ?? null,
+    is_beta: bundle?.is_beta ?? null,
+    trial_starts_at: bundle?.trial_starts_at ?? null,
+    trial_ends_at: bundle?.trial_ends_at ?? null,
+    stripe_subscription_status: bundle?.stripe_subscription_status ?? null,
+    created_at: bundle?.created_at ?? null,
+  }
+}
 
 export default function MonthlyInsightPage() {
   const router = useRouter()
@@ -68,6 +101,7 @@ export default function MonthlyInsightPage() {
   const [unlockProgress, setUnlockProgress] = useState<{ current: number; required: number; isUnlocked: boolean } | null>(null)
   const [session, setSession] = useState<SessionWithProfile | null>(null)
   const [insightGreetingName, setInsightGreetingName] = useState('Founder')
+  const [profileUser, setProfileUser] = useState<UserProfile | null>(null)
 
   const isEndOfMonth = differenceInDays(endOfMonth(selectedMonth), new Date()) <= 3 || !isSameMonth(selectedMonth, new Date())
   const showFullMonthly = isEndOfMonth
@@ -97,6 +131,66 @@ export default function MonthlyInsightPage() {
       if (!s) router.push('/auth/login')
     })
   }, [router])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const s = await getUserSession()
+      const row = await fetchUserProfileBundle()
+      if (!cancelled) setProfileUser(profileFromBundle(row, s?.user))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const onSim = () => {
+      invalidateUserProfileBundle()
+      void (async () => {
+        const s = await getUserSession()
+        const row = await fetchUserProfileBundle({ force: true })
+        setProfileUser(profileFromBundle(row, s?.user))
+      })()
+    }
+    window.addEventListener('wof-trial-sim-changed', onSim)
+    return () => window.removeEventListener('wof-trial-sim-changed', onSim)
+  }, [])
+
+  const aiSynthesisLocked = useMemo(
+    () => isMonthlyInsightFeatureLocked('ai_synthesis', profileUser),
+    [profileUser]
+  )
+  const transformationLocked = useMemo(
+    () => isMonthlyInsightFeatureLocked('transformation_pairs', profileUser),
+    [profileUser]
+  )
+
+  const displayInsight = monthlyInsightOverride ?? monthlyInsight
+
+  const monthlyReflectionTeaserMessage = useMemo(() => {
+    const trimmed = displayInsight?.trim()
+    return trimmed || FREEMIUM_MONTHLY_REFLECTION_PLACEHOLDER
+  }, [displayInsight])
+
+  const resolvedTransformationPairs = useMemo(() => {
+    if (transformationPairs && transformationPairs.length > 0) return transformationPairs
+    return generateTransformationPairs(monthlyWins, monthlyLessons)
+  }, [transformationPairs, monthlyWins, monthlyLessons])
+
+  const transformationTeaserMessage = useMemo(() => {
+    if (resolvedTransformationPairs.length > 0) {
+      return resolvedTransformationPairs
+        .map((p, i) => `Before ${i + 1}: ${p.start}\n\nNow: ${p.now}`)
+        .join('\n\n')
+    }
+    return FREEMIUM_MONTHLY_TRANSFORMATION_PLACEHOLDER
+  }, [resolvedTransformationPairs])
+
+  const monthlyAccents = useMemo(
+    () => monthlyInsightAccentMap(currentMonthStr),
+    [currentMonthStr]
+  )
 
   useEffect(() => {
     if (!session) return
@@ -193,7 +287,7 @@ export default function MonthlyInsightPage() {
           .gte('plan_date', monthStart)
           .lte('plan_date', monthEnd)
           .eq('user_id', session.user.id),
-        features.personalMonthlyInsight
+        features.personalMonthlyInsight && !isMonthlyInsightFeatureLocked('ai_synthesis', profileUser)
           ? supabase
               .from('personal_prompts')
               .select('prompt_text')
@@ -290,7 +384,7 @@ export default function MonthlyInsightPage() {
     }
 
     fetchMonthData()
-  }, [session, selectedMonth])
+  }, [session, selectedMonth, profileUser])
 
   const handleGenerateInsight = async () => {
     const features = session ? getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled }) : null
@@ -328,12 +422,12 @@ export default function MonthlyInsightPage() {
 
   // Auto-generate insight on load when no insight exists
   useEffect(() => {
-    if (!session || !showFullMonthly || generating || hasTriggeredGenerate.current) return
+    if (!session || !showFullMonthly || generating || hasTriggeredGenerate.current || aiSynthesisLocked) return
     const hasInsight = monthlyInsightOverride ?? monthlyInsight
     if (hasInsight) return
     const doGenerate = async () => {
       const features = getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
-      if (!features?.personalMonthlyInsight) return
+      if (!features?.personalMonthlyInsight || aiSynthesisLocked) return
       const hasContent = monthlyWins.length > 0 || monthlyLessons.length > 0
       if (!hasContent) return
       hasTriggeredGenerate.current = true
@@ -365,11 +459,26 @@ export default function MonthlyInsightPage() {
       }
     }
     doGenerate()
-  }, [session, showFullMonthly, monthlyInsight, monthlyInsightOverride, monthlyWins.length, monthlyLessons.length, selectedMonth, generating])
+  }, [
+    session,
+    showFullMonthly,
+    monthlyInsight,
+    monthlyInsightOverride,
+    monthlyWins.length,
+    monthlyLessons.length,
+    selectedMonth,
+    generating,
+    aiSynthesisLocked,
+  ])
 
   // Fetch AI-parsed transformation pairs when we have wins/lessons
   useEffect(() => {
-    if (!showFullMonthly || (monthlyWins.length === 0 && monthlyLessons.length === 0)) return
+    if (
+      !showFullMonthly ||
+      transformationLocked ||
+      (monthlyWins.length === 0 && monthlyLessons.length === 0)
+    )
+      return
     const fetchPairs = async () => {
       try {
         const { data: { session: supabaseSession } } = await supabase.auth.getSession()
@@ -389,7 +498,7 @@ export default function MonthlyInsightPage() {
       }
     }
     fetchPairs()
-  }, [showFullMonthly, selectedMonth, monthlyWins, monthlyLessons])
+  }, [showFullMonthly, selectedMonth, monthlyWins, monthlyLessons, transformationLocked])
 
   const handleExport = async () => {
     console.log('[Export] Button clicked (monthly)')
@@ -533,48 +642,60 @@ export default function MonthlyInsightPage() {
 
       {/* Full monthly analysis - insight first, then stats */}
       {showFullMonthly && (
-        <div className="space-y-8">
-          <div>
-            <p className="text-base italic text-gray-600 dark:text-gray-300 mb-2">Hi {insightGreetingName},</p>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 dark:text-white">Your Month in Review</h2>
-            <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-1">{format(selectedMonth, 'MMMM yyyy')}</p>
-          </div>
+        <div className="space-y-10">
+          <header className="space-y-3 pb-2">
+            <p className="text-base italic text-gray-600 dark:text-gray-300">Hi {insightGreetingName},</p>
+            <h2 className="text-2xl font-bold text-[#152B50] dark:text-white">Your Month in Review</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">{format(selectedMonth, 'MMMM yyyy')}</p>
+          </header>
 
-          {/* 1. Mrs. Deer's reflection FIRST */}
-          <MonthlyWisdom
-            insight={monthlyInsightOverride ?? monthlyInsight}
-            monthLabel={format(selectedMonth, 'MMMM yyyy')}
-            onRefresh={showRefreshButton ? handleGenerateInsight : undefined}
-            generating={generating}
-            generateError={generateError}
-          />
+          {(aiSynthesisLocked ||
+            displayInsight ||
+            monthlyWins.length > 0 ||
+            monthlyLessons.length > 0) && (
+            <MonthlyWisdom
+              insight={displayInsight}
+              monthLabel={format(selectedMonth, 'MMMM yyyy')}
+              accent={monthlyAccents.reflection}
+              aiSynthesisLocked={aiSynthesisLocked}
+              teaserMessage={monthlyReflectionTeaserMessage}
+              onRefresh={showRefreshButton ? handleGenerateInsight : undefined}
+              generating={generating}
+              generateError={generateError}
+            />
+          )}
 
           {/* 2. Monthly stats */}
           <MonthlyTrends
+            accent={monthlyAccents.stats}
             stats={{
               ...stats,
               completionRate: stats.totalTasks > 0 ? Math.round((stats.completedTasks / stats.totalTasks) * 100) : 0,
             }}
           />
 
-          {/* 3. Top themes from wins (visual chart - same as weekly) */}
           {detectWinThemes(winsWithDate).length > 0 && (
-            <div className="rounded-lg border-2 p-6" style={{ borderColor: colors.navy.DEFAULT }}>
+            <InsightPeriodSection title="Themes This Month" accent={monthlyAccents.themes}>
               <ThemeChart
-                themes={detectWinThemes(winsWithDate).slice(0, 5).map((t) => ({ theme: t.theme, count: t.count }))}
+                themes={detectWinThemes(winsWithDate)
+                  .slice(0, 5)
+                  .map((t) => ({ theme: t.theme, count: t.count }))}
                 title="Themes this month"
               />
-            </div>
+            </InsightPeriodSection>
           )}
 
-          {/* 4. Transformation pairs (AI-parsed before → after) */}
-          <TransformationPairs
-            pairs={
-              transformationPairs && transformationPairs.length > 0
-                ? transformationPairs
-                : generateTransformationPairs(monthlyWins, monthlyLessons)
-            }
-          />
+          {(resolvedTransformationPairs.length > 0 ||
+            monthlyWins.length > 0 ||
+            monthlyLessons.length > 0 ||
+            transformationLocked) && (
+            <TransformationPairs
+              pairs={resolvedTransformationPairs}
+              accent={monthlyAccents.transformation}
+              transformationLocked={transformationLocked}
+              teaserMessage={transformationTeaserMessage}
+            />
+          )}
 
           <InsightLetterClosing cadence="month" className="mt-2" />
         </div>

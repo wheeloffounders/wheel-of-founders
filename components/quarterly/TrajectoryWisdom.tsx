@@ -1,9 +1,9 @@
 'use client'
 
-import { Sparkles } from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
 import { MarkdownText } from '@/components/MarkdownText'
+import { InsightPeriodSection } from '@/components/insights/InsightPeriodSection'
+import { InsightPeriodTeaserLock } from '@/components/insights/InsightPeriodTeaserLock'
 import {
   filterInsightLabels,
   scrubBannedQuarterlyTemplatePhrases,
@@ -11,14 +11,14 @@ import {
   stripRedundantLeadingHeadings,
 } from '@/lib/insight-utils'
 import { colors } from '@/lib/design-tokens'
+import type { InsightPeriodAccent } from '@/lib/insights/insight-period-card-styles'
 
 interface TrajectoryWisdomProps {
   insight: string | null
   quarterLabel: string
-  /** Main card heading (section 1 in quarterly milestone flow) */
-  title?: string
-  /** First name for letter-style opening */
-  greetingName?: string
+  accent?: InsightPeriodAccent
+  aiSynthesisLocked?: boolean
+  teaserMessage: string
   onRefresh?: () => void
   generating?: boolean
   generateError?: string | null
@@ -27,8 +27,9 @@ interface TrajectoryWisdomProps {
 export function TrajectoryWisdom({
   insight,
   quarterLabel,
-  title = 'The Quarter in One Glance',
-  greetingName,
+  accent = 'patterns',
+  aiSynthesisLocked = false,
+  teaserMessage,
   onRefresh,
   generating,
   generateError,
@@ -42,99 +43,86 @@ export function TrajectoryWisdom({
       )
     : ''
 
-  if (!hasInsight) {
-    return (
-      <Card>
-        <CardContent className="py-12 text-center">
-          {greetingName ? (
-            <p className="text-base italic text-gray-600 dark:text-gray-300 mb-4 text-left max-w-md mx-auto">
-              Hi {greetingName},
-            </p>
-          ) : null}
-          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2 text-left max-w-md mx-auto">
-            {title}
-          </p>
+  const refreshButton =
+    onRefresh && !aiSynthesisLocked ? (
+      <button
+        type="button"
+        onClick={onRefresh}
+        disabled={generating}
+        aria-label="Refresh insight"
+        className="rounded-lg px-3 py-1.5 text-sm font-medium text-white transition disabled:opacity-50"
+        style={{ backgroundColor: colors.coral.DEFAULT }}
+      >
+        {generating ? '…' : '↻ Refresh'}
+      </button>
+    ) : null
+
+  return (
+    <InsightPeriodSection
+      title="Mrs. Deer's Quarterly Reflection"
+      accent={accent}
+      headerActions={refreshButton}
+    >
+      <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">{quarterLabel}</p>
+      {aiSynthesisLocked ? (
+        <div className="space-y-4">
+          <MrsDeerAvatar expression="thoughtful" size="large" />
+          <InsightPeriodTeaserLock
+            message={teaserMessage}
+            markdown
+            ctaHeadingId="quarterly-reflection-pro-cta"
+            ctaDescription="Mrs. Deer weaves your quarter's wins, lessons, and rhythm into a trajectory you can steer—not just stats."
+            ctaFooter={<>Your stats and wins below stay visible while you explore the quarter.</>}
+          />
+        </div>
+      ) : !hasInsight ? (
+        <div className="py-4 text-center">
           {generateError ? (
             <>
-              <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 text-left">
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-left dark:border-red-800 dark:bg-red-900/20">
                 <p className="text-sm font-medium text-red-800 dark:text-red-200">AI insight failed</p>
-                <p className="text-sm text-red-700 dark:text-red-300 mt-1 font-mono">{generateError}</p>
+                <p className="mt-1 font-mono text-sm text-red-700 dark:text-red-300">{generateError}</p>
               </div>
-              {onRefresh && (
+              {onRefresh ? (
                 <button
                   type="button"
                   onClick={onRefresh}
-                  className="mt-4 text-sm font-medium text-red-600 dark:text-red-400 hover:underline"
+                  className="mt-4 text-sm font-medium text-red-600 hover:underline dark:text-red-400"
                 >
                   Try again
                 </button>
-              )}
+              ) : null}
             </>
           ) : (
             <>
-              <p className="text-gray-900 dark:text-gray-100 dark:text-gray-100 leading-relaxed">
-                {generating ? 'Mrs. Deer, your AI companion is reflecting on your quarter...' : 'You showed up this quarter. Every reflection adds to your trajectory. Click Refresh to generate your trajectory insight.'}
+              <p className="text-gray-700 dark:text-gray-300">
+                {generating
+                  ? 'Mrs. Deer is reflecting on your quarter...'
+                  : `No quarterly insight generated yet for ${quarterLabel}.`}
               </p>
-              <div className="flex justify-center mt-4">
+              <div className="mt-4 flex justify-center">
                 <MrsDeerAvatar expression="thoughtful" size="large" />
               </div>
-              {onRefresh && (
-            <button
-              type="button"
-              onClick={onRefresh}
-              disabled={generating}
-              aria-label="Refresh insight"
-              className="mt-4 text-sm px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50"
-              style={{ backgroundColor: colors.coral.DEFAULT, color: 'white' }}
-            >
-              {generating ? '…' : '↻ Refresh Insight'}
-            </button>
-          )}
+              {onRefresh ? (
+                <button
+                  type="button"
+                  onClick={onRefresh}
+                  disabled={generating}
+                  className="mt-4 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition disabled:opacity-50"
+                  style={{ backgroundColor: colors.coral.DEFAULT }}
+                >
+                  {generating ? '…' : '↻ Refresh'}
+                </button>
+              ) : null}
             </>
           )}
-        </CardContent>
-      </Card>
-    )
-  }
-
-  return (
-    <Card highlighted className="bg-[#f8f4f0] dark:bg-amber-900/30" style={{ borderLeft: `3px solid ${colors.coral.DEFAULT}` }}>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            {greetingName ? (
-              <p className="text-base italic text-gray-600 dark:text-gray-300 mb-2">Hi {greetingName},</p>
-            ) : null}
-            <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
-              <Sparkles className="w-6 h-6" style={{ color: colors.amber.DEFAULT }} />
-              {title}
-            </CardTitle>
-            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">Mrs. Deer&apos;s synthesis · {quarterLabel}</p>
-          </div>
-          {onRefresh && (
-            <button
-              type="button"
-              onClick={onRefresh}
-              disabled={generating}
-              aria-label="Refresh insight"
-              className="text-sm px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50"
-              style={{ backgroundColor: colors.coral.DEFAULT, color: 'white' }}
-            >
-              {generating ? '…' : '↻ Refresh Insight'}
-            </button>
-          )}
         </div>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col gap-4">
-          <div className="flex justify-start">
-            <MrsDeerAvatar expression="thoughtful" size="large" />
-          </div>
-          <MarkdownText className="leading-relaxed text-gray-900 dark:text-gray-100 dark:text-gray-100">
-            {displayInsight}
-          </MarkdownText>
+      ) : (
+        <div className="space-y-4">
+          <MrsDeerAvatar expression="thoughtful" size="large" />
+          <MarkdownText className="leading-relaxed text-gray-900 dark:text-gray-100">{displayInsight}</MarkdownText>
         </div>
-      </CardContent>
-    </Card>
+      )}
+    </InsightPeriodSection>
   )
 }

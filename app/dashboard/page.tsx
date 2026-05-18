@@ -458,10 +458,10 @@ function DashboardContent() {
           {showFreemiumPaywallCard && (
             <div
               id="dashboard-paywall-card"
-              className="relative mt-8 rounded-xl border border-sky-300 bg-sky-50/50 p-6 shadow-[0_0_18px_rgba(14,165,233,0.15)] backdrop-blur-sm dark:border-sky-500/45 dark:bg-sky-950/30 dark:shadow-[0_0_18px_rgba(56,189,248,0.18)]"
+              className="relative mt-8 rounded-xl border border-sky-400 bg-sky-50/50 p-6 shadow-[0_0_30px_rgba(14,165,233,0.25)] backdrop-blur-sm dark:border-sky-500/55 dark:bg-sky-950/30 dark:shadow-[0_0_30px_rgba(56,189,248,0.22)]"
             >
               <div className="mb-4 flex items-center gap-3">
-                <Sparkles className="h-8 w-8 shrink-0 text-sky-600 dark:text-sky-400" />
+                <Sparkles className="h-8 w-8 shrink-0 text-sky-500 dark:text-sky-400" />
                 <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">
                   Unlock AI Coaching Moments
                 </h2>
@@ -479,11 +479,17 @@ function DashboardContent() {
                 >
                   <button
                     type="button"
-                    className={`w-full ${viewProPlansCtaClassName} px-6 py-3 text-center text-base font-semibold`}
+                    className={`w-full ${viewProPlansCtaClassName} flex flex-wrap items-center justify-center gap-2 px-6 py-3 text-base font-semibold`}
                   >
-                    Upgrade to Pro+ ($39/month)
+                    <span className="inline-flex shrink-0 items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800 ring-1 ring-emerald-200/90 dark:bg-emerald-900/60 dark:text-emerald-100 dark:ring-emerald-700/50">
+                      SAVE 25%
+                    </span>
+                    Unlock Pro+ for $29/mo
                   </button>
                 </Link>
+                <p className="mt-2 text-center text-sm leading-5 text-slate-500 dark:text-slate-400">
+                  Billed annually ($348/year)
+                </p>
               </div>
               <ul className="mb-2 mt-5 list-none space-y-2 text-slate-800 dark:text-slate-200">
                 {[

@@ -13,8 +13,12 @@ import {
 import Link from 'next/link'
 import { TrendingUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getUserSession } from '@/lib/auth'
-import { getFeatureAccess } from '@/lib/features'
+import { getUserSession, type SessionWithProfile } from '@/lib/auth'
+import {
+  getFeatureAccess,
+  isQuarterlyInsightFeatureLocked,
+  type UserProfile,
+} from '@/lib/features'
 import { TrajectoryWisdom } from '@/components/quarterly/TrajectoryWisdom'
 import { QuarterlyIntention } from '@/components/quarterly/QuarterlyIntention'
 import { QuarterlyPreview } from '@/components/quarterly/QuarterlyPreview'
@@ -23,6 +27,7 @@ import { TransformationThread } from '@/components/quarterly/TransformationThrea
 import { WhatYouCarriedForward } from '@/components/quarterly/WhatYouCarriedForward'
 import { SurpriseTransformation } from '@/components/quarterly/SurpriseTransformation'
 import { NextQuarterQuestion } from '@/components/quarterly/NextQuarterQuestion'
+import { QuarterlyNarrativeLocked } from '@/components/quarterly/QuarterlyNarrativeLocked'
 import { QuarterAtAGlance } from '@/components/quarterly/QuarterAtAGlance'
 import { QuarterlyAllWinsExpandable } from '@/components/quarterly/QuarterlyAllWinsExpandable'
 import { InsightNavigation } from '@/components/InsightNavigation'
@@ -32,8 +37,34 @@ import { colors } from '@/lib/design-tokens'
 import { showRefreshButton } from '@/lib/env'
 import { fetchQuarterlyData, type QuarterlyData } from '@/lib/quarterly/getQuarterlyData'
 import { buildQuarterlyNarrative } from '@/lib/quarterly/buildQuarterlyNarrative'
+import { buildQuarterlyNarrativeTeaser } from '@/lib/quarterly/quarterly-narrative-teaser'
 import { resolveEmailDisplayName } from '@/lib/email/personalization-display'
 import { InsightLetterClosing } from '@/components/insights/InsightLetterClosing'
+import {
+  fetchUserProfileBundle,
+  invalidateUserProfileBundle,
+  type MorningUserProfileBundle,
+} from '@/lib/user-profile-bundle-cache'
+import { FREEMIUM_QUARTERLY_REFLECTION_PLACEHOLDER } from '@/lib/quarterly/freemium-quarterly-insight-placeholder'
+import { quarterlyInsightAccentMap } from '@/lib/insights/insight-period-accent-rotation'
+
+function profileFromBundle(
+  bundle: MorningUserProfileBundle | null,
+  session?: { tier?: string; pro_features_enabled?: boolean }
+): UserProfile {
+  return {
+    tier: bundle?.tier ?? session?.tier,
+    pro_features_enabled: bundle?.pro_features_enabled ?? session?.pro_features_enabled,
+    subscription_override: bundle?.subscription_override ?? null,
+    subscription_tier: bundle?.subscription_tier ?? null,
+    is_beta_retired: bundle?.is_beta_retired ?? null,
+    is_beta: bundle?.is_beta ?? null,
+    trial_starts_at: bundle?.trial_starts_at ?? null,
+    trial_ends_at: bundle?.trial_ends_at ?? null,
+    stripe_subscription_status: bundle?.stripe_subscription_status ?? null,
+    created_at: bundle?.created_at ?? null,
+  }
+}
 
 function parseQuarterParam(q: string): Date | null {
   const m = q.match(/^(\d{4})-Q([1-4])$/)
@@ -76,8 +107,10 @@ export default function QuarterlyPage() {
   const [generating, setGenerating] = useState(false)
   const hasTriggeredGenerate = useRef(false)
   const [unlockProgress, setUnlockProgress] = useState<{ current: number; required: number; isUnlocked: boolean } | null>(null)
+  const [session, setSession] = useState<SessionWithProfile | null>(null)
   const [quarterlyGreetingName, setQuarterlyGreetingName] = useState('Founder')
   const [quarterlyIntentionSaved, setQuarterlyIntentionSaved] = useState('')
+  const [profileUser, setProfileUser] = useState<UserProfile | null>(null)
 
   const isEndOfQuarter = differenceInDays(endOfQuarter(selectedQuarter), new Date()) <= 7 || !isSameQuarter(selectedQuarter, new Date())
   const showFullQuarterly = isEndOfQuarter
@@ -86,6 +119,7 @@ export default function QuarterlyPage() {
   const nextQuarterStart = addMonths(selectedQuarter, 3)
   const nextQuarterStr = toQuarterParam(nextQuarterStart)
   const hasNextQuarterInsight = periods.some((p) => p === nextQuarterStr)
+
   const getNextDisabledMessage = () => {
     const qNum = Math.ceil((nextQuarterStart.getMonth() + 1) / 3)
     const availableMonth = qNum * 3
@@ -101,6 +135,32 @@ export default function QuarterlyPage() {
   }, [quarterlyData])
 
   const completionRate = stats.totalTasks > 0 ? Math.round((stats.completedTasks / stats.totalTasks) * 100) : 0
+  const quarterLabel = `Q${Math.ceil((selectedQuarter.getMonth() + 1) / 3)} ${selectedQuarter.getFullYear()}`
+  const displayInsight = quarterlyInsightOverride ?? quarterlyInsight
+
+  const aiSynthesisLocked = useMemo(
+    () => isQuarterlyInsightFeatureLocked('ai_synthesis', profileUser),
+    [profileUser]
+  )
+  const narrativeDepthLocked = useMemo(
+    () => isQuarterlyInsightFeatureLocked('narrative_depth', profileUser),
+    [profileUser]
+  )
+
+  const quarterlyReflectionTeaserMessage = useMemo(() => {
+    const trimmed = displayInsight?.trim()
+    return trimmed || FREEMIUM_QUARTERLY_REFLECTION_PLACEHOLDER
+  }, [displayInsight])
+
+  const narrativeTeaserMessage = useMemo(
+    () => buildQuarterlyNarrativeTeaser(narrative),
+    [narrative]
+  )
+
+  const quarterlyAccents = useMemo(
+    () => quarterlyInsightAccentMap(currentQuarterStr),
+    [currentQuarterStr]
+  )
 
   useEffect(() => {
     if (quarterParam && /^\d{4}-Q[1-4]$/.test(quarterParam)) {
@@ -108,6 +168,50 @@ export default function QuarterlyPage() {
       if (parsed) setSelectedQuarter(parsed)
     }
   }, [quarterParam])
+
+  useEffect(() => {
+    getUserSession().then((s) => {
+      setSession(s)
+      if (!s) router.push('/auth/login')
+    })
+  }, [router])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const s = await getUserSession()
+      const row = await fetchUserProfileBundle()
+      if (!cancelled) setProfileUser(profileFromBundle(row, s?.user))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const onSim = () => {
+      invalidateUserProfileBundle()
+      void (async () => {
+        const s = await getUserSession()
+        const row = await fetchUserProfileBundle({ force: true })
+        setProfileUser(profileFromBundle(row, s?.user))
+      })()
+    }
+    window.addEventListener('wof-trial-sim-changed', onSim)
+    return () => window.removeEventListener('wof-trial-sim-changed', onSim)
+  }, [])
+
+  useEffect(() => {
+    if (!session) return
+    void (async () => {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('preferred_name, name, email_address')
+        .eq('id', session.user.id)
+        .maybeSingle()
+      setQuarterlyGreetingName(resolveEmailDisplayName(data, session.user))
+    })()
+  }, [session])
 
   useEffect(() => {
     if (quarterParam || initialRedirectDone) return
@@ -136,25 +240,9 @@ export default function QuarterlyPage() {
   }, [quarterParam, initialRedirectDone, router])
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const session = await getUserSession()
-      if (!session) {
-        router.push('/auth/login')
-        return
-      }
-    }
-    checkAuth()
-  }, [router])
-
-  useEffect(() => {
-    const checkUnlock = async () => {
-      const session = await getUserSession()
-      if (!session) return
-      const progress = await getQuarterlyProgress(session.user.id)
-      setUnlockProgress(progress)
-    }
-    checkUnlock()
-  }, [])
+    if (!session) return
+    getQuarterlyProgress(session.user.id).then(setUnlockProgress)
+  }, [session])
 
   useEffect(() => {
     void (async () => {
@@ -198,24 +286,19 @@ export default function QuarterlyPage() {
   }, [selectedQuarter])
 
   useEffect(() => {
+    if (!session) return
     const fetchQuarterData = async () => {
       setLoading(true)
-      const session = await getUserSession()
-      if (!session) {
-        setLoading(false)
-        return
-      }
-
-      const quarterStart = format(startOfQuarter(selectedQuarter), 'yyyy-MM-dd')
-
-      const features = getFeatureAccess({
+      const features = getFeatureAccess(profileUser ?? {
         tier: session.user.tier,
         pro_features_enabled: session.user.pro_features_enabled,
       })
 
+      const quarterStart = format(startOfQuarter(selectedQuarter), 'yyyy-MM-dd')
+
       const [data, promptsRes] = await Promise.all([
         fetchQuarterlyData(supabase, session.user.id, selectedQuarter),
-        features.personalMonthlyInsight
+        features.personalQuarterlyInsight && !isQuarterlyInsightFeatureLocked('ai_synthesis', profileUser)
           ? supabase
               .from('personal_prompts')
               .select('prompt_text')
@@ -243,16 +326,15 @@ export default function QuarterlyPage() {
     }
 
     fetchQuarterData()
-  }, [selectedQuarter])
-
-  const quarterLabel = `Q${Math.ceil((selectedQuarter.getMonth() + 1) / 3)} ${selectedQuarter.getFullYear()}`
+  }, [selectedQuarter, session, profileUser])
 
   const handleGenerateInsight = async () => {
-    const session = await getUserSession()
-    const features = session
-      ? getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
-      : null
-    if (!features?.personalMonthlyInsight) return
+    if (!session) return
+    const features = getFeatureAccess(profileUser ?? {
+      tier: session.user.tier,
+      pro_features_enabled: session.user.pro_features_enabled,
+    })
+    if (!features.personalQuarterlyInsight || aiSynthesisLocked) return
     setGenerating(true)
     setGenerateError(null)
     try {
@@ -289,15 +371,15 @@ export default function QuarterlyPage() {
   }
 
   useEffect(() => {
-    if (!showFullQuarterly || generating || hasTriggeredGenerate.current) return
+    if (!session || !showFullQuarterly || generating || hasTriggeredGenerate.current || aiSynthesisLocked) return
     const hasInsight = quarterlyInsightOverride ?? quarterlyInsight
     if (hasInsight) return
     const doGenerate = async () => {
-      const session = await getUserSession()
-      const features = session
-        ? getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled })
-        : null
-      if (!features?.personalMonthlyInsight) return
+      const features = getFeatureAccess(profileUser ?? {
+        tier: session.user.tier,
+        pro_features_enabled: session.user.pro_features_enabled,
+      })
+      if (!features.personalQuarterlyInsight || aiSynthesisLocked) return
       const hasContent = quarterlyWins.length > 0
       if (!hasContent) return
       hasTriggeredGenerate.current = true
@@ -333,7 +415,17 @@ export default function QuarterlyPage() {
       }
     }
     doGenerate()
-  }, [showFullQuarterly, quarterlyInsight, quarterlyInsightOverride, quarterlyWins.length, selectedQuarter, generating])
+  }, [
+    session,
+    showFullQuarterly,
+    quarterlyInsight,
+    quarterlyInsightOverride,
+    quarterlyWins.length,
+    selectedQuarter,
+    generating,
+    aiSynthesisLocked,
+    profileUser,
+  ])
 
   if (unlockProgress && !unlockProgress.isUnlocked) {
     return (
@@ -374,6 +466,7 @@ export default function QuarterlyPage() {
       {!showFullQuarterly && isSameQuarter(selectedQuarter, new Date()) && (
         <QuarterlyPreview
           quarterLabel={quarterLabel}
+          accent={quarterlyAccents.preview}
           stats={{
             completedTasks: stats.completedTasks,
             needleMovers: stats.needleMovers,
@@ -382,27 +475,52 @@ export default function QuarterlyPage() {
         />
       )}
 
-      {showFullQuarterly && narrative && (
-        <div className="space-y-8">
-          <TrajectoryWisdom
-            insight={quarterlyInsightOverride ?? quarterlyInsight}
-            quarterLabel={quarterLabel}
-            greetingName={quarterlyGreetingName}
-            onRefresh={showRefreshButton ? handleGenerateInsight : undefined}
-            generating={generating}
-            generateError={generateError}
-          />
+      {showFullQuarterly && (
+        <div className="space-y-10">
+          <header className="space-y-3 pb-2">
+            <p className="text-base italic text-gray-600 dark:text-gray-300">Hi {quarterlyGreetingName},</p>
+            <h2 className="text-2xl font-bold text-[#152B50] dark:text-white">Your Quarter in Review</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">{quarterLabel}</p>
+          </header>
 
-          <HowTheShiftShowedUp months={narrative.shiftShowedUp} />
+          {(aiSynthesisLocked || displayInsight || quarterlyWins.length > 0) && (
+            <TrajectoryWisdom
+              insight={displayInsight}
+              quarterLabel={quarterLabel}
+              accent={quarterlyAccents.reflection}
+              aiSynthesisLocked={aiSynthesisLocked}
+              teaserMessage={quarterlyReflectionTeaserMessage}
+              onRefresh={showRefreshButton ? handleGenerateInsight : undefined}
+              generating={generating}
+              generateError={generateError}
+            />
+          )}
 
-          <TransformationThread thread={narrative.transformationThread} />
-
-          <WhatYouCarriedForward strengths={narrative.carriedForward} primaryGoalText={quarterlyData?.userProfile.primary_goal_text} />
-
-          <SurpriseTransformation surprise={narrative.surprise} />
+          {narrative &&
+            (narrativeDepthLocked ? (
+              <QuarterlyNarrativeLocked
+                teaserMessage={narrativeTeaserMessage}
+                accent={quarterlyAccents.narrative}
+              />
+            ) : (
+              <>
+                {narrative.shiftShowedUp.length > 0 && (
+                  <HowTheShiftShowedUp months={narrative.shiftShowedUp} accent={quarterlyAccents.shift} />
+                )}
+                <TransformationThread thread={narrative.transformationThread} accent={quarterlyAccents.thread} />
+                <WhatYouCarriedForward
+                  strengths={narrative.carriedForward}
+                  primaryGoalText={quarterlyData?.userProfile.primary_goal_text}
+                  accent={quarterlyAccents.carried}
+                />
+                <SurpriseTransformation surprise={narrative.surprise} accent={quarterlyAccents.surprise} />
+                <NextQuarterQuestion block={narrative.guidingQuestion} accent={quarterlyAccents.question} />
+              </>
+            ))}
 
           <QuarterlyIntention
             initialValue={quarterlyIntentionSaved}
+            accent={quarterlyAccents.intention}
             unlocked={unlockProgress?.isUnlocked !== false}
             placeholder="I commit to..."
             onSave={async (value) => {
@@ -421,28 +539,40 @@ export default function QuarterlyPage() {
             }}
           />
 
-          <NextQuarterQuestion block={narrative.guidingQuestion} />
-
           <QuarterAtAGlance
             stats={{
               ...stats,
               completionRate,
             }}
+            accent={quarterlyAccents.glance}
             viewAllWinsHref={quarterlyData && quarterlyData.allWinsFlat.length > 0 ? allWinsHref : undefined}
           />
 
           <InsightLetterClosing cadence="quarter" className="mt-2" />
 
           {quarterlyData && quarterlyData.allWinsFlat.length > 0 && (
-            <QuarterlyAllWinsExpandable wins={quarterlyData.allWinsFlat} quarterLabel={quarterLabel} />
+            <QuarterlyAllWinsExpandable
+              wins={quarterlyData.allWinsFlat}
+              quarterLabel={quarterLabel}
+              accent={quarterlyAccents.wins}
+            />
           )}
         </div>
       )}
       <p className="text-sm text-gray-600 dark:text-gray-300 mt-8">
         Explore related views:{' '}
-        <Link href="/founder-dna/rhythm" className="text-[#ef725c] hover:underline">Rhythm</Link>,{' '}
-        <Link href="/founder-dna/patterns" className="text-[#ef725c] hover:underline">Patterns</Link>,{' '}
-        <Link href="/founder-dna/journey" className="text-[#ef725c] hover:underline">Journey</Link>.
+        <Link href="/founder-dna/rhythm" className="text-[#ef725c] hover:underline">
+          Rhythm
+        </Link>
+        ,{' '}
+        <Link href="/founder-dna/patterns" className="text-[#ef725c] hover:underline">
+          Patterns
+        </Link>
+        ,{' '}
+        <Link href="/founder-dna/journey" className="text-[#ef725c] hover:underline">
+          Journey
+        </Link>
+        .
       </p>
     </div>
   )

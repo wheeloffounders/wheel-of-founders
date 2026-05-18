@@ -6,20 +6,30 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { getClientAuthHeaders } from '@/lib/api/fetch-json'
 import { format, isToday, startOfMonth, subDays, addYears } from 'date-fns'
-import { Flame, AlertCircle, Pencil, Shield, Zap } from 'lucide-react'
+import { Flame, AlertCircle, Lock, Pencil, Shield, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { getUserSession, refreshSessionForWrite, isRlsOrAuthPermissionError } from '@/lib/auth'
+import { resolveProEntitlement } from '@/lib/auth/is-pro'
+import { getTrialStatus } from '@/lib/auth/trial-status'
 import { MarkdownText } from '@/components/MarkdownText'
 import { StreamingIndicator } from '@/components/StreamingIndicator'
 import { SpeechTextField, useSpeechDictation } from '@/components/SpeechToTextInput'
 import { AICoachPrompt } from '@/components/AICoachPrompt'
-import { BrainDumpCard } from '@/components/BrainDumpCard'
+import { EmergencyBrainDumpSection } from '@/components/emergency/EmergencyBrainDumpSection'
+import { EmergencyUpgradeBottomSheet } from '@/components/emergency/EmergencyUpgradeBottomSheet'
+import { LockedActiveFireStrategyGate } from '@/components/emergency/LockedActiveFireStrategyGate'
 import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
 import { useStreamingInsight } from '@/lib/hooks/useStreamingInsight'
-import { getFeatureAccess, isEmergencyFeatureLocked, type UserProfile } from '@/lib/features'
+import {
+  getFeatureAccess,
+  isEmergencyProSurfaceLocked,
+  type UserProfile,
+} from '@/lib/features'
 import { trackEvent } from '@/lib/analytics'
+import { fetchUserProfileBundle } from '@/lib/user-profile-bundle-cache'
+import { isTrialExpirySimulationEnabled } from '@/lib/trial-simulation'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { WeekNavigator } from '@/components/ui/WeekNavigator'
 import { DatePickerModal } from '@/components/ui/DatePickerModal'
@@ -40,6 +50,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { processEmergencyVent } from '@/lib/emergency/process-emergency-vent'
 import { EMERGENCY_VENT_MIN_CHARS } from '@/lib/emergency/parse-emergency'
 import { heuristicEmergencySeverity } from '@/lib/emergency/heuristic-severity'
+import { heuristicEmergencyVentTitle } from '@/lib/emergency/heuristic-vent-title'
 import { getDynamicPlaceholder, getTacticalHint } from '@/lib/emergency-containment-prompt'
 import { usePersistedEmergencyChecklist } from '@/lib/hooks/usePersistedEmergencyChecklist'
 
@@ -96,6 +107,7 @@ export default function EmergencyPage() {
   const searchParams = useSearchParams()
   const [brainDump, setBrainDump] = useState('')
   const [emergencyDumpSorting, setEmergencyDumpSorting] = useState(false)
+  const [refineUpgradeOpen, setRefineUpgradeOpen] = useState(false)
   const [description, setDescription] = useState('')
   const [severity, setSeverity] = useState<Severity>('hot')
   const [notes, setNotes] = useState('')
@@ -108,6 +120,10 @@ export default function EmergencyPage() {
   const [aiCoachMessage, setAiCoachMessage] = useState<string | null>(null)
   const [emergencyInsightId, setEmergencyInsightId] = useState<string | null>(null)
   const [freemiumUser, setFreemiumUser] = useState<UserProfile | null>(null)
+  const freemiumUserRef = useRef<UserProfile | null>(null)
+  freemiumUserRef.current = freemiumUser
+  const [trialSimExpired, setTrialSimExpired] = useState(false)
+  const [clientReady, setClientReady] = useState(false)
   const [fireDate, setFireDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
   const [calendarOpen, setCalendarOpen] = useState(false)
   const [displayedMonth, setDisplayedMonth] = useState<Date>(() => startOfMonth(new Date()))
@@ -267,13 +283,30 @@ export default function EmergencyPage() {
         return
       }
       setSessionUserId(session.user.id)
+      const bundle = await fetchUserProfileBundle()
       setFreemiumUser({
-        tier: session.user.tier,
-        pro_features_enabled: session.user.pro_features_enabled,
+        tier: bundle?.tier ?? session.user.tier,
+        pro_features_enabled: bundle?.pro_features_enabled ?? session.user.pro_features_enabled,
+        subscription_override: bundle?.subscription_override ?? null,
+        subscription_tier: bundle?.subscription_tier ?? null,
+        is_beta_retired: bundle?.is_beta_retired ?? null,
+        is_beta: bundle?.is_beta ?? null,
+        trial_starts_at: bundle?.trial_starts_at ?? null,
+        trial_ends_at: bundle?.trial_ends_at ?? null,
+        stripe_subscription_status: bundle?.stripe_subscription_status ?? null,
+        created_at: bundle?.created_at ?? null,
       })
     }
     checkAuth()
   }, [router])
+
+  useEffect(() => {
+    setClientReady(true)
+    setTrialSimExpired(isTrialExpirySimulationEnabled())
+    const onSim = () => setTrialSimExpired(isTrialExpirySimulationEnabled())
+    window.addEventListener('wof-trial-sim-changed', onSim)
+    return () => window.removeEventListener('wof-trial-sim-changed', onSim)
+  }, [])
 
   useEffect(() => {
     if (searchParams?.get('focus') !== 'resolution') return
@@ -328,22 +361,48 @@ export default function EmergencyPage() {
     }
   }, [deepLinkEmergencyId, loadingFires, todayFires, fireDate])
 
-  const emergencyVoiceLocked = useMemo(
-    () => isEmergencyFeatureLocked('voice_to_text', freemiumUser),
-    [freemiumUser]
+  const emergencySurfaceLockOptions = useMemo(
+    () => ({ forceFreemiumAuditPath: Boolean(pathname?.includes('/emergency/free')) }),
+    [pathname]
   )
-  const emergencyTriageLocked = useMemo(
-    () => isEmergencyFeatureLocked('ai_triage', freemiumUser),
-    [freemiumUser]
+
+  /** Strict Pro gate: trial UX + entitlement bundle (not `isEmergencyFeatureLocked` / beta bypass). */
+  const emergencyProSurfaceLocked = useMemo(
+    () => isEmergencyProSurfaceLocked(freemiumUser, emergencySurfaceLockOptions),
+    [freemiumUser, emergencySurfaceLockOptions, trialSimExpired]
   )
-  const emergencyRefineLocked = useMemo(
-    () => isEmergencyFeatureLocked('refine_containment', freemiumUser),
-    [freemiumUser]
-  )
-  const emergencyToneCalibrationLocked = useMemo(
-    () => isEmergencyFeatureLocked('tone_calibration_adjust', freemiumUser),
-    [freemiumUser]
-  )
+
+  const emergencyBrainDumpLocked = emergencyProSurfaceLocked
+  const emergencyTriageLocked = emergencyProSurfaceLocked
+  const emergencyRefineLocked = emergencyProSurfaceLocked
+  const emergencyProtocolVoiceLocked = emergencyProSurfaceLocked
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return
+    const trialSim = isTrialExpirySimulationEnabled()
+    const trialUx = getTrialStatus(freemiumUser, { simulateExpired: trialSim })
+    const ent = resolveProEntitlement(freemiumUser, Date.now(), { simulateExpired: trialSim })
+    // eslint-disable-next-line no-console -- dev-only entitlement + bundle diagnostic
+    console.log('[emergency] Debug Bundle:', {
+      proSurfaceLocked: emergencyProSurfaceLocked,
+      brainDumpLocked: emergencyBrainDumpLocked,
+      tier: freemiumUser?.tier,
+      pro_features_enabled: freemiumUser?.pro_features_enabled,
+      subscription_override: freemiumUser?.subscription_override,
+      subscription_tier: freemiumUser?.subscription_tier,
+      stripe_subscription_status: freemiumUser?.stripe_subscription_status,
+      trial_starts_at: freemiumUser?.trial_starts_at,
+      trial_ends_at: freemiumUser?.trial_ends_at,
+      trialSimExpired: trialSim,
+      trialUxIsPro: trialUx.isPro,
+      trialUxStatus: trialUx.status,
+      trialUxBadge: trialUx.badgeLabel,
+      isProComputed: ent.isPro,
+      proSource: ent.source,
+      auditPath: pathname?.includes('/emergency/free'),
+    })
+  }, [emergencyProSurfaceLocked, emergencyBrainDumpLocked, freemiumUser, pathname])
+  const emergencyToneCalibrationLocked = emergencyProSurfaceLocked
 
   const protocolDescInputRef = useRef<HTMLTextAreaElement | null>(null)
   const protocolNotesInputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -365,17 +424,39 @@ export default function EmergencyPage() {
     protocolDescInputRef,
     description,
     onProtocolDescriptionChange,
-    { enabled: !emergencyVoiceLocked }
+    { enabled: !emergencyProtocolVoiceLocked }
   )
   const { MicButton: ProtocolNotesMic } = useSpeechDictation(
     protocolNotesInputRef,
     notes,
     onProtocolNotesChange,
-    { enabled: !emergencyVoiceLocked }
+    { enabled: !emergencyProtocolVoiceLocked }
   )
 
   const handleEmergencySortBegin = useCallback(() => setEmergencyDumpSorting(true), [])
   const handleEmergencySortCancel = useCallback(() => setEmergencyDumpSorting(false), [])
+
+  /** After a successful vent sort, clear capture so ghost UI returns to the initial “Brain Dump” mic. */
+  const resetEmergencyBrainDumpAfterSort = useCallback(() => {
+    setBrainDump('')
+    brainDumpRef.current = ''
+    setEmergencyDumpSorting(false)
+  }, [])
+
+  const applyHeuristicEmergencySort = useCallback(
+    (vent: string) => {
+      setSeverity(heuristicEmergencySeverity(vent))
+      const shouldFillHeadline =
+        !headlineUserEditedRef.current &&
+        (vent.length >= EMERGENCY_VENT_MIN_CHARS || !descriptionRef.current.trim())
+      const title = heuristicEmergencyVentTitle(vent)
+      if (shouldFillHeadline && title) setDescription(title)
+      setIntelStatus('idle')
+      setIntelMessage(null)
+      resetEmergencyBrainDumpAfterSort()
+    },
+    [resetEmergencyBrainDumpAfterSort]
+  )
 
   const handleEmergencySortDump = useCallback(
     async (textOverride?: string) => {
@@ -386,10 +467,7 @@ export default function EmergencyPage() {
       }
 
       if (emergencyTriageLocked) {
-        setSeverity(heuristicEmergencySeverity(vent))
-        setIntelStatus('idle')
-        setIntelMessage(null)
-        setEmergencyDumpSorting(false)
+        applyHeuristicEmergencySort(vent)
         return
       }
 
@@ -416,11 +494,13 @@ export default function EmergencyPage() {
         if (shouldFillHeadline && data.title.trim()) {
           setDescription(data.title)
         }
+        resetEmergencyBrainDumpAfterSort()
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : 'Sort failed'
         if (/pro|trial|403/i.test(msg)) {
           setIntelMessage(null)
-          setSeverity(heuristicEmergencySeverity(vent))
+          applyHeuristicEmergencySort(vent)
+          return
         } else {
           setIntelMessage(msg)
         }
@@ -431,7 +511,7 @@ export default function EmergencyPage() {
         setEmergencyDumpSorting(false)
       }
     },
-    [fireDate, emergencyTriageLocked]
+    [fireDate, emergencyTriageLocked, applyHeuristicEmergencySort, resetEmergencyBrainDumpAfterSort]
   )
 
   /**
@@ -705,10 +785,10 @@ export default function EmergencyPage() {
     })
     setTodayFires(fires)
 
-    const triageLocked = isEmergencyFeatureLocked('ai_triage', {
-      tier: session.user.tier,
-      pro_features_enabled: session.user.pro_features_enabled,
-    })
+    const triageLocked = isEmergencyProSurfaceLocked(
+      freemiumUserRef.current,
+      emergencySurfaceLockOptions
+    )
     const hotNeedingTriage = fires.find(
       (f) => f.severity === 'hot' && !f.resolved && !hasPersistedTriage(f.triage_json)
     )
@@ -785,7 +865,7 @@ export default function EmergencyPage() {
     setAiCoachMessage(coachText?.trim() ? coachText : null)
     setEmergencyInsightId(coachInsightKey)
     setLoadingFires(false)
-  }, [fireDate, setError, runTriageIfNeeded])
+  }, [fireDate, setError, runTriageIfNeeded, emergencySurfaceLockOptions, trialSimExpired])
 
   /**
    * Persistence: reload `emergencies` for `fireDate` on mount and when the date changes so an unresolved Hot fire
@@ -866,10 +946,10 @@ export default function EmergencyPage() {
         ])
       }
 
-      const triageLocked = isEmergencyFeatureLocked('ai_triage', {
-        tier: session.user.tier,
-        pro_features_enabled: session.user.pro_features_enabled,
-      })
+      const triageLocked = isEmergencyProSurfaceLocked(
+        freemiumUserRef.current,
+        emergencySurfaceLockOptions
+      )
 
       if (inserted && severity === 'hot') {
         dispatchEmergencyModeRefresh()
@@ -1226,10 +1306,6 @@ export default function EmergencyPage() {
 
   const handleRefineContainment = useCallback(async () => {
     if (!activeHotFire) return
-    if (emergencyRefineLocked) {
-      router.push('/pricing')
-      return
-    }
     const trimmed = commandCenterDraftRef.current.trim()
     if (!trimmed) return
     setRefiningContainment(true)
@@ -1246,12 +1322,7 @@ export default function EmergencyPage() {
       const body = (await res.json().catch(() => ({}))) as { refinedText?: string; error?: string; code?: string }
       if (!res.ok) {
         if (res.status === 403 || body.code === 'PRO_REQUIRED') {
-          window.dispatchEvent(
-            new CustomEvent('toast', {
-              detail: { message: 'Refine is a Pro feature — upgrade to unlock.', type: 'error' },
-            })
-          )
-          router.push('/pricing')
+          setRefineUpgradeOpen(true)
         } else {
           window.dispatchEvent(
             new CustomEvent('toast', {
@@ -1278,7 +1349,7 @@ export default function EmergencyPage() {
     } finally {
       setRefiningContainment(false)
     }
-  }, [activeHotFire, emergencyRefineLocked, handleSaveContainmentPlan, router])
+  }, [activeHotFire, handleSaveContainmentPlan])
 
   const minFire = format(subDays(new Date(), 30), 'yyyy-MM-dd')
   const maxFire = format(addYears(new Date(), 5), 'yyyy-MM-dd')
@@ -1286,12 +1357,13 @@ export default function EmergencyPage() {
   const isDesktopSidebar = !isMobile
 
   const showFreemiumEmergencyLink =
+    clientReady &&
     showFreemiumAuditLinks &&
-    !emergencyTriageLocked &&
+    !emergencyProSurfaceLocked &&
     Boolean(pathname && !pathname.includes('/emergency/free'))
 
   const showBackToProEmergencyLink =
-    showFreemiumAuditLinks && Boolean(pathname?.includes('/emergency/free'))
+    clientReady && showFreemiumAuditLinks && Boolean(pathname?.includes('/emergency/free'))
 
   return (
     <div className={isDesktopSidebar ? 'flex min-h-screen' : undefined}>
@@ -1327,11 +1399,12 @@ export default function EmergencyPage() {
         <div
           className={
             isDesktopSidebar
-              ? 'mx-auto w-full max-w-2xl px-4 pb-40 pt-4 md:px-5'
+              ? 'mx-auto w-full max-w-2xl px-4 pb-40 pt-2 md:px-5'
               : 'contents'
           }
         >
-      {showFreemiumAuditLinks && showFreemiumEmergencyLink ? (
+      <div className="mb-2 md:mb-4">
+        {showFreemiumEmergencyLink ? (
         <div className="mb-1 flex justify-end">
           <Link
             href="/emergency/free"
@@ -1340,7 +1413,7 @@ export default function EmergencyPage() {
             Preview free tier
           </Link>
         </div>
-      ) : showFreemiumAuditLinks && showBackToProEmergencyLink ? (
+      ) : showBackToProEmergencyLink ? (
         <div className="mb-1 flex justify-end">
           <Link
             href="/emergency"
@@ -1350,6 +1423,22 @@ export default function EmergencyPage() {
           </Link>
         </div>
       ) : null}
+        <DatePickerModal
+          isOpen={calendarOpen}
+          onClose={() => setCalendarOpen(false)}
+          currentMonth={displayedMonth}
+          onMonthChange={(month) => {
+            setDisplayedMonth(month)
+            void fetchMonthStatus(month)
+          }}
+          onSelectDate={(date) => {
+            setFireDate(date)
+            setCalendarOpen(false)
+          }}
+          monthStatus={monthStatus}
+          selectedDate={fireDate}
+        />
+      </div>
       {isMobile ? (
         <>
           <PageHeader
@@ -1375,24 +1464,6 @@ export default function EmergencyPage() {
         </>
       ) : null}
 
-      <div className="mb-2 md:mb-8">
-        <DatePickerModal
-          isOpen={calendarOpen}
-          onClose={() => setCalendarOpen(false)}
-          currentMonth={displayedMonth}
-          onMonthChange={(month) => {
-            setDisplayedMonth(month)
-            void fetchMonthStatus(month)
-          }}
-          onSelectDate={(date) => {
-            setFireDate(date)
-            setCalendarOpen(false)
-          }}
-          monthStatus={monthStatus}
-          selectedDate={fireDate}
-        />
-      </div>
-
       {error && showActiveResolution ? (
         <div className="mx-auto mb-4 flex max-w-2xl items-start gap-2 rounded-lg border border-amber-200/80 bg-amber-50/50 px-3 py-2.5 text-sm text-gray-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-gray-100">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
@@ -1400,33 +1471,17 @@ export default function EmergencyPage() {
         </div>
       ) : null}
 
-      <div className="mx-auto max-w-2xl px-4 py-8">
-        {/* Brain dump — voice-only (evening-style); Finish & Sort fills Emergency protocol below */}
-        {emergencyVoiceLocked ? (
-          <p className="mb-8 text-center text-sm text-gray-600 dark:text-gray-400">
-            Voice brain dump is a Pro feature—use Emergency protocol below to log the fire, or upgrade to capture a
-            spoken vent first.
-          </p>
-        ) : (
-          <BrainDumpCard
-            className="mb-8"
-            context="emergency"
-            accent="navy"
-            id="emergency-brain-dump"
-            title="Emergency Brain Dump: Vent first."
-            subtitle="Speak the noise, stakes, and what you need—then tap Finish & Sort. I’ll suggest your headline, severity, and notes in Emergency protocol below."
-            value={brainDump}
-            onChange={setBrainDump}
-            saveHint={brainDumpSaveHint}
-            voiceCaptureOnly
-            enableSortIntoReview
-            sortLoading={emergencyDumpSorting || intelStatus === 'sorting'}
-            onSortBegin={handleEmergencySortBegin}
-            onSortCancel={handleEmergencySortCancel}
-            onSortIntoReview={(text) => void handleEmergencySortDump(text)}
-            ghostSortStatusMessage="Suggesting headline & severity below…"
-          />
-        )}
+      <div className="mx-auto max-w-2xl">
+        <EmergencyBrainDumpSection
+          emergencyBrainDumpLocked={emergencyBrainDumpLocked}
+          brainDump={brainDump}
+          onBrainDumpChange={setBrainDump}
+          brainDumpSaveHint={brainDumpSaveHint}
+          sortLoading={emergencyDumpSorting || intelStatus === 'sorting'}
+          onSortBegin={handleEmergencySortBegin}
+          onSortCancel={handleEmergencySortCancel}
+          onSortIntoReview={(text) => void handleEmergencySortDump(text)}
+        />
 
         {/* Emergency protocol — same Card chrome + typography as evening "How You're Feeling" */}
         <Card
@@ -1489,7 +1544,9 @@ export default function EmergencyPage() {
                 >
                   What&apos;s the fire?
                 </label>
-                {ProtocolDescMic ? <div className="flex shrink-0 items-center">{ProtocolDescMic}</div> : null}
+                {!emergencyProtocolVoiceLocked && ProtocolDescMic ? (
+                  <div className="flex shrink-0 items-center">{ProtocolDescMic}</div>
+                ) : null}
               </div>
               <SpeechTextField
                 ref={protocolDescInputRef}
@@ -1533,7 +1590,9 @@ export default function EmergencyPage() {
                 >
                   Notes (optional)
                 </label>
-                {ProtocolNotesMic ? <div className="flex shrink-0 items-center">{ProtocolNotesMic}</div> : null}
+                {!emergencyProtocolVoiceLocked && ProtocolNotesMic ? (
+                  <div className="flex shrink-0 items-center">{ProtocolNotesMic}</div>
+                ) : null}
               </div>
               <SpeechTextField
                 ref={protocolNotesInputRef}
@@ -1624,6 +1683,8 @@ export default function EmergencyPage() {
                       </div>
                     </div>
 
+                    <LockedActiveFireStrategyGate locked={emergencyTriageLocked}>
+                      <>
                     <div className="rounded-lg bg-white p-4 shadow-sm dark:border dark:border-gray-700 dark:bg-gray-950">
                       <p className="text-xs font-semibold uppercase tracking-wide text-[#152b50] dark:text-sky-200/90">
                         Mrs. Deer&apos;s advice
@@ -1668,7 +1729,18 @@ export default function EmergencyPage() {
                         </span>{' '}
                         (hold / pivot / drop)
                       </p>
+                    ) : emergencyTriageLocked ? (
+                      <p className="text-xs text-gray-700 dark:text-gray-300">
+                        Strategy:{' '}
+                        <span className="font-semibold capitalize text-gray-900 dark:text-gray-100">
+                          pivot
+                        </span>{' '}
+                        (hold / pivot / drop)
+                      </p>
                     ) : null}
+                      </>
+                    </LockedActiveFireStrategyGate>
+
                   </div>
 
                   <div className="space-y-3 rounded-lg border border-gray-200 bg-white/95 p-4 dark:border-gray-600 dark:bg-gray-900/50">
@@ -1697,11 +1769,28 @@ export default function EmergencyPage() {
                         variant="outline"
                         size="sm"
                         className="gap-1.5 border-gray-200 text-gray-900 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-800"
-                        disabled={refiningContainment || (!emergencyRefineLocked && !commandCenterDraft.trim())}
-                        onClick={() => void handleRefineContainment()}
+                        disabled={
+                          emergencyRefineLocked
+                            ? refiningContainment
+                            : refiningContainment || !commandCenterDraft.trim()
+                        }
+                        onClick={() => {
+                          if (emergencyRefineLocked) {
+                            setRefineUpgradeOpen(true)
+                            return
+                          }
+                          void handleRefineContainment()
+                        }}
                       >
-                        <Pencil className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                        {emergencyRefineLocked ? 'Refine with Mrs. Deer (Pro)' : 'Refine with Mrs. Deer'}
+                        {emergencyRefineLocked ? (
+                          <Lock className="h-3.5 w-3.5 shrink-0 text-gray-500 dark:text-gray-400" aria-hidden />
+                        ) : (
+                          <Pencil className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        )}
+                        Refine with Mrs. Deer
+                        {emergencyRefineLocked ? (
+                          <span className="sr-only"> (Pro)</span>
+                        ) : null}
                       </Button>
                     </div>
                     {refiningContainment ? (
@@ -1897,6 +1986,16 @@ export default function EmergencyPage() {
       </div>
         </div>
       </div>
+
+      <EmergencyUpgradeBottomSheet
+        open={refineUpgradeOpen}
+        onClose={() => setRefineUpgradeOpen(false)}
+        titleId="emergency-refine-upgrade-title"
+        title="Refine with Mrs. Deer"
+        description="I can turn these rough notes into a clean containment protocol — so you can commit and breathe."
+        primaryLabel="Upgrade to Annual — $29/mo"
+        secondaryLabel="I'll keep typing manually"
+      />
     </div>
   )
 }

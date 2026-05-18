@@ -14,6 +14,7 @@ import {
   Lightbulb,
   AlertCircle,
   Loader2,
+  Lock,
   Plus,
   X,
   Trash2,
@@ -52,7 +53,8 @@ import { EveningFirstTimeCTA } from '@/components/EveningFirstTimeCTA'
 import { EveningPlanVsReality } from '@/components/evening/EveningPlanVsReality'
 import type { EveningEmergencyRow } from '@/components/evening/EveningPlanVsReality'
 import { EveningTaskRows } from '@/components/evening/EveningTaskRows'
-import { BrainDumpCard } from '@/components/BrainDumpCard'
+import { EveningBrainDumpSection } from '@/components/evening/EveningBrainDumpSection'
+import { EmergencyUpgradeBottomSheet } from '@/components/emergency/EmergencyUpgradeBottomSheet'
 import { processEveningBrainDump } from '@/lib/evening/process-evening-brain-dump'
 import { EVENING_STACK_SCROLL_FADE } from '@/lib/evening/evening-card-scroll'
 import type { PostEveningLoopCloseContext } from '@/lib/personal-coaching'
@@ -273,7 +275,7 @@ export default function EveningPage() {
   const isTutorial = searchParams?.get('tutorial') === 'true'
   // All hooks must be at the top level - no conditional calls
   const [userTier, setUserTier] = useState<string>('beta')
-  const [eveningProEntitled, setEveningProEntitled] = useState(true)
+  const [eveningProEntitled, setEveningProEntitled] = useState(false)
   const [aiCoachMessage, setAiCoachMessage] = useState<string | null>(null)
   const [aiCoachTrigger, setAiCoachTrigger] = useState<'evening_after' | null>(null)
   const [eveningInsightId, setEveningInsightId] = useState<string | null>(null)
@@ -344,6 +346,7 @@ export default function EveningPage() {
   const [isDayComplete, setIsDayComplete] = useState(false)
   const [eveningDumpSorting, setEveningDumpSorting] = useState(false)
   const [eveningBrainDumpListening, setEveningBrainDumpListening] = useState(false)
+  const [journalOpeningUpgradeOpen, setJournalOpeningUpgradeOpen] = useState(false)
   const [dumpSortHighlight, setDumpSortHighlight] = useState<{
     journal: boolean
     wins: number[]
@@ -419,7 +422,10 @@ export default function EveningPage() {
     }
   }, [])
 
+  const eveningBrainDumpLocked = !eveningProEntitled
+
   const handleEveningSortDump = useCallback(async (dumpText?: string) => {
+    if (eveningBrainDumpLocked) return
     const raw = (dumpText ?? brainDump).trim()
     if (raw.length < 8) return
     fireFunnelStep(2, 'journal_engaged')
@@ -517,7 +523,7 @@ export default function EveningPage() {
     } finally {
       setEveningDumpSorting(false)
     }
-  }, [brainDump, fireFunnelStep, lessons, morningTasks, reviewDate, todayEmergencies, wins])
+  }, [brainDump, eveningBrainDumpLocked, fireFunnelStep, lessons, morningTasks, reviewDate, todayEmergencies, wins])
 
   // Show streaming errors in the coach message (only when not showing retry UI)
   useEffect(() => {
@@ -689,41 +695,41 @@ export default function EveningPage() {
     checkAuth()
   }, [router])
 
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const session = await getUserSession()
-      if (!session?.user?.id || cancelled) return
-      const { data } = await supabase
-        .from('user_profiles')
-        .select(
-          'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at, subscription_override, is_beta_retired, is_beta'
-        )
-        .eq('id', session.user.id)
-        .maybeSingle()
-      if (cancelled) return
-      const row = data as ProEntitlementProfile | null
-      const trialUx = getTrialStatus(
-        {
-          tier: row?.tier ?? session.user.tier ?? null,
-          pro_features_enabled: row?.pro_features_enabled ?? session.user.pro_features_enabled,
-          subscription_tier: row?.subscription_tier ?? null,
-          trial_starts_at: row?.trial_starts_at ?? null,
-          trial_ends_at: row?.trial_ends_at ?? null,
-          stripe_subscription_status: row?.stripe_subscription_status ?? null,
-          created_at: row?.created_at ?? null,
-          subscription_override: row?.subscription_override ?? null,
-          is_beta_retired: row?.is_beta_retired ?? null,
-          is_beta: row?.is_beta ?? null,
-        },
-        { simulateExpired: isTrialExpirySimulationEnabled() }
+  const loadEveningProEntitlement = useCallback(async () => {
+    const session = await getUserSession()
+    if (!session?.user?.id) return
+    const { data } = await supabase
+      .from('user_profiles')
+      .select(
+        'tier, pro_features_enabled, subscription_tier, trial_starts_at, trial_ends_at, stripe_subscription_status, created_at, subscription_override, is_beta_retired, is_beta'
       )
-      setEveningProEntitled(trialUx.isPro)
-    })()
-    return () => {
-      cancelled = true
-    }
+      .eq('id', session.user.id)
+      .maybeSingle()
+    const row = data as ProEntitlementProfile | null
+    const trialUx = getTrialStatus(
+      {
+        tier: row?.tier ?? session.user.tier ?? null,
+        pro_features_enabled: row?.pro_features_enabled ?? session.user.pro_features_enabled,
+        subscription_tier: row?.subscription_tier ?? null,
+        trial_starts_at: row?.trial_starts_at ?? null,
+        trial_ends_at: row?.trial_ends_at ?? null,
+        stripe_subscription_status: row?.stripe_subscription_status ?? null,
+        created_at: row?.created_at ?? null,
+        subscription_override: row?.subscription_override ?? null,
+        is_beta_retired: row?.is_beta_retired ?? null,
+        is_beta: row?.is_beta ?? null,
+      },
+      { simulateExpired: isTrialExpirySimulationEnabled() }
+    )
+    setEveningProEntitled(trialUx.isPro)
   }, [])
+
+  useEffect(() => {
+    void loadEveningProEntitlement()
+    const onSim = () => void loadEveningProEntitlement()
+    window.addEventListener('wof-trial-sim-changed', onSim)
+    return () => window.removeEventListener('wof-trial-sim-changed', onSim)
+  }, [loadEveningProEntitlement])
 
   useEffect(() => {
     postEveningStreamStartedRef.current = false
@@ -2212,24 +2218,17 @@ export default function EveningPage() {
       </Card>
 
       <div className="space-y-4 transition-all duration-300 ease-out md:space-y-6">
-        <div className="relative z-[45]">
-          <BrainDumpCard
-            className={cn(isMobile && proAccessLineLabel ? 'mb-12' : 'mb-0')}
-            context="evening"
-            title="Final Brain Dump: Clear the cache."
-            subtitle="Clear the mental cache. Mention what went well, what drained you, and your reflections—I&apos;ll handle the sorting."
-            value={brainDump}
-            onChange={setBrainDump}
-            accent="navy"
-            id="evening-brain-dump"
-            enableSortIntoReview
-            sortLoading={eveningDumpSorting}
-            onSortBegin={() => setEveningDumpSorting(true)}
-            onSortCancel={() => setEveningDumpSorting(false)}
-            onSortIntoReview={(text) => void handleEveningSortDump(text)}
-            onListeningChange={setEveningBrainDumpListening}
-          />
-        </div>
+        <EveningBrainDumpSection
+          eveningBrainDumpLocked={eveningBrainDumpLocked}
+          className={cn(isMobile && proAccessLineLabel ? 'mb-12' : 'mb-0')}
+          brainDump={brainDump}
+          onBrainDumpChange={setBrainDump}
+          sortLoading={eveningDumpSorting}
+          onSortBegin={() => setEveningDumpSorting(true)}
+          onSortCancel={() => setEveningDumpSorting(false)}
+          onSortIntoReview={(text) => void handleEveningSortDump(text)}
+          onListeningChange={setEveningBrainDumpListening}
+        />
 
         {/* Journal — blockquote-style synthesis */}
         <Card
@@ -2278,13 +2277,21 @@ export default function EveningPage() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="text-xs"
+                    className="gap-1.5 text-xs"
                     onClick={() => {
+                      if (eveningBrainDumpLocked) {
+                        setJournalOpeningUpgradeOpen(true)
+                        return
+                      }
                       fireFunnelStep(2, 'journal_engaged')
                       setJournal(journalOpeningSuggestion)
                     }}
                   >
+                    {eveningBrainDumpLocked ? (
+                      <Lock className="h-3.5 w-3.5 shrink-0 text-gray-500 dark:text-gray-400" aria-hidden />
+                    ) : null}
                     Use suggested opening
+                    {eveningBrainDumpLocked ? <span className="sr-only"> (Pro)</span> : null}
                   </Button>
                   <span className="text-xs text-gray-500 dark:text-gray-400">Starts from your morning plan</span>
                 </div>
@@ -2299,6 +2306,7 @@ export default function EveningPage() {
                 }}
                 placeholder={journalPlaceholder}
                 rows={6}
+                hideSpeechButton={eveningBrainDumpLocked}
                 className="w-full border-0 bg-transparent px-2 py-4 text-base leading-relaxed text-gray-900 placeholder:text-gray-400 focus:ring-0 dark:text-white md:text-lg"
               />
             </div>
@@ -2364,6 +2372,7 @@ export default function EveningPage() {
                     }}
                     placeholder="Celebrate your wins—big or small..."
                     rows={2}
+                    hideSpeechButton={eveningBrainDumpLocked}
                     className="w-full flex-1 px-4 py-2 rounded-lg border text-sm focus:ring-2 focus:ring-offset-2 resize-none transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 placeholder:text-gray-400"
                   />
                   <button
@@ -2448,6 +2457,7 @@ export default function EveningPage() {
                     }}
                     placeholder="Gentle lessons to carry forward..."
                     rows={2}
+                    hideSpeechButton={eveningBrainDumpLocked}
                     className="w-full flex-1 px-4 py-2 rounded-lg border text-sm focus:ring-2 focus:ring-offset-2 resize-none transition-all duration-200 text-gray-900 dark:text-white bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 placeholder:text-gray-400"
                   />
                   <button
@@ -2708,6 +2718,16 @@ export default function EveningPage() {
         variant="danger"
         onConfirm={handleDeleteLessonConfirm}
         onCancel={() => setConfirmDeleteLesson(null)}
+      />
+
+      <EmergencyUpgradeBottomSheet
+        open={journalOpeningUpgradeOpen}
+        onClose={() => setJournalOpeningUpgradeOpen(false)}
+        titleId="evening-journal-opening-upgrade-title"
+        title="Suggested opening"
+        description="Mrs. Deer can start your daily synthesis from today's morning plan—so you don't stare at a blank page."
+        primaryLabel="Upgrade to Annual — $29/mo"
+        secondaryLabel="I'll keep typing manually"
       />
 
         </div>
