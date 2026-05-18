@@ -21,6 +21,7 @@ export type InsightPeriodTeaserLockProps = {
   ctaFooter?: ReactNode
   ctaHeadingId?: string
   className?: string
+  onUpgradeClick?: () => void
 }
 
 export function InsightPeriodTeaserLock({
@@ -32,6 +33,7 @@ export function InsightPeriodTeaserLock({
   ctaFooter,
   ctaHeadingId,
   className,
+  onUpgradeClick,
 }: InsightPeriodTeaserLockProps) {
   const raw = message.trim()
   if (!raw) return null
@@ -86,6 +88,7 @@ export function InsightPeriodTeaserLock({
             description={ctaDescription}
             ctaLabel={ctaLabel}
             footer={ctaFooter}
+            onUpgradeClick={onUpgradeClick}
           />
         </div>
       ) : null}

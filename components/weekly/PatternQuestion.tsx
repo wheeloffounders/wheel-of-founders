@@ -10,12 +10,14 @@ interface PatternQuestionProps {
   pattern: PatternForQuestion | null
   allTopics?: TopicCount[]
   quoteAnalysisLocked?: boolean
+  onUpgradeClick?: () => void
 }
 
 export function PatternQuestion({
   pattern,
   allTopics = [],
   quoteAnalysisLocked = false,
+  onUpgradeClick,
 }: PatternQuestionProps) {
   if (!pattern && allTopics.length === 0) return null
 
@@ -42,6 +44,7 @@ export function PatternQuestion({
           markdown={false}
           ctaHeadingId="weekly-pattern-quote-pro-cta"
           ctaDescription="Pro unlocks Mrs. Deer’s quote intersections—how your wins and lessons connect across the week."
+          onUpgradeClick={onUpgradeClick}
         />
       ) : (
         quoteBlock

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import {
   format,
@@ -47,6 +47,7 @@ import {
 } from '@/lib/user-profile-bundle-cache'
 import { FREEMIUM_QUARTERLY_REFLECTION_PLACEHOLDER } from '@/lib/quarterly/freemium-quarterly-insight-placeholder'
 import { quarterlyInsightAccentMap } from '@/lib/insights/insight-period-accent-rotation'
+import { useInsightUpgradeNavigation } from '@/lib/insights/use-insight-upgrade-navigation'
 
 function profileFromBundle(
   bundle: MorningUserProfileBundle | null,
@@ -111,6 +112,7 @@ export default function QuarterlyPage() {
   const [quarterlyGreetingName, setQuarterlyGreetingName] = useState('Founder')
   const [quarterlyIntentionSaved, setQuarterlyIntentionSaved] = useState('')
   const [profileUser, setProfileUser] = useState<UserProfile | null>(null)
+  const openInsightUpgrade = useInsightUpgradeNavigation()
 
   const isEndOfQuarter = differenceInDays(endOfQuarter(selectedQuarter), new Date()) <= 7 || !isSameQuarter(selectedQuarter, new Date())
   const showFullQuarterly = isEndOfQuarter
@@ -490,6 +492,7 @@ export default function QuarterlyPage() {
               accent={quarterlyAccents.reflection}
               aiSynthesisLocked={aiSynthesisLocked}
               teaserMessage={quarterlyReflectionTeaserMessage}
+              onUpgradeClick={openInsightUpgrade}
               onRefresh={showRefreshButton ? handleGenerateInsight : undefined}
               generating={generating}
               generateError={generateError}
@@ -574,6 +577,7 @@ export default function QuarterlyPage() {
         </Link>
         .
       </p>
+
     </div>
   )
 }

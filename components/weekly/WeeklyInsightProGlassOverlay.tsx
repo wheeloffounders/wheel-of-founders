@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { Lock } from 'lucide-react'
+import { InsightUpgradeCtaButton } from '@/components/insights/InsightUpgradeCtaButton'
 import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 import { cn } from '@/components/ui/utils'
 
@@ -13,6 +14,8 @@ export type WeeklyInsightProGlassOverlayProps = {
   footer?: ReactNode
   headingId?: string
   className?: string
+  /** Skips the intermediate marketing card; opens upgrade sheet on first tap. */
+  onUpgradeClick?: () => void
 }
 
 export function WeeklyInsightProGlassOverlay({
@@ -22,7 +25,24 @@ export function WeeklyInsightProGlassOverlay({
   footer,
   headingId,
   className,
+  onUpgradeClick,
 }: WeeklyInsightProGlassOverlayProps) {
+  if (onUpgradeClick) {
+    return (
+      <div
+        className={cn(
+          'absolute inset-0 z-20 flex items-center justify-center overflow-y-auto rounded-xl px-4 py-6',
+          'bg-white/55 backdrop-blur-[3px] dark:bg-gray-950/45',
+          className
+        )}
+        role="region"
+        aria-label="Upgrade to Pro"
+      >
+        <InsightUpgradeCtaButton label={ctaLabel} onUpgradeClick={onUpgradeClick} />
+      </div>
+    )
+  }
+
   return (
     <div
       className={cn(

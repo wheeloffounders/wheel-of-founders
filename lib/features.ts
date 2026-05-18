@@ -332,6 +332,37 @@ export function isQuarterlyInsightFeatureLocked(
   return feature === 'ai_synthesis' || feature === 'narrative_depth'
 }
 
+/** Founder DNA archetype profile + signal breakdown. */
+export type FounderDnaProLockOptions = {
+  /** `/founder-dna/archetype/free` — force freemium locks for UI audit. */
+  forceFreemiumAuditPath?: boolean
+}
+
+function isFounderDnaFreemiumAuditPath(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.location.pathname.includes('/founder-dna/archetype/free')
+  } catch {
+    return false
+  }
+}
+
+export function isFounderDnaProSurfaceLocked(
+  user: UserProfile | null | undefined,
+  options?: FounderDnaProLockOptions
+): boolean {
+  if (options?.forceFreemiumAuditPath || isFounderDnaFreemiumAuditPath()) return true
+  return isWeeklyInsightProSurfaceLocked(user)
+}
+
+/** Alias for archetype narrative / analytics freemium gate. */
+export function isFounderDNALocked(
+  user: UserProfile | null | undefined,
+  options?: FounderDnaProLockOptions
+): boolean {
+  return isFounderDnaProSurfaceLocked(user, options)
+}
+
 export function isEmergencyFeatureLocked(
   feature: EmergencyFreemiumFeature,
   user: UserProfile | null | undefined

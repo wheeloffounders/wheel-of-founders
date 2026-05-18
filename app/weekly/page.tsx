@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { format, startOfWeek, endOfWeek, isSunday, addDays, addWeeks, subWeeks, isSameWeek } from 'date-fns'
 import {
@@ -63,6 +63,7 @@ import { FREEMIUM_WEEKLY_REFLECTION_PLACEHOLDER } from '@/lib/weekly/freemium-we
 import { WeeklyInsightSection } from '@/components/weekly/WeeklyInsightSection'
 import { WeeklyInsightTeaserLock } from '@/components/weekly/WeeklyInsightTeaserLock'
 import { weeklyInsightAccentMap } from '@/lib/insights/insight-period-accent-rotation'
+import { useInsightUpgradeNavigation } from '@/lib/insights/use-insight-upgrade-navigation'
 
 const MOOD_LABELS: Record<number, string> = {
   1: 'Tough',
@@ -177,6 +178,7 @@ export default function WeeklyPage() {
   )
   const [insightGreetingName, setInsightGreetingName] = useState<string>('Founder')
   const [profileUser, setProfileUser] = useState<UserProfile | null>(null)
+  const openInsightUpgrade = useInsightUpgradeNavigation()
 
   const lastCompletedWeekStart = format(subWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), 1), 'yyyy-MM-dd')
 
@@ -932,6 +934,7 @@ export default function WeeklyPage() {
                           below to review your raw weekly history.
                         </>
                       }
+                      onUpgradeClick={openInsightUpgrade}
                     />
                   </div>
                 ) : displayPrompt ? (
@@ -1056,6 +1059,7 @@ export default function WeeklyPage() {
                   pattern={patternForQuestion}
                   allTopics={allTopics}
                   quoteAnalysisLocked={patternQuoteLocked}
+                  onUpgradeClick={openInsightUpgrade}
                 />
             </WeeklyInsightSection>
           )}
@@ -1124,6 +1128,7 @@ export default function WeeklyPage() {
           {copied ? 'Copied!' : 'Copy Summary'}
         </Button>
       </div>
+
     </div>
   )
 }

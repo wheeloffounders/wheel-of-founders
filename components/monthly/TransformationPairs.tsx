@@ -16,6 +16,7 @@ interface TransformationPairsProps {
   accent?: InsightPeriodAccent
   transformationLocked?: boolean
   teaserMessage: string
+  onUpgradeClick?: () => void
 }
 
 function formatPairsTeaserBody(pairs: TransformationPair[]): string {
@@ -29,6 +30,7 @@ export function TransformationPairs({
   accent = 'mood',
   transformationLocked = false,
   teaserMessage,
+  onUpgradeClick,
 }: TransformationPairsProps) {
   const body =
     pairs.length > 0 ? formatPairsTeaserBody(pairs) : 'Add wins and lessons in your evening reviews to see your transformation pairs here.'
@@ -46,6 +48,7 @@ export function TransformationPairs({
           markdown
           ctaHeadingId="monthly-transformation-pro-cta"
           ctaDescription="Pro unlocks AI-parsed before → after pairs from your real wins and lessons."
+          onUpgradeClick={onUpgradeClick}
         />
       ) : (
         <ul className="divide-y divide-slate-100 dark:divide-slate-700/80">

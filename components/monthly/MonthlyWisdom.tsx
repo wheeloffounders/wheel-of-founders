@@ -13,6 +13,7 @@ interface MonthlyWisdomProps {
   accent?: InsightPeriodAccent
   aiSynthesisLocked?: boolean
   teaserMessage: string
+  onUpgradeClick?: () => void
   onRefresh?: () => void
   generating?: boolean
   generateError?: string | null
@@ -24,6 +25,7 @@ export function MonthlyWisdom({
   accent = 'patterns',
   aiSynthesisLocked = false,
   teaserMessage,
+  onUpgradeClick,
   onRefresh,
   generating,
   generateError,
@@ -57,6 +59,7 @@ export function MonthlyWisdom({
             ctaHeadingId="monthly-reflection-pro-cta"
             ctaDescription="Mrs. Deer weaves your month's wins, lessons, and rhythm into a narrative you can act on—not just stats."
             ctaFooter={<>Your stats and themes below stay visible while you explore the month.</>}
+            onUpgradeClick={onUpgradeClick}
           />
         </div>
       ) : !insight ? (

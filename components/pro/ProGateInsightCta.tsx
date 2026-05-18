@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { Lock } from 'lucide-react'
+import { InsightUpgradeCtaButton } from '@/components/insights/InsightUpgradeCtaButton'
 import { MORNING_BLUEPRINTS_SUBCARD_CLASS } from '@/lib/morning/morning-loop-card-styles'
 import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 import { cn } from '@/components/ui/utils'
@@ -14,6 +15,7 @@ export type ProGateInsightCtaProps = {
   footer?: ReactNode
   className?: string
   headingId?: string
+  onUpgradeClick?: () => void
 }
 
 export function ProGateInsightCta({
@@ -23,7 +25,16 @@ export function ProGateInsightCta({
   footer,
   className,
   headingId,
+  onUpgradeClick,
 }: ProGateInsightCtaProps) {
+  if (onUpgradeClick) {
+    return (
+      <div className={cn('relative z-20 flex justify-center py-4', className)}>
+        <InsightUpgradeCtaButton label={ctaLabel} onUpgradeClick={onUpgradeClick} />
+      </div>
+    )
+  }
+
   return (
     <div
       className={cn(

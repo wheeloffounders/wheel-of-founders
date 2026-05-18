@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   format,
@@ -46,6 +46,7 @@ import {
   FREEMIUM_MONTHLY_TRANSFORMATION_PLACEHOLDER,
 } from '@/lib/monthly/freemium-monthly-insight-placeholder'
 import { monthlyInsightAccentMap } from '@/lib/insights/insight-period-accent-rotation'
+import { useInsightUpgradeNavigation } from '@/lib/insights/use-insight-upgrade-navigation'
 
 function profileFromBundle(
   bundle: MorningUserProfileBundle | null,
@@ -102,6 +103,7 @@ export default function MonthlyInsightPage() {
   const [session, setSession] = useState<SessionWithProfile | null>(null)
   const [insightGreetingName, setInsightGreetingName] = useState('Founder')
   const [profileUser, setProfileUser] = useState<UserProfile | null>(null)
+  const openInsightUpgrade = useInsightUpgradeNavigation()
 
   const isEndOfMonth = differenceInDays(endOfMonth(selectedMonth), new Date()) <= 3 || !isSameMonth(selectedMonth, new Date())
   const showFullMonthly = isEndOfMonth
@@ -659,6 +661,7 @@ export default function MonthlyInsightPage() {
               accent={monthlyAccents.reflection}
               aiSynthesisLocked={aiSynthesisLocked}
               teaserMessage={monthlyReflectionTeaserMessage}
+              onUpgradeClick={openInsightUpgrade}
               onRefresh={showRefreshButton ? handleGenerateInsight : undefined}
               generating={generating}
               generateError={generateError}
@@ -710,6 +713,7 @@ export default function MonthlyInsightPage() {
           Export
         </Button>
       </div>
+
     </div>
   )
 }

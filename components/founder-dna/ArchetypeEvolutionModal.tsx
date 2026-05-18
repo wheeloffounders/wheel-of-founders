@@ -52,10 +52,22 @@ export type ArchetypeEvolutionModalProps = {
   onClose: () => void
   onContinue: () => void
   entry: ArchetypeEvolutionHistoryEntry
+  /** Freemium: skip celebration UI and route to upgrade sheet. */
+  freemiumLocked?: boolean
+  onFreemiumUpgrade?: () => void
 }
 
-export function ArchetypeEvolutionModal({ isOpen, onClose, onContinue, entry }: ArchetypeEvolutionModalProps) {
+export function ArchetypeEvolutionModal({
+  isOpen,
+  onClose,
+  onContinue,
+  entry,
+  freemiumLocked = false,
+  onFreemiumUpgrade,
+}: ArchetypeEvolutionModalProps) {
   const hasFiredRef = useRef(false)
+
+  if (freemiumLocked) return null
   const from = archetypeDisplay(entry.fromPrimary)
   const to = archetypeDisplay(entry.toPrimary)
   const pct = entry.strategicPctRolling ?? 0

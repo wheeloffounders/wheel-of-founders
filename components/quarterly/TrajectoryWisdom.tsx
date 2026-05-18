@@ -19,6 +19,7 @@ interface TrajectoryWisdomProps {
   accent?: InsightPeriodAccent
   aiSynthesisLocked?: boolean
   teaserMessage: string
+  onUpgradeClick?: () => void
   onRefresh?: () => void
   generating?: boolean
   generateError?: string | null
@@ -30,6 +31,7 @@ export function TrajectoryWisdom({
   accent = 'patterns',
   aiSynthesisLocked = false,
   teaserMessage,
+  onUpgradeClick,
   onRefresh,
   generating,
   generateError,
@@ -73,6 +75,7 @@ export function TrajectoryWisdom({
             ctaHeadingId="quarterly-reflection-pro-cta"
             ctaDescription="Mrs. Deer weaves your quarter's wins, lessons, and rhythm into a trajectory you can steer—not just stats."
             ctaFooter={<>Your stats and wins below stay visible while you explore the quarter.</>}
+            onUpgradeClick={onUpgradeClick}
           />
         </div>
       ) : !hasInsight ? (

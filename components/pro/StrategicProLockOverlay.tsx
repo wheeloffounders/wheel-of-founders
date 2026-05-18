@@ -5,7 +5,7 @@ import { Lock } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 
-export type StrategicProLockVariant = 'morning_prism' | 'insights_analytics'
+export type StrategicProLockVariant = 'morning_prism' | 'insights_analytics' | 'founder_dna_breakdown'
 
 const COPY: Record<
   StrategicProLockVariant,
@@ -21,6 +21,12 @@ const COPY: Record<
     title: 'Mood & pattern analytics',
     description:
       "Upgrade to keep Mrs. Deer's weekly mood trends, pattern spotlights, and deeper alignment views — your wins and reflections above stay yours.",
+    ctaLabel: 'View Pro plans',
+  },
+  founder_dna_breakdown: {
+    title: 'Archetype signal breakdown',
+    description:
+      'Upgrade to unlock the full granular signal chart — how Mrs. Deer weights your decisions, plans, and reflections into your Founder DNA read.',
     ctaLabel: 'View Pro plans',
   },
 }

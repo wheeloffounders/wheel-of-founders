@@ -49,7 +49,7 @@ export function EmergencyUpgradeBottomSheet({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-end justify-center px-4 pt-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:items-center sm:pb-8"
+      className="fixed inset-0 z-[100] flex items-end justify-center px-4 pt-2 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -61,8 +61,8 @@ export function EmergencyUpgradeBottomSheet({
         onClick={onClose}
       />
       <motion.div
-        className="relative z-10 w-full max-w-md max-h-[min(85vh,calc(100svh-6rem-env(safe-area-inset-bottom,0px)))] overflow-y-auto rounded-t-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-600 dark:bg-gray-900 sm:rounded-2xl"
-        initial={{ opacity: 0, y: 24 }}
+        className="relative z-10 w-full max-w-md max-h-[min(88vh,calc(100svh-5.5rem-env(safe-area-inset-bottom,0px)))] overflow-y-auto rounded-t-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-600 dark:bg-gray-900"
+        initial={{ opacity: 0, y: '100%' }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.22, ease: 'easeOut' }}
       >

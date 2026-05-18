@@ -1,15 +1,27 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
-import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Loader2, Lock, RefreshCw } from 'lucide-react'
 import { LockedFeature } from '@/components/LockedFeature'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { colors } from '@/lib/design-tokens'
 import { ArchetypeBreakdown } from '@/components/founder-dna/ArchetypeBreakdown'
+import { FounderDnaMatrixStaggerTeaser } from '@/components/founder-dna/FounderDnaMatrixStaggerTeaser'
+import { FounderDnaTraitSliderRow } from '@/components/founder-dna/FounderDnaTraitSliderRow'
 import { Progress } from '@/components/ui/progress'
+import { InsightPeriodFullHeightFade } from '@/components/insights/InsightPeriodFullHeightFade'
+import { useInsightUpgradeNavigation } from '@/lib/insights/use-insight-upgrade-navigation'
+import { isFounderDNALocked, type UserProfile } from '@/lib/features'
+import {
+  fetchUserProfileBundle,
+  invalidateUserProfileBundle,
+  type MorningUserProfileBundle,
+} from '@/lib/user-profile-bundle-cache'
+import { splitFirstParagraph } from '@/lib/insights/split-insight-paragraphs'
+import { buildFounderDnaLockedNarrative } from '@/lib/founder-dna/build-founder-dna-locked-narrative'
 import type {
   ArchetypeApiFullResponse,
   ArchetypeApiPreviewResponse,
@@ -28,6 +40,21 @@ type LockedResponse = {
     daysActive: number
     targetDays: number
     daysRemaining: number
+  }
+}
+
+function profileFromBundle(bundle: MorningUserProfileBundle | null): UserProfile {
+  return {
+    tier: bundle?.tier ?? undefined,
+    pro_features_enabled: bundle?.pro_features_enabled ?? undefined,
+    subscription_override: bundle?.subscription_override ?? null,
+    subscription_tier: bundle?.subscription_tier ?? null,
+    is_beta_retired: bundle?.is_beta_retired ?? null,
+    is_beta: bundle?.is_beta ?? null,
+    trial_starts_at: bundle?.trial_starts_at ?? null,
+    trial_ends_at: bundle?.trial_ends_at ?? null,
+    stripe_subscription_status: bundle?.stripe_subscription_status ?? null,
+    created_at: bundle?.created_at ?? null,
   }
 }
 
@@ -51,9 +78,31 @@ export function FounderArchetypeCard() {
   const [showBreakdown, setShowBreakdown] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [evolutionAckPrompt, setEvolutionAckPrompt] = useState<ArchetypeEvolutionHistoryEntry | null>(null)
+  const [profileUser, setProfileUser] = useState<UserProfile | null>(null)
+  const openInsightUpgrade = useInsightUpgradeNavigation()
+
+  const founderDnaProLocked = useMemo(() => isFounderDNALocked(profileUser), [profileUser])
 
   useEffect(() => {
-    if (!data || data.status !== 'full') return
+    let cancelled = false
+    const loadProfile = async () => {
+      const row = await fetchUserProfileBundle()
+      if (!cancelled) setProfileUser(profileFromBundle(row))
+    }
+    void loadProfile()
+    const onSim = () => {
+      invalidateUserProfileBundle()
+      void loadProfile()
+    }
+    window.addEventListener('wof-trial-sim-changed', onSim)
+    return () => {
+      cancelled = true
+      window.removeEventListener('wof-trial-sim-changed', onSim)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!data || data.status !== 'full' || founderDnaProLocked) return
     const fullPayload = data as ArchetypeApiFullResponse
     const hist = fullPayload.evolutionHistory
     if (!hist?.length) return
@@ -65,7 +114,7 @@ export function FounderArchetypeCard() {
       /* ignore */
     }
     setEvolutionAckPrompt(latest)
-  }, [data])
+  }, [data, founderDnaProLocked])
 
   const planKeyToLabel = (key: string | null | undefined): string | null => {
     switch (key) {
@@ -159,6 +208,14 @@ export function FounderArchetypeCard() {
     } finally {
       setRefreshing(false)
     }
+  }
+
+  const handleRefreshClick = () => {
+    if (founderDnaProLocked) {
+      openInsightUpgrade()
+      return
+    }
+    void handleManualRefresh()
   }
 
   const handleEvolutionDismiss = () => {
@@ -263,6 +320,8 @@ export function FounderArchetypeCard() {
 
         <ArchetypeBreakdown
           mode="preview"
+          analyticsLocked={founderDnaProLocked}
+          onUpgradeClick={openInsightUpgrade}
           breakdown={{
             signals: Array.isArray(topSignals) ? topSignals : [],
             totalConfidence: visibleDistribution[0]?.percentage ?? 0,
@@ -325,6 +384,7 @@ export function FounderArchetypeCard() {
             </div>
           ) : null}
         </div>
+
       </>
     )
   }
@@ -378,6 +438,41 @@ export function FounderArchetypeCard() {
 
   const updatedLabel = formatArchetypeDate(full.archetypeUpdatedAt)
   const nextLabel = formatArchetypeDate(full.nextArchetypeUpdateAt)
+  const { lead: descLead } = splitFirstParagraph(personalityProfile.description)
+  const stillFormingLine = stillForming
+    ? 'Still forming... your next reflections will sharpen the signal.'
+    : 'Your pattern is emerging clearly.'
+  const lockedNarrativeBody = buildFounderDnaLockedNarrative({
+    personalityProfile,
+    stillFormingLine,
+    evolutionHistory: full.evolutionHistory,
+    traits,
+    evolutionStatsHint: evolutionPreview.statsHint,
+    evolutionNextLabel: evolutionPreview.nextLabel,
+  })
+
+  const traitDimensions = [
+    { label: 'Strategic leaning', value: traits.strategic },
+    { label: 'Tactical leaning', value: traits.tactical },
+    { label: 'Visionary signal', value: traits.visionary },
+    { label: 'Builder signal', value: traits.builder },
+  ] as const
+
+  const traitMatrixRows = traitDimensions.map((dim, i) => (
+    <FounderDnaTraitSliderRow
+      key={dim.label}
+      label={dim.label}
+      value={dim.value}
+      thumbLocked={founderDnaProLocked && i > 0}
+      badge={
+        founderDnaProLocked && i === 0 ? (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200">
+            Primary dimension
+          </span>
+        ) : undefined
+      }
+    />
+  ))
 
   return (
     <>
@@ -393,18 +488,22 @@ export function FounderArchetypeCard() {
                 <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mt-1 break-words max-w-full">
                   {personalityProfile.tagline}
                 </div>
-                <div className="text-sm text-gray-600 dark:text-gray-300 mt-2 leading-relaxed break-words">
-                  {personalityProfile.description}
-                </div>
+                {!founderDnaProLocked ? (
+                  <div className="text-sm text-gray-600 dark:text-gray-300 mt-2 leading-relaxed break-words">
+                    {personalityProfile.description}
+                  </div>
+                ) : null}
               </div>
             </div>
-            {stillForming ? (
-              <div className="mt-2 text-sm text-gray-600 dark:text-gray-300">Still forming... your next reflections will sharpen the signal.</div>
-            ) : (
-              <div className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                Your pattern is emerging clearly.
-              </div>
-            )}
+            {!founderDnaProLocked ? (
+              stillForming ? (
+                <div className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                  Still forming... your next reflections will sharpen the signal.
+                </div>
+              ) : (
+                <div className="mt-2 text-sm text-gray-600 dark:text-gray-300">Your pattern is emerging clearly.</div>
+              )
+            ) : null}
           </div>
 
           {secondary ? (
@@ -419,6 +518,19 @@ export function FounderArchetypeCard() {
             </div>
           ) : null}
         </div>
+
+        {founderDnaProLocked ? (
+          <InsightPeriodFullHeightFade
+            locked
+            lead={descLead}
+            body={lockedNarrativeBody}
+            ctaLabel="Unlock Full Archetype Mapping"
+            ctaDescription="Mrs. Deer’s full archetype mapping — strengths, growth edges, cognitive pattern, and evolution cues from your real rhythm."
+            ctaHeadingId="founder-dna-archetype-cta"
+            className="mt-3"
+            onUpgradeClick={openInsightUpgrade}
+          />
+        ) : null}
 
         <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-gray-200/80 dark:border-gray-700/80 bg-gray-50/50 dark:bg-gray-900/20 px-3 py-2.5">
           <div className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed min-w-0">
@@ -452,21 +564,26 @@ export function FounderArchetypeCard() {
             variant="outline"
             size="sm"
             className="shrink-0 rounded-lg"
-            disabled={refreshing}
-            onClick={() => void handleManualRefresh()}
+            disabled={refreshing && !founderDnaProLocked}
+            onClick={handleRefreshClick}
+            aria-label={founderDnaProLocked ? 'Unlock to refresh archetype' : 'Refresh archetype now'}
           >
-            {refreshing ? (
+            {refreshing && !founderDnaProLocked ? (
               <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
             ) : (
               <>
-                <RefreshCw className="w-3.5 h-3.5 mr-1.5 inline" aria-hidden />
+                {founderDnaProLocked ? (
+                  <Lock className="w-3.5 h-3.5 mr-1.5 inline opacity-70" aria-hidden />
+                ) : (
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5 inline" aria-hidden />
+                )}
                 Refresh now
               </>
             )}
           </Button>
         </div>
 
-        {(full.evolutionHistory?.length ?? 0) > 0 ? (
+        {!founderDnaProLocked && (full.evolutionHistory?.length ?? 0) > 0 ? (
           <div className="mt-4 rounded-lg border border-amber-200/60 dark:border-amber-900/45 bg-gradient-to-br from-amber-50/50 to-white/60 dark:from-amber-950/25 dark:to-gray-900/30 p-3">
             <div className="text-[11px] font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200 mb-2">
               Evolution lineage
@@ -486,6 +603,7 @@ export function FounderArchetypeCard() {
           </div>
         ) : null}
 
+        {!founderDnaProLocked ? (
         <div className="mt-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4">
           <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
             <span>📅</span>
@@ -502,26 +620,29 @@ export function FounderArchetypeCard() {
             {personalityProfile.recentExampleBox?.interpretation ?? 'Your pattern is emerging—keep reflecting for richer examples.'}
           </div>
         </div>
+        ) : null}
 
-        <div className="mt-5 space-y-4">
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Strategic leaning</div>
-            <Progress value={traits.strategic} max={100} className="h-1.5" />
+        {founderDnaProLocked ? (
+          <FounderDnaMatrixStaggerTeaser
+            locked
+            rows={traitMatrixRows}
+            onUpgradeClick={openInsightUpgrade}
+            className="mt-5"
+          />
+        ) : (
+          <div className="mt-5 space-y-4">
+            {traitDimensions.map((dim) => (
+              <div key={dim.label}>
+                <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
+                  {dim.label}
+                </div>
+                <Progress value={dim.value} max={100} className="h-1.5" />
+              </div>
+            ))}
           </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Tactical leaning</div>
-            <Progress value={traits.tactical} max={100} className="h-1.5" />
-          </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Visionary signal</div>
-            <Progress value={traits.visionary} max={100} className="h-1.5" />
-          </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Builder signal</div>
-            <Progress value={traits.builder} max={100} className="h-1.5" />
-          </div>
-        </div>
+        )}
 
+        {!founderDnaProLocked ? (
         <div className="mt-5 rounded-xl border border-dashed border-[#ef725c]/45 bg-gradient-to-br from-[#152b50]/10 to-[#ef725c]/10 dark:from-[#152b50]/25 dark:to-[#ef725c]/15 p-4">
           <div className="text-[11px] font-bold uppercase tracking-wider text-[#152b50] dark:text-sky-200 mb-3">
             Path to evolution
@@ -545,7 +666,9 @@ export function FounderArchetypeCard() {
             </div>
           </div>
         </div>
+        ) : null}
 
+        {!founderDnaProLocked ? (
         <div className="mt-6 space-y-6">
             <div>
               <div className="text-sm font-medium text-gray-900 dark:text-white mb-2">Key characteristics</div>
@@ -612,25 +735,32 @@ export function FounderArchetypeCard() {
               </div>
             </div>
           </div>
+        ) : null}
 
         <div className="mt-4 flex items-center justify-between gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowBreakdown((v) => !v)}
-            className="rounded-lg"
-          >
-            {showBreakdown ? 'Hide how it was calculated' : 'How it was calculated'}
-          </Button>
+          {!founderDnaProLocked ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowBreakdown((v) => !v)}
+              className="rounded-lg"
+            >
+              {showBreakdown ? 'Hide how it was calculated' : 'How it was calculated'}
+            </Button>
+          ) : (
+            <span />
+          )}
           <Link href="/dashboard" className="text-sm" style={{ color: colors.navy.DEFAULT }}>
             Back to dashboard
           </Link>
         </div>
-        {showBreakdown ? howCalculatedBlock : null}
+        {!founderDnaProLocked && showBreakdown ? howCalculatedBlock : null}
       </div>
 
       <ArchetypeBreakdown
         mode="full"
+        analyticsLocked={founderDnaProLocked}
+        onUpgradeClick={openInsightUpgrade}
         breakdown={breakdown}
         primaryArchetype={{
           label: primary.label,
@@ -641,6 +771,11 @@ export function FounderArchetypeCard() {
       {evolutionAckPrompt ? (
         <ArchetypeEvolutionModal
           isOpen
+          freemiumLocked={founderDnaProLocked}
+          onFreemiumUpgrade={() => {
+            openInsightUpgrade()
+            handleEvolutionDismiss()
+          }}
           onClose={handleEvolutionDismiss}
           onContinue={handleEvolutionDismiss}
           entry={evolutionAckPrompt}
