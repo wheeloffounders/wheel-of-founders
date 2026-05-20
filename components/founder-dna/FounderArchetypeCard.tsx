@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
 import { AlertTriangle, Loader2, Lock, RefreshCw } from 'lucide-react'
@@ -8,7 +8,13 @@ import { LockedFeature } from '@/components/LockedFeature'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { colors } from '@/lib/design-tokens'
-import { ArchetypeBreakdown } from '@/components/founder-dna/ArchetypeBreakdown'
+import {
+  ArchetypeBreakdown,
+  ArchetypeDiagnosisPanel,
+  ArchetypeRadarCard,
+  ArchetypeSignalMatrixCard,
+  buildArchetypeBreakdownDerived,
+} from '@/components/founder-dna/ArchetypeBreakdown'
 import { FounderDnaMatrixStaggerTeaser } from '@/components/founder-dna/FounderDnaMatrixStaggerTeaser'
 import { FounderDnaTraitSliderRow } from '@/components/founder-dna/FounderDnaTraitSliderRow'
 import { Progress } from '@/components/ui/progress'
@@ -31,6 +37,8 @@ import { ArchetypeEvolutionModal } from '@/components/founder-dna/ArchetypeEvolu
 import { ARCHETYPE_SNAPSHOT_REFRESH_DAYS } from '@/lib/founder-dna/archetype-snapshot'
 import { ARCHETYPE_FULL_MIN_DAYS, ARCHETYPE_PREVIEW_MIN_DAYS } from '@/lib/founder-dna/archetype-timing'
 import { getArchetypeEvolutionPreview } from '@/lib/founder-dna/archetype-evolution-copy'
+import { archetypeReportCardClassName } from '@/lib/founder-dna/archetype-report-card-styles'
+import { cn } from '@/components/ui/utils'
 
 type ArchetypePayload = ArchetypeApiPreviewResponse | ArchetypeApiFullResponse
 
@@ -69,7 +77,22 @@ function formatArchetypeDate(iso: string | null | undefined): string | null {
   }
 }
 
-export function FounderArchetypeCard() {
+export type FounderArchetypeStickySidebarSlots = {
+  profile: ReactNode
+  diagnosis: ReactNode
+  radar: ReactNode
+  signalMatrix: ReactNode
+  identityDimensions: ReactNode
+  evolution: ReactNode | null
+}
+
+export type FounderArchetypeCardProps = {
+  /** Page-level Option 1 layout — card supplies slots; columns live in page grid. */
+  renderStickySidebarLayout?: (slots: FounderArchetypeStickySidebarSlots) => ReactNode
+}
+
+export function FounderArchetypeCard({ renderStickySidebarLayout }: FounderArchetypeCardProps) {
+  const usePageLayout = Boolean(renderStickySidebarLayout)
   const [loading, setLoading] = useState(true)
   const [locked, setLocked] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -234,7 +257,12 @@ export function FounderArchetypeCard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8">
+      <div
+        className={cn(
+          'flex items-center justify-center py-8',
+          usePageLayout && 'col-span-1 lg:col-span-12'
+        )}
+      >
         <Loader2 className="w-5 h-5 animate-spin text-[#ef725c]" />
       </div>
     )
@@ -244,13 +272,20 @@ export function FounderArchetypeCard() {
     const current = progress?.daysActive ?? 0
     const required = progress?.targetDays ?? ARCHETYPE_PREVIEW_MIN_DAYS
     return (
-      <LockedFeature type="archetype" progress={{ current, required }} />
+      <div className={cn(usePageLayout && 'lg:col-span-12')}>
+        <LockedFeature type="archetype" progress={{ current, required }} />
+      </div>
     )
   }
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/30 dark:bg-red-900/20 p-4">
+      <div
+        className={cn(
+          'rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/30 dark:bg-red-900/20 p-4',
+          usePageLayout && 'col-span-1 lg:col-span-12'
+        )}
+      >
         <div className="flex items-center gap-2 text-sm font-medium text-red-800 dark:text-red-200">
           <AlertTriangle className="w-4 h-4" />
           Could not load your archetype
@@ -262,7 +297,12 @@ export function FounderArchetypeCard() {
 
   if (!data) {
     return (
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4">
+      <div
+        className={cn(
+          'rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4',
+          usePageLayout && 'col-span-1 lg:col-span-12'
+        )}
+      >
         <div className="text-sm font-medium text-gray-900 dark:text-white">No archetype data</div>
       </div>
     )
@@ -277,8 +317,8 @@ export function FounderArchetypeCard() {
       .map((item) => item.icon)
     const fallbackEmojis = ['🧭', '🌿', '⚡', '🔮', '🛠️']
     return (
-      <>
-        <div className="rounded-xl border border-dashed border-amber-200/90 dark:border-amber-800/50 bg-gradient-to-b from-amber-50/40 to-white/60 dark:from-amber-950/20 dark:to-gray-800/30 p-4 w-full max-w-3xl">
+      <div className={cn('flex flex-col gap-8 w-full', usePageLayout ? 'lg:col-span-12' : 'max-w-3xl')}>
+        <div className="rounded-xl border border-dashed border-amber-200/90 dark:border-amber-800/50 bg-gradient-to-b from-amber-50/40 to-white/60 dark:from-amber-950/20 dark:to-gray-800/30 p-4 w-full">
           <div className="flex items-center justify-between gap-2 mb-3">
             <Badge variant="neutral" className="bg-amber-100 dark:bg-amber-900/50 text-amber-950 dark:text-amber-100 border-amber-200 dark:border-amber-800">
               Preview
@@ -320,6 +360,7 @@ export function FounderArchetypeCard() {
 
         <ArchetypeBreakdown
           mode="preview"
+          panel="stack"
           analyticsLocked={founderDnaProLocked}
           onUpgradeClick={openInsightUpgrade}
           breakdown={{
@@ -384,8 +425,7 @@ export function FounderArchetypeCard() {
             </div>
           ) : null}
         </div>
-
-      </>
+      </div>
     )
   }
 
@@ -474,9 +514,44 @@ export function FounderArchetypeCard() {
     />
   ))
 
-  return (
+  const breakdownSharedProps = {
+    mode: 'full' as const,
+    analyticsLocked: founderDnaProLocked,
+    onUpgradeClick: openInsightUpgrade,
+    breakdown,
+    primaryArchetype: {
+      label: primary.label,
+      icon: primary.icon,
+    },
+  }
+
+  const identityDimensionsPanel = founderDnaProLocked ? (
+    <FounderDnaMatrixStaggerTeaser
+      locked
+      rows={traitMatrixRows}
+      onUpgradeClick={openInsightUpgrade}
+      ctaLabel="Unlock identity dimensions"
+    />
+  ) : (
+    <div className="space-y-4">
+      {traitDimensions.map((dim) => (
+        <div key={dim.label}>
+          <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
+            {dim.label}
+          </div>
+          <Progress value={dim.value} max={100} className="h-1.5" />
+        </div>
+      ))}
+    </div>
+  )
+
+  const profileShellClass = cn(
+    archetypeReportCardClassName,
+    !usePageLayout && 'max-w-3xl shadow-md shadow-gray-900/[0.07] dark:shadow-black/40'
+  )
+
+  const profileBody = (
     <>
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/40 p-5 md:p-8 w-full max-w-3xl shadow-md shadow-gray-900/[0.07] dark:shadow-black/40 ring-1 ring-gray-200/90 dark:ring-gray-600/50">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between mb-2">
           <div className="min-w-0 w-full flex-1">
             <div className="flex flex-col sm:flex-row sm:items-start gap-3">
@@ -622,25 +697,7 @@ export function FounderArchetypeCard() {
         </div>
         ) : null}
 
-        {founderDnaProLocked ? (
-          <FounderDnaMatrixStaggerTeaser
-            locked
-            rows={traitMatrixRows}
-            onUpgradeClick={openInsightUpgrade}
-            className="mt-5"
-          />
-        ) : (
-          <div className="mt-5 space-y-4">
-            {traitDimensions.map((dim) => (
-              <div key={dim.label}>
-                <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
-                  {dim.label}
-                </div>
-                <Progress value={dim.value} max={100} className="h-1.5" />
-              </div>
-            ))}
-          </div>
-        )}
+        {!usePageLayout ? <div className="mt-5">{identityDimensionsPanel}</div> : null}
 
         {!founderDnaProLocked ? (
         <div className="mt-5 rounded-xl border border-dashed border-[#ef725c]/45 bg-gradient-to-br from-[#152b50]/10 to-[#ef725c]/10 dark:from-[#152b50]/25 dark:to-[#ef725c]/15 p-4">
@@ -755,19 +812,68 @@ export function FounderArchetypeCard() {
           </Link>
         </div>
         {!founderDnaProLocked && showBreakdown ? howCalculatedBlock : null}
-      </div>
+    </>
+  )
 
-      <ArchetypeBreakdown
-        mode="full"
-        analyticsLocked={founderDnaProLocked}
-        onUpgradeClick={openInsightUpgrade}
-        breakdown={breakdown}
-        primaryArchetype={{
-          label: primary.label,
-          icon: primary.icon,
-        }}
-      />
+  if (renderStickySidebarLayout) {
+    const { radarAxes, strongestSignal, signalRows, totalConf, confidencePhrase } =
+      buildArchetypeBreakdownDerived(breakdownSharedProps)
 
+    return renderStickySidebarLayout({
+      profile: <article className={profileShellClass}>{profileBody}</article>,
+      diagnosis: (
+        <ArchetypeDiagnosisPanel
+          breakdown={breakdown}
+          primaryArchetype={breakdownSharedProps.primaryArchetype}
+          isPreview={false}
+          analyticsLocked={founderDnaProLocked}
+          onUpgradeClick={openInsightUpgrade}
+          strongestSignal={strongestSignal}
+        />
+      ),
+      radar: <ArchetypeRadarCard radarAxes={radarAxes} analyticsLocked={founderDnaProLocked} />,
+      signalMatrix: (
+        <ArchetypeSignalMatrixCard
+          signalRows={signalRows}
+          analyticsLocked={founderDnaProLocked}
+          onUpgradeClick={openInsightUpgrade}
+          totalConf={totalConf}
+          confidencePhrase={confidencePhrase}
+        />
+      ),
+      identityDimensions: (
+        <article className={archetypeReportCardClassName} aria-labelledby="archetype-identity-dimensions-heading">
+          <h3
+            id="archetype-identity-dimensions-heading"
+            className="mb-4 text-base font-semibold text-gray-900 dark:text-white"
+          >
+            Identity dimensions
+          </h3>
+          {identityDimensionsPanel}
+        </article>
+      ),
+      evolution: evolutionAckPrompt ? (
+        <div className="col-span-1 lg:col-span-12">
+          <ArchetypeEvolutionModal
+            isOpen
+            freemiumLocked={founderDnaProLocked}
+            onFreemiumUpgrade={() => {
+              openInsightUpgrade()
+              handleEvolutionDismiss()
+            }}
+            onClose={handleEvolutionDismiss}
+            onContinue={handleEvolutionDismiss}
+            entry={evolutionAckPrompt}
+          />
+        </div>
+      ) : null,
+    })
+  }
+
+  return (
+    <>
+      <article className={profileShellClass}>{profileBody}</article>
+      <ArchetypeBreakdown {...breakdownSharedProps} panel="stack" />
       {evolutionAckPrompt ? (
         <ArchetypeEvolutionModal
           isOpen
