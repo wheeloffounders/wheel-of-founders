@@ -37,7 +37,10 @@ import { ArchetypeEvolutionModal } from '@/components/founder-dna/ArchetypeEvolu
 import { ARCHETYPE_SNAPSHOT_REFRESH_DAYS } from '@/lib/founder-dna/archetype-snapshot'
 import { ARCHETYPE_FULL_MIN_DAYS, ARCHETYPE_PREVIEW_MIN_DAYS } from '@/lib/founder-dna/archetype-timing'
 import { getArchetypeEvolutionPreview } from '@/lib/founder-dna/archetype-evolution-copy'
-import { archetypeReportCardClassName } from '@/lib/founder-dna/archetype-report-card-styles'
+import {
+  archetypeBlueprintCardStyle,
+  archetypeReportCardClassName,
+} from '@/lib/founder-dna/archetype-report-card-styles'
 import { cn } from '@/components/ui/utils'
 
 type ArchetypePayload = ArchetypeApiPreviewResponse | ArchetypeApiFullResponse
@@ -820,7 +823,11 @@ export function FounderArchetypeCard({ renderStickySidebarLayout }: FounderArche
       buildArchetypeBreakdownDerived(breakdownSharedProps)
 
     return renderStickySidebarLayout({
-      profile: <article className={profileShellClass}>{profileBody}</article>,
+      profile: (
+        <article className={profileShellClass} style={archetypeBlueprintCardStyle}>
+          {profileBody}
+        </article>
+      ),
       diagnosis: (
         <ArchetypeDiagnosisPanel
           breakdown={breakdown}
@@ -842,7 +849,11 @@ export function FounderArchetypeCard({ renderStickySidebarLayout }: FounderArche
         />
       ),
       identityDimensions: (
-        <article className={archetypeReportCardClassName} aria-labelledby="archetype-identity-dimensions-heading">
+        <article
+          className={archetypeReportCardClassName}
+          style={archetypeBlueprintCardStyle}
+          aria-labelledby="archetype-identity-dimensions-heading"
+        >
           <h3
             id="archetype-identity-dimensions-heading"
             className="mb-4 text-base font-semibold text-gray-900 dark:text-white"
@@ -872,7 +883,9 @@ export function FounderArchetypeCard({ renderStickySidebarLayout }: FounderArche
 
   return (
     <>
-      <article className={profileShellClass}>{profileBody}</article>
+      <article className={profileShellClass} style={archetypeBlueprintCardStyle}>
+        {profileBody}
+      </article>
       <ArchetypeBreakdown {...breakdownSharedProps} panel="stack" />
       {evolutionAckPrompt ? (
         <ArchetypeEvolutionModal

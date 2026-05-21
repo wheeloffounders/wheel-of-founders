@@ -7,7 +7,10 @@ import { ArchetypeSignalRadarChart } from '@/components/founder-dna/ArchetypeSig
 import { FounderDnaMatrixStaggerTeaser } from '@/components/founder-dna/FounderDnaMatrixStaggerTeaser'
 import { FounderDnaTraitSliderRow } from '@/components/founder-dna/FounderDnaTraitSliderRow'
 import { ArchetypeDiagnosisSummary } from '@/components/founder-dna/ArchetypeDiagnosisSummary'
-import { archetypeReportCardClassName } from '@/lib/founder-dna/archetype-report-card-styles'
+import {
+  archetypeBlueprintCardStyle,
+  archetypeReportCardClassName,
+} from '@/lib/founder-dna/archetype-report-card-styles'
 import { cn } from '@/components/ui/utils'
 
 export type ArchetypeBreakdownProps = {
@@ -194,7 +197,11 @@ export function ArchetypeDiagnosisPanel({
   strongestSignal: ArchetypeBreakdownProps['breakdown']['signals'][number] | null
 }) {
   return (
-    <article className={archetypeReportCardClassName} aria-labelledby="archetype-diagnosis-heading">
+    <article
+      className={archetypeReportCardClassName}
+      style={archetypeBlueprintCardStyle}
+      aria-labelledby="archetype-diagnosis-heading"
+    >
       <BreakdownSectionTitle isPreview={isPreview} className="mb-4" id="archetype-diagnosis-heading" />
       <ArchetypeDiagnosisSummary
         explanation={breakdown?.explanation ?? ''}
@@ -216,7 +223,11 @@ export type ArchetypeRadarCardProps = {
 export function ArchetypeRadarCard({ radarAxes, analyticsLocked }: ArchetypeRadarCardProps) {
   if (radarAxes.length === 0) return null
   return (
-    <article className={archetypeReportCardClassName} aria-labelledby="archetype-radar-heading">
+    <article
+      className={archetypeReportCardClassName}
+      style={archetypeBlueprintCardStyle}
+      aria-labelledby="archetype-radar-heading"
+    >
       <h3
         id="archetype-radar-heading"
         className="mb-4 text-base font-semibold text-gray-900 dark:text-white"
@@ -247,7 +258,11 @@ export function ArchetypeSignalMatrixCard({
   confidencePhrase,
 }: ArchetypeSignalMatrixCardProps) {
   return (
-    <article className={archetypeReportCardClassName} aria-labelledby="archetype-matrix-heading">
+    <article
+      className={archetypeReportCardClassName}
+      style={archetypeBlueprintCardStyle}
+      aria-labelledby="archetype-matrix-heading"
+    >
       <h3
         id="archetype-matrix-heading"
         className="mb-4 text-base font-semibold text-gray-900 dark:text-white"
@@ -376,12 +391,24 @@ export function ArchetypeBreakdown({
   )
 
   if (!analyticsLocked && !isPreview) {
-    return <div className={cn(archetypeReportCardClassName, 'mt-6')}>{content}</div>
+    return (
+      <div className={cn(archetypeReportCardClassName, 'mt-6')} style={archetypeBlueprintCardStyle}>
+        {content}
+      </div>
+    )
   }
 
   if (isPreview) {
-    return <div className={cn(archetypeReportCardClassName, 'mt-4')}>{content}</div>
+    return (
+      <div className={cn(archetypeReportCardClassName, 'mt-4')} style={archetypeBlueprintCardStyle}>
+        {content}
+      </div>
+    )
   }
 
-  return <div className={cn(archetypeReportCardClassName, 'mt-6')}>{content}</div>
+  return (
+    <div className={cn(archetypeReportCardClassName, 'mt-6')} style={archetypeBlueprintCardStyle}>
+      {content}
+    </div>
+  )
 }
