@@ -37,10 +37,8 @@ import { ArchetypeEvolutionModal } from '@/components/founder-dna/ArchetypeEvolu
 import { ARCHETYPE_SNAPSHOT_REFRESH_DAYS } from '@/lib/founder-dna/archetype-snapshot'
 import { ARCHETYPE_FULL_MIN_DAYS, ARCHETYPE_PREVIEW_MIN_DAYS } from '@/lib/founder-dna/archetype-timing'
 import { getArchetypeEvolutionPreview } from '@/lib/founder-dna/archetype-evolution-copy'
-import {
-  archetypeBlueprintCardStyle,
-  archetypeReportCardClassName,
-} from '@/lib/founder-dna/archetype-report-card-styles'
+import { ArchetypeEditorialCard } from '@/components/founder-dna/ArchetypeEditorialCard'
+import { archetypeGradientRingClassName } from '@/lib/founder-dna/archetype-report-card-styles'
 import { cn } from '@/components/ui/utils'
 
 type ArchetypePayload = ArchetypeApiPreviewResponse | ArchetypeApiFullResponse
@@ -548,10 +546,7 @@ export function FounderArchetypeCard({ renderStickySidebarLayout }: FounderArche
     </div>
   )
 
-  const profileShellClass = cn(
-    archetypeReportCardClassName,
-    !usePageLayout && 'max-w-3xl shadow-md shadow-gray-900/[0.07] dark:shadow-black/40'
-  )
+  const profileRingClass = cn(archetypeGradientRingClassName, !usePageLayout && 'max-w-3xl')
 
   const profileBody = (
     <>
@@ -824,9 +819,7 @@ export function FounderArchetypeCard({ renderStickySidebarLayout }: FounderArche
 
     return renderStickySidebarLayout({
       profile: (
-        <article className={profileShellClass} style={archetypeBlueprintCardStyle}>
-          {profileBody}
-        </article>
+        <ArchetypeEditorialCard className={profileRingClass}>{profileBody}</ArchetypeEditorialCard>
       ),
       diagnosis: (
         <ArchetypeDiagnosisPanel
@@ -849,11 +842,7 @@ export function FounderArchetypeCard({ renderStickySidebarLayout }: FounderArche
         />
       ),
       identityDimensions: (
-        <article
-          className={archetypeReportCardClassName}
-          style={archetypeBlueprintCardStyle}
-          aria-labelledby="archetype-identity-dimensions-heading"
-        >
+        <ArchetypeEditorialCard aria-labelledby="archetype-identity-dimensions-heading">
           <h3
             id="archetype-identity-dimensions-heading"
             className="mb-4 text-base font-semibold text-gray-900 dark:text-white"
@@ -861,7 +850,7 @@ export function FounderArchetypeCard({ renderStickySidebarLayout }: FounderArche
             Identity dimensions
           </h3>
           {identityDimensionsPanel}
-        </article>
+        </ArchetypeEditorialCard>
       ),
       evolution: evolutionAckPrompt ? (
         <div className="col-span-1 lg:col-span-12">
@@ -883,9 +872,7 @@ export function FounderArchetypeCard({ renderStickySidebarLayout }: FounderArche
 
   return (
     <>
-      <article className={profileShellClass} style={archetypeBlueprintCardStyle}>
-        {profileBody}
-      </article>
+      <ArchetypeEditorialCard className={profileRingClass}>{profileBody}</ArchetypeEditorialCard>
       <ArchetypeBreakdown {...breakdownSharedProps} panel="stack" />
       {evolutionAckPrompt ? (
         <ArchetypeEvolutionModal

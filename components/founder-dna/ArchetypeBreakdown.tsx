@@ -7,10 +7,7 @@ import { ArchetypeSignalRadarChart } from '@/components/founder-dna/ArchetypeSig
 import { FounderDnaMatrixStaggerTeaser } from '@/components/founder-dna/FounderDnaMatrixStaggerTeaser'
 import { FounderDnaTraitSliderRow } from '@/components/founder-dna/FounderDnaTraitSliderRow'
 import { ArchetypeDiagnosisSummary } from '@/components/founder-dna/ArchetypeDiagnosisSummary'
-import {
-  archetypeBlueprintCardStyle,
-  archetypeReportCardClassName,
-} from '@/lib/founder-dna/archetype-report-card-styles'
+import { ArchetypeEditorialCard } from '@/components/founder-dna/ArchetypeEditorialCard'
 import { cn } from '@/components/ui/utils'
 
 export type ArchetypeBreakdownProps = {
@@ -197,11 +194,7 @@ export function ArchetypeDiagnosisPanel({
   strongestSignal: ArchetypeBreakdownProps['breakdown']['signals'][number] | null
 }) {
   return (
-    <article
-      className={archetypeReportCardClassName}
-      style={archetypeBlueprintCardStyle}
-      aria-labelledby="archetype-diagnosis-heading"
-    >
+    <ArchetypeEditorialCard aria-labelledby="archetype-diagnosis-heading">
       <BreakdownSectionTitle isPreview={isPreview} className="mb-4" id="archetype-diagnosis-heading" />
       <ArchetypeDiagnosisSummary
         explanation={breakdown?.explanation ?? ''}
@@ -210,7 +203,7 @@ export function ArchetypeDiagnosisPanel({
         locked={analyticsLocked}
         onUpgradeClick={onUpgradeClick}
       />
-    </article>
+    </ArchetypeEditorialCard>
   )
 }
 
@@ -223,11 +216,7 @@ export type ArchetypeRadarCardProps = {
 export function ArchetypeRadarCard({ radarAxes, analyticsLocked }: ArchetypeRadarCardProps) {
   if (radarAxes.length === 0) return null
   return (
-    <article
-      className={archetypeReportCardClassName}
-      style={archetypeBlueprintCardStyle}
-      aria-labelledby="archetype-radar-heading"
-    >
+    <ArchetypeEditorialCard aria-labelledby="archetype-radar-heading">
       <h3
         id="archetype-radar-heading"
         className="mb-4 text-base font-semibold text-gray-900 dark:text-white"
@@ -237,7 +226,7 @@ export function ArchetypeRadarCard({ radarAxes, analyticsLocked }: ArchetypeRada
       <div className="relative flex justify-center py-1">
         <ArchetypeSignalRadarChart axes={radarAxes} locked={analyticsLocked} />
       </div>
-    </article>
+    </ArchetypeEditorialCard>
   )
 }
 
@@ -258,11 +247,7 @@ export function ArchetypeSignalMatrixCard({
   confidencePhrase,
 }: ArchetypeSignalMatrixCardProps) {
   return (
-    <article
-      className={archetypeReportCardClassName}
-      style={archetypeBlueprintCardStyle}
-      aria-labelledby="archetype-matrix-heading"
-    >
+    <ArchetypeEditorialCard aria-labelledby="archetype-matrix-heading">
       <h3
         id="archetype-matrix-heading"
         className="mb-4 text-base font-semibold text-gray-900 dark:text-white"
@@ -280,7 +265,7 @@ export function ArchetypeSignalMatrixCard({
         confidencePhrase={confidencePhrase}
         analyticsLocked={analyticsLocked}
       />
-    </article>
+    </ArchetypeEditorialCard>
   )
 }
 
@@ -392,23 +377,23 @@ export function ArchetypeBreakdown({
 
   if (!analyticsLocked && !isPreview) {
     return (
-      <div className={cn(archetypeReportCardClassName, 'mt-6')} style={archetypeBlueprintCardStyle}>
+      <ArchetypeEditorialCard as="div" className="mt-6">
         {content}
-      </div>
+      </ArchetypeEditorialCard>
     )
   }
 
   if (isPreview) {
     return (
-      <div className={cn(archetypeReportCardClassName, 'mt-4')} style={archetypeBlueprintCardStyle}>
+      <ArchetypeEditorialCard as="div" className="mt-4">
         {content}
-      </div>
+      </ArchetypeEditorialCard>
     )
   }
 
   return (
-    <div className={cn(archetypeReportCardClassName, 'mt-6')} style={archetypeBlueprintCardStyle}>
+    <ArchetypeEditorialCard as="div" className="mt-6">
       {content}
-    </div>
+    </ArchetypeEditorialCard>
   )
 }
