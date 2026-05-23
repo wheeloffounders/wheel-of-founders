@@ -4,6 +4,13 @@ import { DecisionStylePie } from '@/components/founder-dna/DecisionStylePie'
 import { PostponementPatternsCard } from '@/components/founder-dna/PostponementPatternsCard'
 import { EnergyMoodChart } from '@/components/founder-dna/EnergyMoodChart'
 import { RecurringQuestionCard } from '@/components/founder-dna/RecurringQuestionCard'
+import { PatternsBlueprintCard } from '@/components/founder-dna/PatternsBlueprintCard'
+import { PatternsMasterSummaryCard } from '@/components/founder-dna/PatternsMasterSummaryCard'
+import {
+  patternsPageGridClassName,
+  patternsPageLeftColumnClassName,
+  patternsPageRightColumnClassName,
+} from '@/components/founder-dna/patterns-page-layouts'
 import { CircleProgress } from '@/components/ui/CircleProgress'
 import { useFounderJourney } from '@/lib/hooks/useFounderJourney'
 import type { JourneyBadge } from '@/lib/types/founder-dna'
@@ -92,19 +99,15 @@ function buildPatternTeasers(
 function PatternTeasersBlock({ teasers, variant }: { teasers: PatternTeaser[]; variant: 'lead' | 'tail' }) {
   if (teasers.length === 0) return null
   const isTail = variant === 'tail'
+
   return (
-    <section
-      aria-labelledby="patterns-teasers"
-      className={
-        isTail
-          ? 'mt-10 pt-2 border-t border-gray-200/80 dark:border-gray-700/80'
-          : 'pt-2'
-      }
+    <PatternsBlueprintCard
+      as="section"
+      headerTag={{ label: isTail ? 'Opening next' : 'On the way', tone: 'amber' }}
+      title={isTail ? 'Still opening' : 'On the way'}
+      titleId="patterns-teasers"
     >
-      <h2 id="patterns-teasers" className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-        {isTail ? 'Still opening' : 'On the way'}
-      </h2>
-      <div className="rounded-lg border border-amber-100/80 dark:border-amber-900/30 bg-amber-50/40 dark:bg-amber-950/15 px-4 py-4 space-y-5">
+      <div className="space-y-5">
         {teasers.map((item) => (
           <div key={item.id}>
             <p className="text-sm font-semibold text-gray-900 dark:text-white leading-snug">
@@ -123,7 +126,7 @@ function PatternTeasersBlock({ teasers, variant }: { teasers: PatternTeaser[]; v
           </div>
         ))}
       </div>
-    </section>
+    </PatternsBlueprintCard>
   )
 }
 
@@ -169,12 +172,7 @@ export function PatternsPageContent() {
           aria-labelledby="patterns-first-unlock-heading"
         >
           <div className="flex justify-center">
-            <CircleProgress
-              current={dwe}
-              target={SCHEDULE_ENERGY_MIN_DAYS}
-              size={80}
-              unitLabel="days"
-            />
+            <CircleProgress current={dwe} target={SCHEDULE_ENERGY_MIN_DAYS} size={80} unitLabel="days" />
           </div>
           <div className="mt-4 max-w-lg mx-auto text-left">
             <p
@@ -202,47 +200,68 @@ export function PatternsPageContent() {
 
       {!hasMainSections ? <PatternTeasersBlock teasers={teasers} variant="lead" /> : null}
 
-      <div className="space-y-10">
-        {energyUnlocked ? (
-          <section aria-labelledby="patterns-energy">
-            <h2 id="patterns-energy" className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-              <span aria-hidden>⚡ </span>
-              Energy &amp; mood trend
-            </h2>
-            <EnergyMoodChart />
-          </section>
-        ) : null}
+      {hasMainSections ? (
+        <>
+          <div className="w-full mb-8">
+            <PatternsMasterSummaryCard />
+          </div>
 
-        {decisionUnlocked ? (
-          <section aria-labelledby="patterns-decision">
-            <h2 id="patterns-decision" className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-              <span aria-hidden>🎯 </span>
-              Decision style
-            </h2>
-            <DecisionStylePie />
-          </section>
-        ) : null}
+          <div className={patternsPageGridClassName}>
+            <div className={patternsPageLeftColumnClassName}>
+              {energyUnlocked ? (
+                <PatternsBlueprintCard
+                  as="section"
+                  headerTag={{ label: 'Elevator', tone: 'emerald' }}
+                  title="Deep Work Triggers"
+                  titleId="patterns-deep-work"
+                  titleEmoji="⚡"
+                >
+                  <EnergyMoodChart embedded />
+                </PatternsBlueprintCard>
+              ) : null}
 
-        {postUnlocked ? (
-          <section aria-labelledby="patterns-postponement">
-            <h2 id="patterns-postponement" className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-              <span aria-hidden>⏳ </span>
-              Postponement patterns
-            </h2>
-            <PostponementPatternsCard />
-          </section>
-        ) : null}
+            </div>
 
-        {recurringUnlocked ? (
-          <section aria-labelledby="patterns-recurring">
-            <h2 id="patterns-recurring" className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-              <span aria-hidden>💫 </span>
-              Recurring question
-            </h2>
-            <RecurringQuestionCard />
-          </section>
-        ) : null}
-      </div>
+            <aside className={patternsPageRightColumnClassName} aria-label="Pattern trajectory and drain zones">
+              {postUnlocked ? (
+                <PatternsBlueprintCard
+                  as="section"
+                  headerTag={{ label: 'Friction', tone: 'amber' }}
+                  title="Focus Disrupters"
+                  titleId="patterns-disrupters"
+                  titleEmoji="🪞"
+                >
+                  <PostponementPatternsCard embedded />
+                </PatternsBlueprintCard>
+              ) : null}
+
+              {decisionUnlocked ? (
+                <PatternsBlueprintCard
+                  as="section"
+                  headerTag={{ label: 'Trajectory', tone: 'teal' }}
+                  title="Productivity Trajectory"
+                  titleId="patterns-trajectory"
+                  titleEmoji="📈"
+                >
+                  <DecisionStylePie embedded />
+                </PatternsBlueprintCard>
+              ) : null}
+
+              {recurringUnlocked ? (
+                <PatternsBlueprintCard
+                  as="section"
+                  headerTag={{ label: 'Protection', tone: 'rose' }}
+                  title="Energy Sinkholes"
+                  titleId="patterns-sinkholes"
+                  titleEmoji="💫"
+                >
+                  <RecurringQuestionCard embedded />
+                </PatternsBlueprintCard>
+              ) : null}
+            </aside>
+          </div>
+        </>
+      ) : null}
 
       {hasMainSections ? <PatternTeasersBlock teasers={teasers} variant="tail" /> : null}
     </>

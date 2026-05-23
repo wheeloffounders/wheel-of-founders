@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Loader2, AlertTriangle, Lock } from 'lucide-react'
 import { DnaInsightBlock } from '@/components/founder-dna/DnaInsightBlock'
 import { usePrimaryArchetypeName } from '@/lib/hooks/usePrimaryArchetypeName'
+import { patternModuleSurfaceClass } from '@/lib/founder-dna/pattern-card-surface'
+import { cn } from '@/components/ui/utils'
 
 type PostponementPattern = {
   actionPlan: string
@@ -29,7 +31,13 @@ type LockedResponse = {
   }
 }
 
-export function PostponementPatternsCard() {
+type PostponementPatternsCardProps = {
+  embedded?: boolean
+}
+
+export function PostponementPatternsCard({ embedded = false }: PostponementPatternsCardProps) {
+  const shell = (extra?: string) =>
+    cn(patternModuleSurfaceClass(embedded), embedded ? extra : cn('p-4', extra))
   const currentArchetype = usePrimaryArchetypeName()
   const [loading, setLoading] = useState(true)
   const [locked, setLocked] = useState(false)
@@ -85,7 +93,7 @@ export function PostponementPatternsCard() {
 
   if (locked) {
     return (
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4">
+      <div className={shell()}>
         <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
           <Lock className="w-4 h-4 text-[#ef725c]" />
           ⏳ Postponement Patterns
@@ -108,7 +116,11 @@ export function PostponementPatternsCard() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/30 dark:bg-red-900/20 p-4">
+      <div
+        className={cn(
+          embedded ? '' : 'rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/30 dark:bg-red-900/20 p-4',
+        )}
+      >
         <div className="flex items-center gap-2 text-sm font-medium text-red-800 dark:text-red-200">
           <AlertTriangle className="w-4 h-4" />
           Could not load your patterns
@@ -120,7 +132,7 @@ export function PostponementPatternsCard() {
 
   if (!data) {
     return (
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4">
+      <div className={shell()}>
         <div className="text-sm font-medium text-gray-900 dark:text-white">No data found</div>
       </div>
     )
@@ -128,8 +140,10 @@ export function PostponementPatternsCard() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4">
-        <div className="text-sm font-semibold text-gray-900 dark:text-white mb-3">⏳ Postponement Patterns</div>
+      <div className={shell()}>
+        {!embedded ? (
+          <div className="text-sm font-semibold text-gray-900 dark:text-white mb-3">⏳ Postponement Patterns</div>
+        ) : null}
         <DnaInsightBlock
           description={data.insight}
           kind="postponement"
@@ -150,7 +164,12 @@ export function PostponementPatternsCard() {
       </div>
 
       {/* Educational note */}
-      <div className="rounded-xl border border-gray-200/70 dark:border-gray-700/70 bg-white/60 dark:bg-gray-800/30 p-4 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+      <div
+        className={cn(
+          shell(),
+          'text-sm text-gray-600 dark:text-gray-300 leading-relaxed',
+        )}
+      >
         <div className="font-medium text-gray-900 dark:text-white mb-2">Why this matters</div>
         These aren&apos;t failures - they&apos;re signals. Each postponement is telling you something about what needs to change.
         The task itself isn&apos;t the problem; the conditions around it are.

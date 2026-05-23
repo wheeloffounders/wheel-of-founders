@@ -6,13 +6,21 @@ import { AlertTriangle, Loader2, Lock } from 'lucide-react'
 import { colors } from '@/lib/design-tokens'
 import type { RecurringQuestionResponse } from '@/lib/types/founder-dna'
 import { RECURRING_QUESTION_MIN_DAYS } from '@/lib/founder-dna/unlock-schedule-config'
+import { patternModuleSurfaceClass } from '@/lib/founder-dna/pattern-card-surface'
+import { cn } from '@/components/ui/utils'
 
 type LockedBody = {
   error: string
   progress: { daysActive: number; target: number; remaining: number }
 }
 
-export function RecurringQuestionCard() {
+type RecurringQuestionCardProps = {
+  embedded?: boolean
+}
+
+export function RecurringQuestionCard({ embedded = false }: RecurringQuestionCardProps) {
+  const shell = (extra?: string) =>
+    cn(patternModuleSurfaceClass(embedded), embedded ? extra : cn('p-4', extra))
   const [loading, setLoading] = useState(true)
   const [locked, setLocked] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -62,7 +70,7 @@ export function RecurringQuestionCard() {
 
   if (locked) {
     return (
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4">
+      <div className={shell()}>
         <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
           <Lock className="w-4 h-4 text-[#ef725c]" />
           💫 Recurring Question
@@ -85,7 +93,11 @@ export function RecurringQuestionCard() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/30 dark:bg-red-900/20 p-4">
+      <div
+        className={cn(
+          embedded ? '' : 'rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/30 dark:bg-red-900/20 p-4',
+        )}
+      >
         <div className="flex items-center gap-2 text-sm font-medium text-red-800 dark:text-red-200">
           <AlertTriangle className="w-4 h-4" />
           Could not load Recurring Question
@@ -97,9 +109,7 @@ export function RecurringQuestionCard() {
 
   if (!data) {
     return (
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4 text-sm text-gray-600 dark:text-gray-300">
-        No data yet.
-      </div>
+      <div className={cn(shell(), 'text-sm text-gray-600 dark:text-gray-300')}>No data yet.</div>
     )
   }
 
@@ -130,9 +140,11 @@ export function RecurringQuestionCard() {
         </ul>
       )}
 
-      <Link href="/dashboard" className="text-sm inline-block" style={{ color: colors.navy.DEFAULT }}>
-        ← Back to dashboard
-      </Link>
+      {!embedded ? (
+        <Link href="/dashboard" className="text-sm inline-block" style={{ color: colors.navy.DEFAULT }}>
+          ← Back to dashboard
+        </Link>
+      ) : null}
     </div>
   )
 }

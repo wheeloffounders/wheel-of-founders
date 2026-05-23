@@ -16,4 +16,12 @@ export const archetypeLeftAccentClassName =
 export const rhythmLeftAccentClassName =
   'pointer-events-none absolute bottom-0 left-0 top-0 z-20 w-[4px] rounded-l-[11px] bg-amber-400 dark:bg-amber-400'
 
+/** Lighter gradient thread — Patterns pillar (macro cycles). */
+export const patternsGradientRingClassName =
+  'relative w-full rounded-xl bg-gradient-to-br from-indigo-400/40 via-slate-200 to-transparent p-[1px] shadow-md'
+
+/** Brand coral left rail — Patterns pillar (#EF725C). */
+export const patternsLeftAccentClassName =
+  'pointer-events-none absolute bottom-0 left-0 top-0 z-20 w-[4px] rounded-l-[11px] bg-[#ef725c] dark:bg-[#ef725c]'
+
 export const archetypeBlueprintCardStyle = founderDnaBlueprintCardStyle

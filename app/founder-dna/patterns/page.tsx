@@ -4,6 +4,7 @@ import { PatternsPageContent } from '@/components/founder-dna/PatternsPageConten
 export default function FounderDnaPatternsPage() {
   return (
     <FounderDnaPageShell
+      wide
       title="Your Weekly Patterns"
       description="Every Wednesday, I look at how you work, decide, and reflect — and share the patterns starting to emerge."
     >

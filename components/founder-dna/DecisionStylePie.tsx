@@ -10,6 +10,8 @@ import {
   Legend,
 } from 'recharts'
 import { Loader2, Lock, AlertTriangle } from 'lucide-react'
+import { patternModuleSurfaceClass } from '@/lib/founder-dna/pattern-card-surface'
+import { cn } from '@/components/ui/utils'
 
 type DecisionStyleResponse = {
   strategic: number
@@ -30,7 +32,13 @@ type DecisionStyleResponse = {
   }
 }
 
-export function DecisionStylePie() {
+type DecisionStylePieProps = {
+  embedded?: boolean
+}
+
+export function DecisionStylePie({ embedded = false }: DecisionStylePieProps) {
+  const shell = (extra?: string) =>
+    cn(patternModuleSurfaceClass(embedded), embedded ? extra : cn('p-4', extra))
   const [loading, setLoading] = useState(true)
   const [locked, setLocked] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -98,7 +106,7 @@ export function DecisionStylePie() {
 
   if (locked) {
     return (
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4">
+      <div className={shell()}>
         <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
           <Lock className="w-4 h-4 text-[#ef725c]" />
           Decision Style is locked
@@ -112,7 +120,11 @@ export function DecisionStylePie() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/30 dark:bg-red-900/20 p-4">
+      <div
+        className={cn(
+          embedded ? '' : 'rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/30 dark:bg-red-900/20 p-4',
+        )}
+      >
         <div className="flex items-center gap-2 text-sm font-medium text-red-800 dark:text-red-200">
           <AlertTriangle className="w-4 h-4" />
           Could not load your decision style
@@ -125,7 +137,7 @@ export function DecisionStylePie() {
   const total = data?.total ?? 0
   if (!data || total <= 0 || chartData.length === 0) {
     return (
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4">
+      <div className={shell()}>
         <div className="text-sm font-medium text-gray-900 dark:text-white">No decision data yet</div>
         <div className="text-sm text-gray-600 dark:text-gray-300 mt-2">
           Log some morning decisions to see your mix.
@@ -135,19 +147,23 @@ export function DecisionStylePie() {
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4">
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div>
-          <div className="text-sm font-semibold text-gray-900 dark:text-white">Strategic vs Tactical</div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{total} decisions</div>
-        </div>
+    <div className={shell()}>
+      {!embedded ? (
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">Strategic vs Tactical</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{total} decisions</div>
+          </div>
         {totalsText ? (
           <div className="text-right text-xs text-gray-500 dark:text-gray-400">
             <div>😊 {totalsText.strategicPct}% strategic</div>
             <div>🧭 {totalsText.tacticalPct}% tactical</div>
           </div>
         ) : null}
-      </div>
+        </div>
+      ) : (
+        <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">{total} decisions logged</p>
+      )}
 
       <div className="relative w-full" style={{ height: 300 }}>
         <ResponsiveContainer>

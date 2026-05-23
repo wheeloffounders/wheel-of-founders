@@ -13,7 +13,9 @@ type ArchetypeEditorialCardProps = {
   as?: 'article' | 'div' | 'section'
   children: ReactNode
   innerClassName?: string
-  /** Defaults to archetype slate-900 rail; Rhythm passes light grey. */
+  /** Defaults to archetype indigo/purple ring; Patterns uses lighter thread. */
+  gradientRingClassName?: string
+  /** Defaults to archetype slate-900 rail; Rhythm / Patterns pass variants. */
   leftAccentClassName?: string
 } & ComponentPropsWithoutRef<'article'>
 
@@ -22,12 +24,13 @@ export function ArchetypeEditorialCard({
   as: Tag = 'article',
   className,
   innerClassName,
+  gradientRingClassName = archetypeGradientRingClassName,
   leftAccentClassName = archetypeLeftAccentClassName,
   children,
   ...props
 }: ArchetypeEditorialCardProps) {
   return (
-    <Tag className={cn(archetypeGradientRingClassName, className)} {...props}>
+    <Tag className={cn(gradientRingClassName, className)} {...props}>
       <div
         className={cn(archetypeReportCardInnerClassName, innerClassName)}
         style={founderDnaBlueprintCardStyle}

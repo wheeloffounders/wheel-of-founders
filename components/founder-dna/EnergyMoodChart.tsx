@@ -16,8 +16,14 @@ import type { EnergyMoodInsightType, EnergyTrendsResponse } from '@/lib/types/fo
 import type { InsightPresentationKind } from '@/lib/founder-dna/insight-card-presentation'
 import { usePrimaryArchetypeName } from '@/lib/hooks/usePrimaryArchetypeName'
 import { SCHEDULE_ENERGY_MIN_DAYS } from '@/lib/founder-dna/unlock-schedule-config'
+import { patternModuleSurfaceClass } from '@/lib/founder-dna/pattern-card-surface'
+import { cn } from '@/components/ui/utils'
 
 type Point = { date: string; mood: number; energy: number }
+
+type EnergyMoodChartProps = {
+  embedded?: boolean
+}
 
 function energyInsightKind(t: EnergyMoodInsightType): InsightPresentationKind {
   if (t === 'energy_drop' || t === 'weekly_rhythm') return 'energy'
@@ -56,7 +62,9 @@ function TooltipContent({
   )
 }
 
-export function EnergyMoodChart() {
+export function EnergyMoodChart({ embedded = false }: EnergyMoodChartProps) {
+  const shell = (extra?: string) =>
+    cn(patternModuleSurfaceClass(embedded), embedded ? extra : cn('p-4', extra))
   const currentArchetype = usePrimaryArchetypeName()
   const [loading, setLoading] = useState(true)
   const [locked, setLocked] = useState(false)
@@ -115,7 +123,7 @@ export function EnergyMoodChart() {
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4">
+      <div className={shell('p-4')}>
         <div className="flex items-center justify-between gap-3 mb-3">
           <div>
             <div className="text-sm font-semibold text-gray-900 dark:text-white">Energy (⚡) & Mood (😊)</div>
@@ -143,7 +151,7 @@ export function EnergyMoodChart() {
 
   if (locked) {
     return (
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4">
+      <div className={shell('p-4')}>
         <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
           <Lock className="w-4 h-4 text-[#ef725c]" />
           Energy & Mood Trend is locked
@@ -179,14 +187,18 @@ export function EnergyMoodChart() {
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/30 p-4">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <div>
-          <div className="text-sm font-semibold text-gray-900 dark:text-white">Energy (⚡) & Mood (😊)</div>
-          <div className="text-xs text-gray-500 dark:text-gray-400">Last 30 days</div>
+    <div className={shell('p-4')}>
+      {!embedded ? (
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div>
+            <div className="text-sm font-semibold text-gray-900 dark:text-white">Energy (⚡) & Mood (😊)</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Last 30 days</div>
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">Scale: 1 to 5</div>
         </div>
-        <div className="text-xs text-gray-500 dark:text-gray-400">Scale: 1 to 5</div>
-      </div>
+      ) : (
+        <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">Last 30 days · scale 1–5</p>
+      )}
 
       <div style={{ width: '100%', height: 320 }}>
         <ResponsiveContainer>
