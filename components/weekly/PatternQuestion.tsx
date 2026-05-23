@@ -25,11 +25,11 @@ export function PatternQuestion({
 
   const quoteBlock = pattern ? (
     <div className="space-y-3 pt-1">
-      <p className="text-sm leading-relaxed text-gray-900 dark:text-white">
+      <p className="text-sm leading-relaxed break-words text-gray-900 dark:text-white">
         &quot;You mentioned {pattern.topic} {pattern.count} times this week—more than any other topic. On{' '}
         {dayName} you said: &apos;{pattern.example}&apos;&quot;
       </p>
-      <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+      <p className="text-sm leading-relaxed break-words text-gray-700 dark:text-gray-300">
         Is it working? What&apos;s different from before? What would tell you it&apos;s truly working?
       </p>
     </div>

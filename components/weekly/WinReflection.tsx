@@ -51,7 +51,7 @@ export function WinReflection({
                   />
                 ))}
               </span>
-              <span className="flex-1 text-gray-900 dark:text-white">{win}</span>
+              <span className="min-w-0 flex-1 break-words text-gray-900 dark:text-white">{win}</span>
             </button>
           </li>
         ))}

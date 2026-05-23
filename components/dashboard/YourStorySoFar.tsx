@@ -18,9 +18,16 @@ interface Win {
 
 type YourStorySoFarProps = {
   showCardTitle?: boolean
+  /** Inside RhythmBlueprintCard — skip colored outer shell. */
+  embedded?: boolean
 }
 
-export function YourStorySoFar({ showCardTitle = true }: YourStorySoFarProps) {
+const storySurfaceClass = (embedded: boolean) =>
+  embedded
+    ? 'rounded-lg'
+    : 'bg-[#f0f5ee] dark:bg-gray-800 rounded-lg'
+
+export function YourStorySoFar({ showCardTitle = true, embedded = false }: YourStorySoFarProps) {
   const [wins, setWins] = useState<Win[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -70,7 +77,7 @@ export function YourStorySoFar({ showCardTitle = true }: YourStorySoFarProps) {
 
   if (loading) {
     return (
-      <div className="bg-[#f0f5ee] dark:bg-gray-800 rounded-lg p-6 animate-pulse">
+      <div className={embedded ? 'p-1 animate-pulse' : `${storySurfaceClass(false)} p-6 animate-pulse`}>
         <div className="h-6 bg-gray-300 dark:bg-gray-700 rounded w-1/3 mb-4" />
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
@@ -84,7 +91,7 @@ export function YourStorySoFar({ showCardTitle = true }: YourStorySoFarProps) {
   if (!hasEnoughData) {
     const daysRemaining = Math.max(0, SCHEDULE_STORY_SO_FAR_DAY - daysSince)
     return (
-      <div className="bg-[#f0f5ee] dark:bg-gray-800 rounded-lg p-6 opacity-60">
+      <div className={`${storySurfaceClass(embedded)} p-6 opacity-60`}>
         <div className="flex items-center gap-2 mb-4">
           <Lock className="w-5 h-5 text-gray-400 shrink-0" aria-hidden />
           {showCardTitle ? (
@@ -105,7 +112,7 @@ export function YourStorySoFar({ showCardTitle = true }: YourStorySoFarProps) {
   if (wins.length === 0) return null
 
   return (
-    <div className="bg-[#f0f5ee] dark:bg-gray-800 rounded-lg p-6">
+    <div className={`${storySurfaceClass(embedded)} ${embedded ? 'p-1' : 'p-6'}`}>
       {showCardTitle ? (
         <div className="flex items-center gap-2 mb-4">
           <Sparkles className="w-5 h-5 text-[#ef725c]" aria-hidden />

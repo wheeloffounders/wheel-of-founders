@@ -20,9 +20,20 @@ type PatternBuildingProps = {
    * Skips a separate client count that used to use “days since first activity” and could disagree with the journey.
    */
   rhythmGatedUnlock?: boolean
+  /** Inside RhythmBlueprintCard — skip blue outer shell. */
+  embedded?: boolean
 }
 
-export function PatternBuilding({ showCardHeading = true, rhythmGatedUnlock = false }: PatternBuildingProps) {
+const patternSurfaceClass = (embedded: boolean) =>
+  embedded
+    ? 'rounded-lg'
+    : 'bg-[#e6f0fa] dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'
+
+export function PatternBuilding({
+  showCardHeading = true,
+  rhythmGatedUnlock = false,
+  embedded = false,
+}: PatternBuildingProps) {
   const [pattern, setPattern] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [daysSince, setDaysSince] = useState(0)
@@ -90,9 +101,11 @@ export function PatternBuilding({ showCardHeading = true, rhythmGatedUnlock = fa
     run()
   }, [rhythmGatedUnlock])
 
+  const shellClass = `${patternSurfaceClass(embedded)} ${embedded ? 'p-1' : 'p-4 mb-4'}`
+
   if (loading) {
     return (
-      <div className="bg-[#e6f0fa] dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-4">
+      <div className={shellClass}>
         <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
           <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden />
           {showCardHeading ? (
@@ -109,7 +122,7 @@ export function PatternBuilding({ showCardHeading = true, rhythmGatedUnlock = fa
   if (!hasEnoughData) {
     const daysRemaining = Math.max(0, SCHEDULE_UNSEEN_WINS_DAY - daysSince)
     return (
-      <div className="bg-[#e6f0fa] dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-4 opacity-60">
+      <div className={`${shellClass} opacity-60`}>
         {showCardHeading ? (
           <div className="flex items-center gap-2 mb-2">
             <Lock className="w-4 h-4 text-gray-400 shrink-0" aria-hidden />
@@ -149,7 +162,7 @@ export function PatternBuilding({ showCardHeading = true, rhythmGatedUnlock = fa
   }
 
   return (
-    <div className="bg-[#e6f0fa] dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-4">
+    <div className={shellClass}>
       {showCardHeading ? (
         <>
           <div className="flex items-center gap-2 mb-1">

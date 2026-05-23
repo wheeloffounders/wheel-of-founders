@@ -3,7 +3,14 @@
 import { CelebrationGapCard } from '@/components/founder-dna/CelebrationGapCard'
 import { PatternBuilding } from '@/components/dashboard/PatternBuilding'
 import { YourStorySoFar } from '@/components/dashboard/YourStorySoFar'
-import { CircleProgress } from '@/components/ui/CircleProgress'
+import { RhythmBlueprintCard } from '@/components/founder-dna/RhythmBlueprintCard'
+import { WeeklyArchetypeDriftCard } from '@/components/weekly/WeeklyArchetypeDriftCard'
+import { useWeeklyDriftMetrics } from '@/lib/hooks/useWeeklyDriftMetrics'
+import {
+  rhythmPageGridClassName,
+  rhythmPageLeftColumnClassName,
+  rhythmPageRightColumnClassName,
+} from '@/components/founder-dna/rhythm-page-layouts'
 import { useFounderJourney } from '@/lib/hooks/useFounderJourney'
 import type { JourneyBadge } from '@/lib/types/founder-dna'
 import {
@@ -78,18 +85,14 @@ function RhythmTeasersBlock({ teasers, variant }: { teasers: RhythmTeaser[]; var
   if (teasers.length === 0) return null
   const isTail = variant === 'tail'
   return (
-    <section
-      aria-labelledby="rhythm-teasers"
-      className={
-        isTail
-          ? 'mt-10 pt-2 border-t border-gray-200/80 dark:border-gray-700/80'
-          : 'pt-2'
-      }
+    <RhythmBlueprintCard
+      as="section"
+      headerTag={{ label: isTail ? 'Opening next' : 'On the way', tone: 'amber' }}
+      title={isTail ? 'Still opening' : 'On the way'}
+      titleId="rhythm-teasers"
+      innerClassName={isTail ? 'pt-6' : undefined}
     >
-      <h2 id="rhythm-teasers" className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-        {isTail ? 'Still opening' : 'On the way'}
-      </h2>
-      <div className="rounded-lg border border-amber-100/80 dark:border-amber-900/30 bg-amber-50/40 dark:bg-amber-950/15 px-4 py-4 space-y-5">
+      <div className="space-y-5">
         {teasers.map((item) => (
           <div key={item.id}>
             <p className="text-sm font-semibold text-gray-900 dark:text-white leading-snug">
@@ -108,12 +111,13 @@ function RhythmTeasersBlock({ teasers, variant }: { teasers: RhythmTeaser[]; var
           </div>
         ))}
       </div>
-    </section>
+    </RhythmBlueprintCard>
   )
 }
 
 export function RhythmPageContent() {
   const { data, loading, error } = useFounderJourney()
+  const weeklyDrift = useWeeklyDriftMetrics()
 
   if (loading && !data) {
     return <p className="text-sm text-gray-500 dark:text-gray-400 italic">Gathering your rhythm…</p>
@@ -146,76 +150,68 @@ export function RhythmPageContent() {
         Your rhythm updates every Tuesday — new insights, fresh patterns, and the wins you might have missed.
       </p>
 
-      {showFirstUnlockProgress ? (
-        <div
-          className="mb-8 pb-6 border-b border-gray-200/80 dark:border-gray-700/80"
-          aria-labelledby="rhythm-first-unlock-heading"
-        >
-          <div className="flex justify-center">
-            <CircleProgress
-              current={dwe}
-              target={SCHEDULE_STORY_SO_FAR_DAY}
-              size={80}
-              unitLabel="days"
-            />
-          </div>
-          <div className="mt-4 max-w-lg mx-auto text-left">
-            <p
-              id="rhythm-first-unlock-heading"
-              className="text-sm font-semibold text-gray-900 dark:text-white leading-snug"
+      <div className="w-full mb-8">
+        <WeeklyArchetypeDriftCard {...weeklyDrift.metrics} />
+      </div>
+
+      <div className={rhythmPageGridClassName}>
+        <div className={rhythmPageLeftColumnClassName}>
+          {!hasMainSections && teasers.length === 0 ? (
+            <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+              Keep checking in — as you show up, new pieces of your rhythm appear here after your first few active
+              days.
+            </p>
+          ) : null}
+
+          {!hasMainSections ? <RhythmTeasersBlock teasers={teasers} variant="lead" /> : null}
+
+          {storyUnlocked ? (
+            <RhythmBlueprintCard
+              as="section"
+              headerTag={{ label: 'Narrative', tone: 'indigo' }}
+              title="Your Story So Far"
+              titleId="rhythm-story"
+              titleEmoji="📚"
             >
-              Next unlock: Your Story So Far
-              <span className="font-normal text-gray-600 dark:text-gray-400">
-                {' '}
-                — in {rhythmFirstRemaining} {rhythmFirstRemaining === 1 ? 'day' : 'days'}
-              </span>
-            </p>
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
-              {RHYTHM_FIRST_UNLOCK_PEEK}
-            </p>
-          </div>
+              <YourStorySoFar showCardTitle={false} embedded />
+            </RhythmBlueprintCard>
+          ) : null}
+
+          {hasMainSections ? <RhythmTeasersBlock teasers={teasers} variant="tail" /> : null}
         </div>
-      ) : null}
 
-      {!hasMainSections && teasers.length === 0 ? (
-        <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
-          Keep checking in — as you show up, new pieces of your rhythm appear here after your first few active days.
-        </p>
-      ) : null}
+        <aside className={rhythmPageRightColumnClassName} aria-label="Weekly rhythm calibration">
+          {gapUnlocked ? (
+            <RhythmBlueprintCard
+              as="section"
+              headerTag={{ label: 'Reflection', tone: 'violet' }}
+              title="Celebration Gap"
+              titleId="rhythm-celebration-gap"
+              titleEmoji="🪞"
+            >
+              <CelebrationGapCard />
+            </RhythmBlueprintCard>
+          ) : null}
 
-      {!hasMainSections ? <RhythmTeasersBlock teasers={teasers} variant="lead" /> : null}
+          {unseenUnlocked ? (
+            <RhythmBlueprintCard
+              as="section"
+              headerTag={{ label: 'Pattern', tone: 'sky' }}
+              title="Unseen Wins"
+              titleId="rhythm-unseen"
+              titleEmoji="✨"
+            >
+              <PatternBuilding showCardHeading={false} rhythmGatedUnlock embedded />
+            </RhythmBlueprintCard>
+          ) : null}
 
-      {storyUnlocked ? (
-        <section aria-labelledby="rhythm-story">
-          <h2 id="rhythm-story" className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-            <span aria-hidden>📚 </span>
-            Your Story So Far
-          </h2>
-          <YourStorySoFar showCardTitle={false} />
-        </section>
-      ) : null}
-
-      {gapUnlocked ? (
-        <section aria-labelledby="rhythm-celebration-gap">
-          <h2 id="rhythm-celebration-gap" className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-            <span aria-hidden>🪞 </span>
-            Celebration Gap
-          </h2>
-          <CelebrationGapCard />
-        </section>
-      ) : null}
-
-      {unseenUnlocked ? (
-        <section aria-labelledby="rhythm-unseen">
-          <h2 id="rhythm-unseen" className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-            <span aria-hidden>✨ </span>
-            Unseen Wins
-          </h2>
-          <PatternBuilding showCardHeading={false} rhythmGatedUnlock />
-        </section>
-      ) : null}
-
-      {hasMainSections ? <RhythmTeasersBlock teasers={teasers} variant="tail" /> : null}
+          {showFirstUnlockProgress ? (
+            <RhythmBlueprintCard headerTag={{ label: 'Preview', tone: 'amber' }} title="First narrative">
+              <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">{RHYTHM_FIRST_UNLOCK_PEEK}</p>
+            </RhythmBlueprintCard>
+          ) : null}
+        </aside>
+      </div>
     </>
   )
 }

@@ -35,7 +35,7 @@ export function LessonInput({
               disabled={selectionLocked}
               title={selectionLocked ? 'Upgrade to Pro to mark key lessons for quarterly memory' : undefined}
               className={cn(
-                'flex w-full items-center gap-3 py-4 text-left transition-colors first:pt-0',
+                'flex w-full items-start gap-3 py-4 text-left transition-colors first:pt-0',
                 selectionLocked ? 'cursor-not-allowed opacity-95' : 'hover:bg-gray-50/80 dark:hover:bg-gray-900/40',
                 keyIndices.includes(i) && !selectionLocked && 'bg-[#FFF0EC]/60 dark:bg-[#1E293B]/40'
               )}
@@ -50,7 +50,7 @@ export function LessonInput({
                   />
                 )}
               </span>
-              <span className="text-gray-900 dark:text-white">{lesson}</span>
+              <span className="min-w-0 flex-1 break-words text-gray-900 dark:text-white">{lesson}</span>
             </button>
           </li>
         ))}
