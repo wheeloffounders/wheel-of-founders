@@ -16,6 +16,7 @@ import {
 } from '@/lib/evening/evening-coach-message'
 import { viewProPlansCtaClassName } from '@/lib/ui/view-pro-plans-cta'
 import { PRO_GATE_BADGE_SURFACE_CLASS } from '@/lib/morning/pro-gate-badge-styles'
+import { MORNING_INSIGHT_SURFACE } from '@/lib/morning/morning-insight-surface'
 import { showDebugTools } from '@/lib/env'
 import { cn } from '@/components/ui/utils'
 import { InsightTeaserBlur } from '@/components/insights/InsightTeaserBlur'
@@ -73,10 +74,6 @@ const TRIGGER_TO_INSIGHT_TYPE: Record<string, string> = {
   emergency: 'emergency',
 }
 
-/** Morning / Plan Review “letter” — yellow dashed frame only; no navy/sky card border. */
-const MORNING_INSIGHT_SURFACE =
-  'rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50/30 p-6 shadow-sm dark:border-amber-800/55 dark:bg-amber-950/10'
-
 export function AICoachPrompt({
   message,
   onClose,
@@ -106,7 +103,10 @@ export function AICoachPrompt({
   const expression = trigger === 'evening_after' ? 'encouraging' : trigger === 'emergency' ? 'empathetic' : 'thoughtful'
   const variant = trigger === 'emergency' ? 'emergency' : 'default'
   const morningSparkSurface =
-    trigger === 'morning_before' || trigger === 'morning_after' || trigger === 'emergency'
+    trigger === 'morning_before' ||
+    trigger === 'morning_after' ||
+    trigger === 'emergency' ||
+    trigger === 'profile'
 
   const insightTypeForFeedback = TRIGGER_TO_INSIGHT_TYPE[trigger]
 

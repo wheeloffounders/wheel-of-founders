@@ -3,15 +3,29 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { FileText, Sparkles, Check, Edit2, Settings, Clock, MessageSquare } from 'lucide-react'
+import { Sparkles, Check, Clock } from 'lucide-react'
+import { ProfileIdentityHeader } from '@/components/profile/ProfileIdentityHeader'
+import { ProfileBlueprintCard } from '@/components/profile/ProfileBlueprintCard'
+import { ProfileMonoPillToggle } from '@/components/profile/ProfileMonoPillToggle'
+import {
+  profileDossierChipClassName,
+  profileDossierHintClassName,
+  profileDossierInputClassName,
+  profileDossierLabelClassName,
+} from '@/lib/founder-dna/profile-dossier-styles'
 import { founderStruggles } from '@/lib/founder-struggles'
 import { supabase } from '@/lib/supabase'
 import { getUserSession } from '@/lib/auth'
 import { getUserGoal, getUserLanguage, UserGoal } from '@/lib/user-language'
 import { AICoachPrompt } from '@/components/AICoachPrompt'
+import {
+  morningInsightStreamingBannerClassName,
+  morningInsightSurfaceClassName,
+} from '@/lib/morning/morning-insight-surface'
 import SpeechToTextInput from '@/components/SpeechToTextInput'
 import { trackEvent } from '@/lib/analytics'
 import Link from 'next/link'
+import { cn } from '@/components/ui/utils'
 import { isDevelopment, isPreview } from '@/lib/env'
 import { isDevProfileMasterSwitchEmail } from '@/lib/dev-profile-master-switch-emails'
 import { invalidateUserProfileBundle } from '@/lib/user-profile-bundle-cache'
@@ -126,6 +140,7 @@ export default function ProfilePage() {
   const [profileInsight, setProfileInsight] = useState<string | null>(null)
   const [generatingInsight, setGeneratingInsight] = useState(false)
   const [session, setSession] = useState<Awaited<ReturnType<typeof getUserSession>> | null>(null)
+  const [profileCompletedAt, setProfileCompletedAt] = useState<string | null>(null)
 
   const masterSwitchEligible =
     Boolean(session?.user?.email) && isDevProfileMasterSwitchEmail(session?.user?.email)
@@ -186,6 +201,7 @@ export default function ProfilePage() {
           setFounderPersonalityOther((data.founder_personality_other as string) || '')
           setEmailDigest((data.email_digest as boolean) ?? true)
           setNotificationFrequency((data.notification_frequency as string) || 'daily')
+          setProfileCompletedAt((data.profile_completed_at as string) || null)
           {
             const ov = String((data as { subscription_override?: string }).subscription_override ?? 'none')
               .trim()
@@ -355,6 +371,9 @@ export default function ProfilePage() {
       }
 
       setMessage({ type: 'success', text: 'Profile saved successfully!' })
+      if (completedCount >= 6) {
+        setProfileCompletedAt(new Date().toISOString())
+      }
       setTimeout(() => setMessage(null), 3000)
       trackEvent('profile_updated', { completion_count: completedCount })
       
@@ -425,6 +444,10 @@ export default function ProfilePage() {
   }
 
   const lang = getUserLanguage(primaryGoal)
+
+  const dossierStatusLine = profileCompletedAt
+    ? 'STATUS // CORESYSTEM ONBOARDED'
+    : 'STATUS // MAPPING IN PROGRESS'
 
   const generateProfileInsight = async () => {
     setGeneratingInsight(true)
@@ -520,41 +543,10 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 dark:text-white flex items-center gap-3">
-          <FileText className="w-8 h-8 text-[#ef725c]" />
-          Your Founder Profile
-        </h1>
-        <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-2">
-          Mrs. Deer, your AI companion gets to know you better
-        </p>
-        {primaryGoal && (
-          <div className="mt-4 flex items-center gap-2">
-            <span className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">Current goal:</span>
-            <span className="px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 rounded-lg text-sm font-medium">
-              {lang.dashboardTitle}
-            </span>
-            <Link
-              href="/settings"
-              className="text-sm text-[#ef725c] hover:underline flex items-center gap-1"
-            >
-              <Edit2 className="w-3 h-3" />
-              Change
-            </Link>
-          </div>
-        )}
-        <div className="mt-2">
-          <Link
-            href="/feedback"
-            className="text-sm text-[#ef725c] hover:underline flex items-center gap-1 inline-flex"
-          >
-            <MessageSquare className="w-3 h-3" />
-            Give Feedback
-          </Link>
-        </div>
-      </div>
+    <div className="mx-auto max-w-6xl px-4 py-8">
+      <p className="mb-6 text-sm italic text-gray-600 dark:text-gray-400">
+        Mrs. Deer uses this dossier as your private founder context — not a generic settings form.
+      </p>
 
       {/* Mrs. Deer, your AI companion Profile Insight (permanent, always shown if exists) */}
       {profileInsight && (
@@ -569,86 +561,55 @@ export default function ProfilePage() {
       )}
 
       {generatingInsight && (
-        <div className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-[#1A202C] dark:to-[#1A202C] rounded-xl shadow-lg p-6 mb-6 border border-amber-200 dark:border-amber-500/40">
-          <div className="flex items-center gap-3">
-            <Sparkles className="w-5 h-5 text-amber-600 dark:text-amber-300 animate-pulse" />
-            <p className="text-gray-700 dark:text-gray-300 dark:text-gray-300">
-              Mrs. Deer, your AI companion is reflecting on your profile...
+        <div className={cn(morningInsightSurfaceClassName, 'mb-8')}>
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <Sparkles className="h-5 w-5 shrink-0" style={{ color: '#FBBF24' }} aria-hidden />
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+              Profile Insight
+            </span>
+          </div>
+          <div
+            className={morningInsightStreamingBannerClassName}
+            role="status"
+            aria-live="polite"
+          >
+            <p className="text-sm font-medium text-amber-950/90 dark:text-amber-100">
+              Mrs. Deer is reflecting on your dossier…
             </p>
+            <p className="mt-0.5 text-xs text-amber-800/80 dark:text-amber-200/75">
+              Profile saved — your insight will appear here shortly.
+            </p>
+            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-amber-200/80 dark:bg-amber-900/50">
+              <div className="h-full w-2/5 animate-pulse rounded-full bg-[#ef725c]/70 dark:bg-[#f0886c]/60" />
+            </div>
           </div>
         </div>
       )}
 
-      {/* Basic Info Section */}
-      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white mb-6">
-          Basic Info
-        </h2>
-        <div className="space-y-4">
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              Your name <span className="text-[#ef725c]">*</span>
-            </label>
-            <SpeechToTextInput
-              type="text"
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Alex Chen"
-              required
-              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
-              This is how Mrs. Deer, your AI companion will greet you
-            </p>
-          </div>
-          
-          <div>
-            <label htmlFor="preferred_name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              What should I call you? (optional)
-            </label>
-            <SpeechToTextInput
-              type="text"
-              id="preferred_name"
-              value={preferredName}
-              onChange={(e) => setPreferredName(e.target.value)}
-              placeholder="e.g., Alex, Al, or leave blank to use your name"
-              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
-              A nickname or preferred name Mrs. Deer, your AI companion can use instead
-            </p>
-          </div>
-          
-          <div>
-            <label htmlFor="company_name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              Company name (optional)
-            </label>
-            <SpeechToTextInput
-              type="text"
-              id="company_name"
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-              placeholder="e.g., Acme Studios"
-              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
-            />
-          </div>
-        </div>
-      </div>
+      <ProfileIdentityHeader
+        name={name}
+        onNameChange={setName}
+        preferredName={preferredName}
+        onPreferredNameChange={setPreferredName}
+        companyName={companyName}
+        onCompanyNameChange={setCompanyName}
+        email={session?.user?.email}
+        statusLine={dossierStatusLine}
+        primaryGoal={primaryGoal}
+        dashboardTitle={lang.dashboardTitle}
+        progressText={progressText}
+      />
 
-      {/* Your Founder Story */}
-      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
-        <div className="flex items-center gap-3 mb-6">
-          <FileText className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">
-            Your Founder Story
-          </h2>
-        </div>
-
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 items-start gap-10 lg:grid-cols-2">
+        <ProfileBlueprintCard
+          variant="strategic"
+          pillarLabel="Strategic anchors"
+          title="Long-term context"
+          aria-labelledby="profile-strategic"
+        >
           <div>
-            <label htmlFor="primary-goal-text" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              In two sentences, what's your primary goal right now?
+            <label htmlFor="primary-goal-text" className={profileDossierLabelClassName}>
+              Core intentions
             </label>
             <SpeechToTextInput
               as="textarea"
@@ -658,14 +619,14 @@ export default function ProfilePage() {
               placeholder="I'm building a SaaS for creators and trying to figure out pricing..."
               maxLength={280}
               rows={3}
-              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent resize-none text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
+              className={cn(profileDossierInputClassName, 'resize-none')}
             />
-            <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">{primaryGoalText.length}/280 characters</p>
+            <p className={profileDossierHintClassName}>{primaryGoalText.length}/280 characters</p>
           </div>
 
           <div>
-            <label htmlFor="destress" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              What do you do to decompress or destress?
+            <label htmlFor="destress" className={profileDossierLabelClassName}>
+              About you — decompression
             </label>
             <SpeechToTextInput
               as="textarea"
@@ -674,118 +635,86 @@ export default function ProfilePage() {
               onChange={(e) => setDestressActivity(e.target.value)}
               placeholder="I run, play guitar, or cook something complicated..."
               rows={2}
-              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent resize-none text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
+              className={cn(profileDossierInputClassName, 'resize-none')}
             />
           </div>
-        </div>
-      </div>
 
-      {/* A Little About You */}
-      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Sparkles className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">
-              A Little About You
-            </h2>
-            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-1">
-              Helps Mrs. Deer, your AI companion understand you as a whole person, not just a founder.
+            <label className={profileDossierLabelClassName}>
+              About you — hobbies {'&'} life outside work
+            </label>
+            <p className="mb-3 text-sm text-slate-600 dark:text-slate-400">
+              Helps Mrs. Deer understand you as a whole person, not just a founder.
             </p>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-3">
-            What are your hobbies or interests outside of work? (check all that apply)
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-4">
-            {HOBBY_OPTIONS.map((hobby) => (
-              <button
-                key={hobby.value}
-                type="button"
-                onClick={() => toggleHobby(hobby.value)}
-                className={`p-3 rounded-lg border-2 transition-all text-left ${
-                  hobbies.includes(hobby.value)
-                    ? 'border-[#ef725c] bg-amber-50 dark:bg-amber-900/20'
-                    : 'border-gray-200 dark:border-gray-700 dark:border-gray-700 hover:border-gray-300 dark:border-gray-600'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">{hobby.emoji}</span>
-                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100 dark:text-white">
-                    {hobby.label}
-                  </span>
-                  {hobbies.includes(hobby.value) && (
-                    <Check className="w-4 h-4 text-[#ef725c] ml-auto" />
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-          <div className="mt-4">
-            <label htmlFor="hobbies-other" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              Something else? Tell us:
+            <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-2">
+              {HOBBY_OPTIONS.map((hobby) => {
+                const selected = hobbies.includes(hobby.value)
+                return (
+                  <button
+                    key={hobby.value}
+                    type="button"
+                    onClick={() => toggleHobby(hobby.value)}
+                    className={profileDossierChipClassName(selected)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{hobby.emoji}</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{hobby.label}</span>
+                      {selected ? <Check className="ml-auto h-4 w-4 text-slate-900 dark:text-slate-100" /> : null}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            <label htmlFor="hobbies-other" className={profileDossierLabelClassName}>
+              Other interests
             </label>
             <SpeechToTextInput
               id="hobbies-other"
               type="text"
               value={hobbiesOther}
               onChange={(e) => setHobbiesOther(e.target.value)}
-              placeholder="e.g., Photography, Chess, Surfing..."
-              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
+              placeholder="Photography, chess, surfing…"
+              className={profileDossierInputClassName}
             />
           </div>
-          
-          {/* Message to Mrs. Deer, your AI companion */}
-          <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 dark:border-gray-700">
-            <label htmlFor="message-mrs-deer" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              Is there anything else you'd like Mrs. Deer, your AI companion to know about you?
+
+          <div className="border-t border-slate-200/60 pt-6 dark:border-slate-700/60">
+            <label htmlFor="message-mrs-deer" className={profileDossierLabelClassName}>
+              Message to Mrs. Deer
             </label>
             <SpeechToTextInput
               as="textarea"
               id="message-mrs-deer"
               value={messageToMrsDeer}
               onChange={(e) => setMessageToMrsDeer(e.target.value)}
-              placeholder="I'm building this because... I struggle with... I'm excited about... I'd love her to know that I..."
+              placeholder={"I'm building this because… I struggle with… I'd love her to know…"}
               maxLength={500}
               rows={5}
-              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent resize-none text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
+              className={cn(profileDossierInputClassName, 'resize-none')}
             />
-            <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
-              {messageToMrsDeer.length}/500 characters • This helps Mrs. Deer, your AI companion understand you as a whole person. Share whatever feels right.
+            <p className={profileDossierHintClassName}>
+              {messageToMrsDeer.length}/500 characters
             </p>
           </div>
-        </div>
-      </div>
+        </ProfileBlueprintCard>
 
-      {/* Unlock Deeper Insights */}
-      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Sparkles className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">
-              Unlock Deeper Insights
-            </h2>
-            <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300 mt-1">
-              Answer a few more questions to get even more personalized coaching.
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400 mt-1">
-              {progressText}
-            </p>
-          </div>
-        </div>
+        <ProfileBlueprintCard
+          variant="operational"
+          pillarLabel="Operational parameters"
+          title="Weekly guardrails"
+          aria-labelledby="profile-operational"
+        >
+          <p className="text-sm text-slate-600 dark:text-slate-400">{progressText}</p>
 
-        <div className="space-y-6">
-          {/* Startup Stage */}
           <div>
-            <label htmlFor="founder-stage" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              Startup Stage
+            <label htmlFor="founder-stage" className={profileDossierLabelClassName}>
+              Work schedule — startup stage
             </label>
             <select
               id="founder-stage"
               value={founderStage}
               onChange={(e) => setFounderStage(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
+              className={profileDossierInputClassName}
             >
               <option value="">Select stage...</option>
               {STAGE_OPTIONS.map((opt) => (
@@ -800,21 +729,20 @@ export default function ProfilePage() {
                 value={founderStageOther}
                 onChange={(e) => setFounderStageOther(e.target.value)}
                 placeholder="Please specify..."
-                className="w-full mt-2 px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
+                className={cn(profileDossierInputClassName, 'mt-2')}
               />
             )}
           </div>
 
-          {/* Primary Role */}
           <div>
-            <label htmlFor="primary-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              Primary Role
+            <label htmlFor="primary-role" className={profileDossierLabelClassName}>
+              Work schedule — primary role
             </label>
             <select
               id="primary-role"
               value={primaryRole}
               onChange={(e) => setPrimaryRole(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
+              className={profileDossierInputClassName}
             >
               <option value="">Select role...</option>
               {ROLE_OPTIONS.map((opt) => (
@@ -829,21 +757,20 @@ export default function ProfilePage() {
                 value={primaryRoleOther}
                 onChange={(e) => setPrimaryRoleOther(e.target.value)}
                 placeholder="Please specify..."
-                className="w-full mt-2 px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
+                className={cn(profileDossierInputClassName, 'mt-2')}
               />
             )}
           </div>
 
-          {/* Weekly Hours */}
           <div>
-            <label htmlFor="weekly-hours" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              Weekly Hours
+            <label htmlFor="weekly-hours" className={profileDossierLabelClassName}>
+              Work schedule — weekly hours
             </label>
             <select
               id="weekly-hours"
               value={weeklyHours}
               onChange={(e) => setWeeklyHours(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
+              className={profileDossierInputClassName}
             >
               <option value="">Select hours...</option>
               {HOURS_OPTIONS.map((opt) => (
@@ -854,12 +781,11 @@ export default function ProfilePage() {
             </select>
           </div>
 
-          {/* Biggest Struggles */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              Biggest Struggles (select all that apply)
+            <label className={profileDossierLabelClassName}>
+              Guardrails — biggest struggles
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <div className="mb-4 grid grid-cols-2 gap-3">
               {founderStruggles.map((struggle) => {
                 const Icon = struggle.icon
                 const isSelected = struggles.includes(struggle.id)
@@ -868,50 +794,46 @@ export default function ProfilePage() {
                     key={struggle.id}
                     type="button"
                     onClick={() => toggleStruggle(struggle.id)}
-                    className={`p-3 rounded-lg border-2 transition-all text-left ${
-                      isSelected
-                        ? 'border-[#ef725c] bg-amber-50 dark:bg-amber-900/20'
-                        : 'border-gray-200 dark:border-gray-700 dark:border-gray-700 hover:border-gray-300 dark:border-gray-600'
-                    }`}
+                    className={profileDossierChipClassName(isSelected)}
                   >
                     <div className="flex items-center gap-2">
-                      <Icon className={`w-5 h-5 flex-shrink-0 ${isSelected ? 'text-[#ef725c]' : 'text-gray-400'}`} />
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 dark:text-white">
-                        {struggle.label}
-                      </span>
-                      {isSelected && (
-                        <Check className="w-4 h-4 text-[#ef725c] ml-auto" />
-                      )}
+                      <Icon
+                        className={cn(
+                          'h-5 w-5 shrink-0',
+                          isSelected ? 'text-slate-900 dark:text-slate-100' : 'text-gray-400',
+                        )}
+                      />
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{struggle.label}</span>
+                      {isSelected ? (
+                        <Check className="ml-auto h-4 w-4 text-slate-900 dark:text-slate-100" />
+                      ) : null}
                     </div>
                   </button>
                 )
               })}
             </div>
-            <div className="mt-4">
-              <label htmlFor="struggles-other" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-                Other struggle not listed?
-              </label>
-              <SpeechToTextInput
-                id="struggles-other"
-                type="text"
-                value={strugglesOther}
-                onChange={(e) => setStrugglesOther(e.target.value)}
-                placeholder="Tell us about it..."
-                className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
-              />
-            </div>
+            <label htmlFor="struggles-other" className={profileDossierLabelClassName}>
+              Other struggle
+            </label>
+            <SpeechToTextInput
+              id="struggles-other"
+              type="text"
+              value={strugglesOther}
+              onChange={(e) => setStrugglesOther(e.target.value)}
+              placeholder="Tell us about it…"
+              className={profileDossierInputClassName}
+            />
           </div>
 
-          {/* Years as Founder */}
           <div>
-            <label htmlFor="years-founder" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              Years as Founder
+            <label htmlFor="years-founder" className={profileDossierLabelClassName}>
+              Founder tenure
             </label>
             <select
               id="years-founder"
               value={yearsAsFounder}
               onChange={(e) => setYearsAsFounder(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
+              className={profileDossierInputClassName}
             >
               <option value="">Select years...</option>
               {YEARS_OPTIONS.map((opt) => (
@@ -922,16 +844,15 @@ export default function ProfilePage() {
             </select>
           </div>
 
-          {/* Founder Personality */}
           <div>
-            <label htmlFor="founder-personality" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              Founder Personality (Fun)
+            <label htmlFor="founder-personality" className={profileDossierLabelClassName}>
+              Founder personality
             </label>
             <select
               id="founder-personality"
               value={founderPersonality}
               onChange={(e) => setFounderPersonality(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
+              className={profileDossierInputClassName}
             >
               <option value="">Select personality...</option>
               {PERSONALITY_OPTIONS.map((opt) => (
@@ -946,52 +867,31 @@ export default function ProfilePage() {
                 value={founderPersonalityOther}
                 onChange={(e) => setFounderPersonalityOther(e.target.value)}
                 placeholder="Describe your style..."
-                className="w-full mt-2 px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
+                className={cn(profileDossierInputClassName, 'mt-2')}
               />
             )}
           </div>
-        </div>
-      </div>
 
-      {/* Preferences */}
-      <div className="bg-white dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Settings className="w-6 h-6 text-gray-900 dark:text-gray-100 dark:text-white" />
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 dark:text-white">
-            Preferences
-          </h2>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 dark:text-white">Email Digest</h3>
-              <p className="text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">Receive weekly summary emails</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setEmailDigest(!emailDigest)}
-              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-                emailDigest ? 'bg-[#ef725c]' : 'bg-gray-200'
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-gray-800 dark:bg-gray-800 shadow ring-0 transition ${
-                  emailDigest ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
-            </button>
+          <div className="border-t border-slate-200/60 pt-6 dark:border-slate-700/60">
+            <p className={profileDossierLabelClassName}>Notification matrix</p>
+            <ProfileMonoPillToggle
+              id="email-digest"
+              enabled={emailDigest}
+              onToggle={() => setEmailDigest(!emailDigest)}
+              label="Email digest"
+              description="Weekly summary emails from Mrs. Deer"
+            />
           </div>
 
           <div>
-            <label htmlFor="notification-frequency" className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
-              Notification Frequency
+            <label htmlFor="notification-frequency" className={profileDossierLabelClassName}>
+              Notification frequency
             </label>
             <select
               id="notification-frequency"
               value={notificationFrequency}
               onChange={(e) => setNotificationFrequency(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-[#ef725c] focus:border-transparent text-gray-900 dark:text-gray-100 dark:text-white bg-white dark:bg-gray-800 dark:bg-gray-800"
+              className={profileDossierInputClassName}
             >
               <option value="daily">Daily</option>
               <option value="weekly">Weekly</option>
@@ -999,16 +899,16 @@ export default function ProfilePage() {
             </select>
           </div>
 
-          <div className="pt-4 border-t border-gray-200 dark:border-gray-700 dark:border-gray-700">
+          <div className="border-t border-slate-200/60 pt-4 dark:border-slate-700/60">
             <Link
               href="/settings/timezone"
-              className="flex items-center gap-2 text-sm text-[#ef725c] hover:underline"
+              className="inline-flex items-center gap-2 font-mono text-xs tracking-wider text-[#ef725c] uppercase hover:underline"
             >
-              <Clock className="w-4 h-4" />
-              Manage Timezone Settings
+              <Clock className="h-4 w-4" />
+              Timezone settings
             </Link>
           </div>
-        </div>
+        </ProfileBlueprintCard>
       </div>
 
       {/* User ID (read-only) */}
