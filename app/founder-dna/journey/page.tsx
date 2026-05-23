@@ -4,6 +4,7 @@ import { FounderDnaJourneySections } from '@/components/founder-dna/FounderDnaJo
 export default function FounderDnaJourneyPage() {
   return (
     <FounderDnaPageShell
+      wide
       title="Journey"
       description="Badges, unlock timing, and lifetime totals from your founder rhythm."
     >

@@ -10,7 +10,7 @@ import { founderDnaBlueprintCardStyle } from '@/lib/founder-dna/founder-dna-blue
 import { cn } from '@/components/ui/utils'
 
 type ArchetypeEditorialCardProps = {
-  as?: 'article' | 'div' | 'section'
+  as?: 'article' | 'div' | 'section' | 'nav'
   children: ReactNode
   innerClassName?: string
   /** Defaults to archetype indigo/purple ring; Patterns uses lighter thread. */
