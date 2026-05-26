@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2, AlertTriangle, Lock } from 'lucide-react'
 import { DnaInsightBlock } from '@/components/founder-dna/DnaInsightBlock'
+import { InsightPeriodTeaserLock } from '@/components/insights/InsightPeriodTeaserLock'
 import { usePrimaryArchetypeName } from '@/lib/hooks/usePrimaryArchetypeName'
 import { patternModuleSurfaceClass } from '@/lib/founder-dna/pattern-card-surface'
 import { cn } from '@/components/ui/utils'
@@ -33,9 +34,17 @@ type LockedResponse = {
 
 type PostponementPatternsCardProps = {
   embedded?: boolean
+  proInsightLocked?: boolean
+  insightTeaserMessage?: string
+  onUpgradeClick?: () => void
 }
 
-export function PostponementPatternsCard({ embedded = false }: PostponementPatternsCardProps) {
+export function PostponementPatternsCard({
+  embedded = false,
+  proInsightLocked = false,
+  insightTeaserMessage,
+  onUpgradeClick,
+}: PostponementPatternsCardProps) {
   const shell = (extra?: string) =>
     cn(patternModuleSurfaceClass(embedded), embedded ? extra : cn('p-4', extra))
   const currentArchetype = usePrimaryArchetypeName()
@@ -144,12 +153,22 @@ export function PostponementPatternsCard({ embedded = false }: PostponementPatte
         {!embedded ? (
           <div className="text-sm font-semibold text-gray-900 dark:text-white mb-3">⏳ Postponement Patterns</div>
         ) : null}
-        <DnaInsightBlock
-          description={data.insight}
-          kind="postponement"
-          morningIntent="postponement"
-          currentArchetype={currentArchetype}
-        />
+        {proInsightLocked && insightTeaserMessage ? (
+          <InsightPeriodTeaserLock
+            message={insightTeaserMessage}
+            markdown
+            ctaHeadingId="patterns-postponement-insight-pro-cta"
+            ctaDescription="Pro unlocks Mrs. Deer’s read on what your postponements are signaling."
+            onUpgradeClick={onUpgradeClick}
+          />
+        ) : (
+          <DnaInsightBlock
+            description={data.insight}
+            kind="postponement"
+            morningIntent="postponement"
+            currentArchetype={currentArchetype}
+          />
+        )}
       </div>
 
       <div className="space-y-2">

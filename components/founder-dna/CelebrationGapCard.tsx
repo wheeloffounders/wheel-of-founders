@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { AlertTriangle, Loader2, Lock } from 'lucide-react'
+import { InsightPeriodTeaserLock } from '@/components/insights/InsightPeriodTeaserLock'
 import { colors } from '@/lib/design-tokens'
 import type { CelebrationGapResponse } from '@/lib/types/founder-dna'
 import { CELEBRATION_GAP_MIN_DAYS } from '@/lib/founder-dna/unlock-schedule-config'
@@ -24,7 +25,18 @@ function formatLessonDate(iso: string): string {
   })
 }
 
-export function CelebrationGapCard() {
+type CelebrationGapCardProps = {
+  /** Freemium: lesson text visible; Mrs. Deer mirror locked. */
+  proMirrorLocked?: boolean
+  mirrorTeaserMessage?: string
+  onUpgradeClick?: () => void
+}
+
+export function CelebrationGapCard({
+  proMirrorLocked = false,
+  mirrorTeaserMessage,
+  onUpgradeClick,
+}: CelebrationGapCardProps = {}) {
   const [loading, setLoading] = useState(true)
   const [locked, setLocked] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -143,12 +155,32 @@ export function CelebrationGapCard() {
 
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wider text-[#ef725c] mb-2">What Mrs. Deer sees</h3>
-            <p className="text-sm text-gray-800 dark:text-gray-100 leading-relaxed whitespace-pre-line">{data.insight}</p>
+            {proMirrorLocked && mirrorTeaserMessage ? (
+              <InsightPeriodTeaserLock
+                message={mirrorTeaserMessage}
+                markdown
+                ctaHeadingId="rhythm-celebration-gap-pro-cta"
+                ctaDescription="Pro unlocks the hidden win Mrs. Deer sees inside your lesson — refreshed on your weekly rhythm."
+                onUpgradeClick={onUpgradeClick}
+              />
+            ) : (
+              <p className="text-sm text-gray-800 dark:text-gray-100 leading-relaxed whitespace-pre-line">{data.insight}</p>
+            )}
           </div>
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-white/40 dark:bg-gray-800/20 p-4">
-          <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed whitespace-pre-line">{data.insight}</p>
+          {proMirrorLocked && mirrorTeaserMessage ? (
+            <InsightPeriodTeaserLock
+              message={mirrorTeaserMessage}
+              markdown
+              ctaHeadingId="rhythm-celebration-gap-pro-cta"
+              ctaDescription="Pro unlocks the hidden win Mrs. Deer sees inside your lesson — refreshed on your weekly rhythm."
+              onUpgradeClick={onUpgradeClick}
+            />
+          ) : (
+            <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed whitespace-pre-line">{data.insight}</p>
+          )}
         </div>
       )}
 

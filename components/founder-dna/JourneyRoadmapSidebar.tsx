@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Loader2, Shield } from 'lucide-react'
+import { Loader2, Lock, Shield } from 'lucide-react'
 import { JourneyBlueprintCard } from '@/components/founder-dna/JourneyBlueprintCard'
 import type { JourneyWeekRecord } from '@/lib/founder-dna/journey-week-records'
 import type { FounderJourneyQueryState } from '@/lib/hooks/useFounderJourney'
@@ -15,6 +15,8 @@ type JourneyRoadmapSidebarProps = {
   selectedWeekStart: string | null
   onSelectWeek: (weekStart: string) => void
   resilienceDays: number | null
+  /** When true, nav shows week labels only (no AI titles from saved insights). */
+  weeklyNarrativeLocked?: boolean
 }
 
 export function JourneyRoadmapSidebar({
@@ -24,6 +26,7 @@ export function JourneyRoadmapSidebar({
   selectedWeekStart,
   onSelectWeek,
   resilienceDays,
+  weeklyNarrativeLocked = false,
 }: JourneyRoadmapSidebarProps) {
   const { data, loading } = journey
   const m = data?.milestones
@@ -96,8 +99,9 @@ export function JourneyRoadmapSidebar({
           </p>
         ) : (
           <ul className="max-h-[min(420px,50vh)] space-y-1 overflow-y-auto pr-1">
-            {weeks.map((w) => {
+            {weeks.map((w, i) => {
               const active = selectedWeekStart === w.weekStart
+              const chapterLocked = weeklyNarrativeLocked
               return (
                 <li key={w.weekStart}>
                   <button
@@ -115,7 +119,12 @@ export function JourneyRoadmapSidebar({
                         : 'text-slate-700 hover:bg-slate-100/80 dark:text-gray-200 dark:hover:bg-gray-800/50',
                     )}
                   >
-                    <span className="font-mono font-medium">Week {w.weekNumber}</span>
+                    <span className="flex items-center gap-1.5 font-mono font-medium">
+                      Week {w.weekNumber}
+                      {chapterLocked ? (
+                        <Lock className="h-3 w-3 shrink-0 text-[#ef725c]/90" aria-label="Pro chapter" />
+                      ) : null}
+                    </span>
                     <span className="mt-0.5 block truncate text-[11px] opacity-80">{w.themeTitle}</span>
                   </button>
                 </li>

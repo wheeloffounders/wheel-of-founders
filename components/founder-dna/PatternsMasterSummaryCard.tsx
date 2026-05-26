@@ -2,14 +2,25 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
+import { InsightPeriodTeaserLock } from '@/components/insights/InsightPeriodTeaserLock'
 import { PatternsBlueprintCard } from '@/components/founder-dna/PatternsBlueprintCard'
 import type { EnergyTrendsResponse } from '@/lib/types/founder-dna'
 
 const FALLBACK_SUMMARY =
   'Your reflections are building a picture of how you work, decide, and recover. As more evenings land here, Mrs. Deer will surface the macro cycles — what lifts your leverage and what quietly drains it.'
 
+type PatternsMasterSummaryCardProps = {
+  proSummaryLocked?: boolean
+  summaryTeaserMessage?: string
+  onUpgradeClick?: () => void
+}
+
 /** Full-width macro-trends anchor — synthesizes energy/mood insights when available. */
-export function PatternsMasterSummaryCard() {
+export function PatternsMasterSummaryCard({
+  proSummaryLocked = false,
+  summaryTeaserMessage,
+  onUpgradeClick,
+}: PatternsMasterSummaryCardProps = {}) {
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState(FALLBACK_SUMMARY)
 
@@ -66,6 +77,14 @@ export function PatternsMasterSummaryCard() {
           <Loader2 className="h-4 w-4 animate-spin text-[#ef725c]" aria-hidden />
           Reading your cycles…
         </div>
+      ) : proSummaryLocked && summaryTeaserMessage ? (
+        <InsightPeriodTeaserLock
+          message={summaryTeaserMessage}
+          markdown
+          ctaHeadingId="patterns-macro-summary-pro-cta"
+          ctaDescription="Pro unlocks Mrs. Deer’s macro read across your mood, energy, and decision patterns."
+          onUpgradeClick={onUpgradeClick}
+        />
       ) : (
         <p className="text-sm leading-relaxed text-slate-700 dark:text-gray-200">{body}</p>
       )}

@@ -6,7 +6,7 @@ export default function FounderDnaJourneyPage() {
     <FounderDnaPageShell
       wide
       title="Journey"
-      description="Badges, unlock timing, and lifetime totals from your founder rhythm."
+      description="Badges, unlock timing, and lifetime totals. Weekly Mrs. Deer letters are under Weekly Insight."
     >
       <FounderDnaJourneySections />
     </FounderDnaPageShell>

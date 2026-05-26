@@ -37,7 +37,7 @@ export function HistoryAccessGate({ user, children, date }: HistoryAccessGatePro
               🔒 Unlock Your Full History
             </h3>
             <p className="text-gray-700 dark:text-gray-300 mb-4">
-              Free tier shows last 2 days only. Entries older than{' '}
+              Free tier shows the last {features.viewableHistoryDays} days of your daily archive. Entries older than{' '}
               <strong>{format(cutoffDate, 'MMM d, yyyy')}</strong> are locked.
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-500 mb-6">

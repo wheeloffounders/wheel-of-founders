@@ -12,6 +12,7 @@ import {
 } from 'recharts'
 import { Loader2, Lock, AlertTriangle } from 'lucide-react'
 import { DnaInsightBlock } from '@/components/founder-dna/DnaInsightBlock'
+import { InsightPeriodTeaserLock } from '@/components/insights/InsightPeriodTeaserLock'
 import type { EnergyMoodInsightType, EnergyTrendsResponse } from '@/lib/types/founder-dna'
 import type { InsightPresentationKind } from '@/lib/founder-dna/insight-card-presentation'
 import { usePrimaryArchetypeName } from '@/lib/hooks/usePrimaryArchetypeName'
@@ -23,6 +24,9 @@ type Point = { date: string; mood: number; energy: number }
 
 type EnergyMoodChartProps = {
   embedded?: boolean
+  proInsightsLocked?: boolean
+  insightsTeaserMessage?: string
+  onUpgradeClick?: () => void
 }
 
 function energyInsightKind(t: EnergyMoodInsightType): InsightPresentationKind {
@@ -62,7 +66,12 @@ function TooltipContent({
   )
 }
 
-export function EnergyMoodChart({ embedded = false }: EnergyMoodChartProps) {
+export function EnergyMoodChart({
+  embedded = false,
+  proInsightsLocked = false,
+  insightsTeaserMessage,
+  onUpgradeClick,
+}: EnergyMoodChartProps) {
   const shell = (extra?: string) =>
     cn(patternModuleSurfaceClass(embedded), embedded ? extra : cn('p-4', extra))
   const currentArchetype = usePrimaryArchetypeName()
@@ -247,22 +256,32 @@ export function EnergyMoodChart({ embedded = false }: EnergyMoodChartProps) {
         </ResponsiveContainer>
       </div>
 
-      {insights.length > 0 ? (
+      {insights.length > 0 || (proInsightsLocked && insightsTeaserMessage) ? (
         <div className="mt-4 border-t border-gray-200/80 dark:border-gray-700/80 pt-4">
           <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
             Mrs. Deer&apos;s observations
           </div>
-          <div className="space-y-3">
-            {insights.map((insight, i) => (
-              <DnaInsightBlock
-                key={`${insight.type}-${i}-${insight.description.slice(0, 24)}`}
-                description={insight.description}
-                kind={energyInsightKind(insight.type)}
-                morningIntent="energy"
-                currentArchetype={currentArchetype}
-              />
-            ))}
-          </div>
+          {proInsightsLocked && insightsTeaserMessage ? (
+            <InsightPeriodTeaserLock
+              message={insightsTeaserMessage}
+              markdown
+              ctaHeadingId="patterns-energy-insights-pro-cta"
+              ctaDescription="Pro unlocks gentle reads tied to your mood and energy chart."
+              onUpgradeClick={onUpgradeClick}
+            />
+          ) : (
+            <div className="space-y-3">
+              {insights.map((insight, i) => (
+                <DnaInsightBlock
+                  key={`${insight.type}-${i}-${insight.description.slice(0, 24)}`}
+                  description={insight.description}
+                  kind={energyInsightKind(insight.type)}
+                  morningIntent="energy"
+                  currentArchetype={currentArchetype}
+                />
+              ))}
+            </div>
+          )}
         </div>
       ) : null}
     </div>

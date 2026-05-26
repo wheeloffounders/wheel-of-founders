@@ -9,9 +9,17 @@ type JourneyHistoryBentoGridProps = {
   weeks: JourneyWeekRecord[]
   loading: boolean
   error: string | null
+  weeklyNarrativeLocked?: boolean
+  onOpenWeek?: (weekStart: string) => void
 }
 
-export function JourneyHistoryBentoGrid({ weeks, loading, error }: JourneyHistoryBentoGridProps) {
+export function JourneyHistoryBentoGrid({
+  weeks,
+  loading,
+  error,
+  weeklyNarrativeLocked = false,
+  onOpenWeek,
+}: JourneyHistoryBentoGridProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-2 py-20 text-sm text-slate-500">
@@ -32,7 +40,7 @@ export function JourneyHistoryBentoGrid({ weeks, loading, error }: JourneyHistor
   if (weeks.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-slate-300/80 px-6 py-12 text-center text-sm text-slate-600 dark:border-slate-600 dark:text-gray-300">
-        Your weekly chapters will appear here once Mrs. Deer has saved at least one completed week insight.
+        Your past chapters will appear here once Mrs. Deer has saved at least one weekly insight.
       </p>
     )
   }
@@ -40,7 +48,13 @@ export function JourneyHistoryBentoGrid({ weeks, loading, error }: JourneyHistor
   return (
     <div className={journeyBentoGridClassName}>
       {weeks.map((record, i) => (
-        <JourneyWeekBentoCard key={record.weekStart} record={record} accentIndex={i} />
+        <JourneyWeekBentoCard
+          key={record.weekStart}
+          record={record}
+          accentIndex={i}
+          weeklyNarrativeLocked={weeklyNarrativeLocked}
+          onOpenWeek={onOpenWeek}
+        />
       ))}
     </div>
   )

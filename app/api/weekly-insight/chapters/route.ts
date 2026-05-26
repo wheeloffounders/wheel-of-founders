@@ -3,7 +3,6 @@ import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { loadWeeklyInsightChapters } from '@/lib/founder-dna/load-weekly-insight-chapters'
 
-/** @deprecated Use GET /api/weekly-insight/chapters */
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
@@ -19,7 +18,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ weeks, daysWithEntries })
   } catch (err) {
-    console.error('[founder-dna/journey/weeks] error', err)
-    return NextResponse.json({ error: 'Failed to load journey weeks' }, { status: 500 })
+    console.error('[weekly-insight/chapters] error', err)
+    return NextResponse.json({ error: 'Failed to load weekly chapters' }, { status: 500 })
   }
 }

@@ -11,3 +11,13 @@ The quiet wins matter as much as the needle movers: showing up on fragmented day
 Below the surface, your evenings and wins tell a story about pace, patience, and what you're building alongside home life.
 
 Pro unlocks the full synthesis—how startup metrics, daily mood, and parenting milestones connect into patterns you can act on next week.`
+
+export const FREEMIUM_WEEKLY_TRANSFORMATION_PLACEHOLDER = `Before: Scattered days where fires ate the morning before needle movers had a chance.
+
+Now: Clearer rhythm with wins that reflect both startup momentum and family presence.
+
+Before: Lessons logged but not connected—hard to see what was actually changing.
+
+Now: Patterns across evenings show where discipline and self-care moved the needle.
+
+Pro unlocks AI-parsed before → after pairs from your real wins and lessons—not just keyword guesses.`

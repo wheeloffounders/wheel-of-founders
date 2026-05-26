@@ -11,6 +11,7 @@ import { getDaysWithEntries } from '@/lib/founder-dna/days-with-entries'
 import { SCHEDULE_UNSEEN_WINS_DAY } from '@/lib/founder-dna/unlock-schedule-config'
 import { TrendingUp, Loader2, Lock } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import { InsightPeriodTeaserLock } from '@/components/insights/InsightPeriodTeaserLock'
 
 type PatternBuildingProps = {
   /** When false, omit the in-card “Unseen Wins” title (page already has a section heading). Default true. */
@@ -22,6 +23,10 @@ type PatternBuildingProps = {
   rhythmGatedUnlock?: boolean
   /** Inside RhythmBlueprintCard — skip blue outer shell. */
   embedded?: boolean
+  /** Freemium: skip AI refresh; show teaser instead of pattern body. */
+  proPatternLocked?: boolean
+  patternTeaserMessage?: string
+  onUpgradeClick?: () => void
 }
 
 const patternSurfaceClass = (embedded: boolean) =>
@@ -33,6 +38,9 @@ export function PatternBuilding({
   showCardHeading = true,
   rhythmGatedUnlock = false,
   embedded = false,
+  proPatternLocked = false,
+  patternTeaserMessage,
+  onUpgradeClick,
 }: PatternBuildingProps) {
   const [pattern, setPattern] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -99,7 +107,7 @@ export function PatternBuilding({
     }
 
     run()
-  }, [rhythmGatedUnlock])
+  }, [rhythmGatedUnlock, proPatternLocked])
 
   const shellClass = `${patternSurfaceClass(embedded)} ${embedded ? 'p-1' : 'p-4 mb-4'}`
 
@@ -139,6 +147,26 @@ export function PatternBuilding({
           {daysRemaining > 0 ? ` (${daysRemaining} more day${daysRemaining === 1 ? '' : 's'}).` : '.'} Open Rhythm to
           generate your pattern.
         </p>
+      </div>
+    )
+  }
+
+  if (proPatternLocked && patternTeaserMessage) {
+    return (
+      <div className={shellClass}>
+        {showCardHeading ? (
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingUp className="w-4 h-4 text-[#ef725c] shrink-0" aria-hidden />
+            <h3 className="text-base font-semibold text-gray-900 dark:text-white">Unseen Wins</h3>
+          </div>
+        ) : null}
+        <InsightPeriodTeaserLock
+          message={patternTeaserMessage}
+          markdown
+          ctaHeadingId="rhythm-unseen-wins-pro-cta"
+          ctaDescription="Pro unlocks the full Unseen Wins narrative from your last fourteen days."
+          onUpgradeClick={onUpgradeClick}
+        />
       </div>
     )
   }

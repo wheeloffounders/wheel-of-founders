@@ -25,7 +25,7 @@ const pricingTiers: PricingTier[] = [
     features: [
       'Daily planning & journaling',
       'Basic stats',
-      'Last 2 days history view',
+      'Last 7 days history view',
       'Works on desktop & mobile',
     ],
     cta: 'Get Started',
@@ -226,7 +226,7 @@ export default function PricingPage() {
           <div>
             <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Can I export my data?</h3>
               <p className="text-gray-700 dark:text-gray-300 text-sm">
-                Yes! All tiers can export their data. Free users can export the last 2 days, while Pro users can export
+                Yes! All tiers can export their data. Free users can export the last 7 days, while Pro users can export
                 their full history.
               </p>
           </div>

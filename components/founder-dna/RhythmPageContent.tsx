@@ -1,11 +1,25 @@
 'use client'
 
+import { useEffect, useMemo, useState } from 'react'
 import { CelebrationGapCard } from '@/components/founder-dna/CelebrationGapCard'
 import { PatternBuilding } from '@/components/dashboard/PatternBuilding'
 import { YourStorySoFar } from '@/components/dashboard/YourStorySoFar'
 import { RhythmBlueprintCard } from '@/components/founder-dna/RhythmBlueprintCard'
 import { WeeklyArchetypeDriftCard } from '@/components/weekly/WeeklyArchetypeDriftCard'
 import { useWeeklyDriftMetrics } from '@/lib/hooks/useWeeklyDriftMetrics'
+import { isRhythmInsightFeatureLocked, type UserProfile } from '@/lib/features'
+import {
+  FREEMIUM_RHYTHM_ARCHETYPE_ALIGNMENT_PLACEHOLDER,
+  FREEMIUM_RHYTHM_CELEBRATION_GAP_PLACEHOLDER,
+  FREEMIUM_RHYTHM_STORY_INSIGHTS_PLACEHOLDER,
+  FREEMIUM_RHYTHM_UNSEEN_WINS_PLACEHOLDER,
+} from '@/lib/founder-dna/freemium-rhythm-placeholders'
+import {
+  fetchUserProfileBundle,
+  invalidateUserProfileBundle,
+  type MorningUserProfileBundle,
+} from '@/lib/user-profile-bundle-cache'
+import { useInsightUpgradeNavigation } from '@/lib/insights/use-insight-upgrade-navigation'
 import {
   rhythmPageGridClassName,
   rhythmPageLeftColumnClassName,
@@ -21,6 +35,21 @@ import {
 
 function hasFeature(unlocked: JourneyBadge[] | undefined, name: string): boolean {
   return unlocked?.some((f) => f.name === name) ?? false
+}
+
+function profileFromBundle(bundle: MorningUserProfileBundle | null): UserProfile {
+  return {
+    tier: bundle?.tier,
+    pro_features_enabled: bundle?.pro_features_enabled,
+    subscription_override: bundle?.subscription_override ?? null,
+    subscription_tier: bundle?.subscription_tier ?? null,
+    is_beta_retired: bundle?.is_beta_retired ?? null,
+    is_beta: bundle?.is_beta ?? null,
+    trial_starts_at: bundle?.trial_starts_at ?? null,
+    trial_ends_at: bundle?.trial_ends_at ?? null,
+    stripe_subscription_status: bundle?.stripe_subscription_status ?? null,
+    created_at: bundle?.created_at ?? null,
+  }
 }
 
 const RHYTHM_FIRST_UNLOCK_PEEK =
@@ -118,7 +147,43 @@ function RhythmTeasersBlock({ teasers, variant }: { teasers: RhythmTeaser[]; var
 export function RhythmPageContent() {
   const { data, loading, error } = useFounderJourney()
   const weeklyDrift = useWeeklyDriftMetrics()
+  const [profileUser, setProfileUser] = useState<UserProfile | null>(null)
+  const openInsightUpgrade = useInsightUpgradeNavigation()
 
+  useEffect(() => {
+    let cancelled = false
+    const loadProfile = async () => {
+      const row = await fetchUserProfileBundle()
+      if (!cancelled) setProfileUser(profileFromBundle(row))
+    }
+    void loadProfile()
+    const onSim = () => {
+      invalidateUserProfileBundle()
+      void loadProfile()
+    }
+    window.addEventListener('wof-trial-sim-changed', onSim)
+    return () => {
+      cancelled = true
+      window.removeEventListener('wof-trial-sim-changed', onSim)
+    }
+  }, [])
+
+  const archetypeAlignmentLocked = useMemo(
+    () => isRhythmInsightFeatureLocked('archetype_alignment', profileUser),
+    [profileUser],
+  )
+  const storyInsightsLocked = useMemo(
+    () => isRhythmInsightFeatureLocked('story_insights', profileUser),
+    [profileUser],
+  )
+  const celebrationGapLocked = useMemo(
+    () => isRhythmInsightFeatureLocked('celebration_gap_mirror', profileUser),
+    [profileUser],
+  )
+  const unseenWinsLocked = useMemo(
+    () => isRhythmInsightFeatureLocked('unseen_wins_ai', profileUser),
+    [profileUser],
+  )
   if (loading && !data) {
     return <p className="text-sm text-gray-500 dark:text-gray-400 italic">Gathering your rhythm…</p>
   }
@@ -147,11 +212,16 @@ export function RhythmPageContent() {
   return (
     <>
       <p className="text-sm italic text-gray-600 dark:text-gray-400 mb-8">
-        Your rhythm updates every Tuesday — new insights, fresh patterns, and the wins you might have missed.
+        Below is where that lands — how your week fits your blueprint, the story in your wins, and the reflections still opening as you show up.
       </p>
 
       <div className="w-full mb-8">
-        <WeeklyArchetypeDriftCard {...weeklyDrift.metrics} />
+        <WeeklyArchetypeDriftCard
+          {...weeklyDrift.metrics}
+          narrativeLocked={archetypeAlignmentLocked}
+          narrativeTeaserMessage={FREEMIUM_RHYTHM_ARCHETYPE_ALIGNMENT_PLACEHOLDER}
+          onUpgradeClick={openInsightUpgrade}
+        />
       </div>
 
       <div className={rhythmPageGridClassName}>
@@ -189,7 +259,11 @@ export function RhythmPageContent() {
               titleId="rhythm-celebration-gap"
               titleEmoji="🪞"
             >
-              <CelebrationGapCard />
+              <CelebrationGapCard
+                proMirrorLocked={celebrationGapLocked}
+                mirrorTeaserMessage={FREEMIUM_RHYTHM_CELEBRATION_GAP_PLACEHOLDER}
+                onUpgradeClick={openInsightUpgrade}
+              />
             </RhythmBlueprintCard>
           ) : null}
 
@@ -201,7 +275,14 @@ export function RhythmPageContent() {
               titleId="rhythm-unseen"
               titleEmoji="✨"
             >
-              <PatternBuilding showCardHeading={false} rhythmGatedUnlock embedded />
+              <PatternBuilding
+                showCardHeading={false}
+                rhythmGatedUnlock
+                embedded
+                proPatternLocked={unseenWinsLocked}
+                patternTeaserMessage={FREEMIUM_RHYTHM_UNSEEN_WINS_PLACEHOLDER}
+                onUpgradeClick={openInsightUpgrade}
+              />
             </RhythmBlueprintCard>
           ) : null}
 

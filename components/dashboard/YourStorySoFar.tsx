@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Sparkles, Lock } from 'lucide-react'
+import { InsightPeriodTeaserLock } from '@/components/insights/InsightPeriodTeaserLock'
 import { SCHEDULE_STORY_SO_FAR_DAY } from '@/lib/founder-dna/unlock-schedule-config'
 import { YOUR_STORY_INSIGHT_FALLBACK, insightBodyForDisplay } from '@/lib/founder-dna/your-story-shared'
 
@@ -20,6 +21,10 @@ type YourStorySoFarProps = {
   showCardTitle?: boolean
   /** Inside RhythmBlueprintCard — skip colored outer shell. */
   embedded?: boolean
+  /** Freemium: wins visible; Mrs. Deer per-win insights locked. */
+  proInsightsLocked?: boolean
+  insightsTeaserMessage?: string
+  onUpgradeClick?: () => void
 }
 
 const storySurfaceClass = (embedded: boolean) =>
@@ -27,7 +32,13 @@ const storySurfaceClass = (embedded: boolean) =>
     ? 'rounded-lg'
     : 'bg-[#f0f5ee] dark:bg-gray-800 rounded-lg'
 
-export function YourStorySoFar({ showCardTitle = true, embedded = false }: YourStorySoFarProps) {
+export function YourStorySoFar({
+  showCardTitle = true,
+  embedded = false,
+  proInsightsLocked = false,
+  insightsTeaserMessage,
+  onUpgradeClick,
+}: YourStorySoFarProps) {
   const [wins, setWins] = useState<Win[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -131,14 +142,28 @@ export function YourStorySoFar({ showCardTitle = true, embedded = false }: YourS
                 <span className="text-gray-500 dark:text-gray-400 text-xs">{win.formattedDate}:</span>
                 <span className="text-gray-700 dark:text-gray-300 font-medium">&quot;{win.text}&quot;</span>
               </div>
-              <p className="text-[#ef725c] text-xs mt-1 leading-relaxed">
-                — Mrs. Deer: &quot;
-                {insightBodyForDisplay(win.mrsDeerInsight, YOUR_STORY_INSIGHT_FALLBACK)}&quot;
-              </p>
+              {!proInsightsLocked ? (
+                <p className="text-[#ef725c] text-xs mt-1 leading-relaxed">
+                  — Mrs. Deer: &quot;
+                  {insightBodyForDisplay(win.mrsDeerInsight, YOUR_STORY_INSIGHT_FALLBACK)}&quot;
+                </p>
+              ) : null}
             </div>
           </div>
         ))}
       </div>
+
+      {proInsightsLocked && insightsTeaserMessage ? (
+        <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">
+          <InsightPeriodTeaserLock
+            message={insightsTeaserMessage}
+            markdown
+            ctaHeadingId="rhythm-story-insights-pro-cta"
+            ctaDescription="Pro unlocks Mrs. Deer’s reflection under each win — how it connects to your founder and parent rhythm."
+            onUpgradeClick={onUpgradeClick}
+          />
+        </div>
+      ) : null}
 
       {totalCount > wins.length ? (
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 border-t border-gray-200 dark:border-gray-700 pt-3">

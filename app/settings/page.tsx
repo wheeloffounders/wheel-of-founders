@@ -598,7 +598,7 @@ export default function SettingsPage() {
           <p className="text-xs text-gray-500 dark:text-gray-500 dark:text-gray-400">
             {getFeatureAccess({ tier: userTier }).canViewFullHistory
               ? 'Your full history will be included in the export.'
-              : 'Free tier exports include the last 2 days only. Upgrade to export full history.'}
+              : `Free tier exports include the last ${getFeatureAccess({ tier: userTier }).viewableHistoryDays} days only. Upgrade to export full history.`}
           </p>
         </div>
       </div>

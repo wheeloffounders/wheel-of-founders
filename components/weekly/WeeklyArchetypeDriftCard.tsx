@@ -4,15 +4,26 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArchetypeEditorialCard } from '@/components/founder-dna/ArchetypeEditorialCard'
 import { rhythmLeftAccentClassName } from '@/lib/founder-dna/archetype-report-card-styles'
 import type { ArchetypeApiFullResponse, ArchetypeApiPreviewResponse } from '@/lib/types/founder-dna'
+import { InsightPeriodTeaserLock } from '@/components/insights/InsightPeriodTeaserLock'
 import {
   buildWeeklyArchetypeDriftSummary,
   computeWeeklyBlueprintMatch,
   type WeeklyArchetypeDriftMetrics,
 } from '@/lib/weekly/compute-weekly-archetype-drift'
 
-type WeeklyArchetypeDriftCardProps = WeeklyArchetypeDriftMetrics
+type WeeklyArchetypeDriftCardProps = WeeklyArchetypeDriftMetrics & {
+  /** Freemium: show match % but lock the narrative paragraph. */
+  narrativeLocked?: boolean
+  narrativeTeaserMessage?: string
+  onUpgradeClick?: () => void
+}
 
-export function WeeklyArchetypeDriftCard(props: WeeklyArchetypeDriftCardProps) {
+export function WeeklyArchetypeDriftCard({
+  narrativeLocked = false,
+  narrativeTeaserMessage,
+  onUpgradeClick,
+  ...metrics
+}: WeeklyArchetypeDriftCardProps) {
   const [primaryName, setPrimaryName] = useState<string | null>(null)
   const [primaryLabel, setPrimaryLabel] = useState<string | null>(null)
   const [archetypeLoading, setArchetypeLoading] = useState(true)
@@ -54,11 +65,11 @@ export function WeeklyArchetypeDriftCard(props: WeeklyArchetypeDriftCardProps) {
     [primaryName, primaryLabel],
   )
 
-  const matchPct = useMemo(() => computeWeeklyBlueprintMatch(props, archetype), [props, archetype])
+  const matchPct = useMemo(() => computeWeeklyBlueprintMatch(metrics, archetype), [metrics, archetype])
 
   const summary = useMemo(
-    () => buildWeeklyArchetypeDriftSummary(props, matchPct, archetype),
-    [props, matchPct, archetype],
+    () => buildWeeklyArchetypeDriftSummary(metrics, matchPct, archetype),
+    [metrics, matchPct, archetype],
   )
 
   return (
@@ -86,7 +97,19 @@ export function WeeklyArchetypeDriftCard(props: WeeklyArchetypeDriftCardProps) {
             <p className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
               {matchPct}% Blueprint Match
             </p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-gray-300">{summary}</p>
+            {narrativeLocked && narrativeTeaserMessage ? (
+              <div className="mt-3">
+                <InsightPeriodTeaserLock
+                  message={narrativeTeaserMessage}
+                  markdown
+                  ctaHeadingId="rhythm-archetype-alignment-pro-cta"
+                  ctaDescription="Pro unlocks how this week’s execution tracked your archetype — with specific days and next-week anchors."
+                  onUpgradeClick={onUpgradeClick}
+                />
+              </div>
+            ) : (
+              <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-gray-300">{summary}</p>
+            )}
           </>
         )}
       </div>

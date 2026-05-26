@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useMemo, useState } from 'react'
 import { DecisionStylePie } from '@/components/founder-dna/DecisionStylePie'
 import { PostponementPatternsCard } from '@/components/founder-dna/PostponementPatternsCard'
 import { EnergyMoodChart } from '@/components/founder-dna/EnergyMoodChart'
@@ -13,6 +14,20 @@ import {
 } from '@/components/founder-dna/patterns-page-layouts'
 import { CircleProgress } from '@/components/ui/CircleProgress'
 import { useFounderJourney } from '@/lib/hooks/useFounderJourney'
+import { isPatternsInsightFeatureLocked, type UserProfile } from '@/lib/features'
+import {
+  FREEMIUM_PATTERNS_DECISION_INSIGHT_PLACEHOLDER,
+  FREEMIUM_PATTERNS_ENERGY_INSIGHTS_PLACEHOLDER,
+  FREEMIUM_PATTERNS_MACRO_SUMMARY_PLACEHOLDER,
+  FREEMIUM_PATTERNS_POSTPONEMENT_INSIGHT_PLACEHOLDER,
+  FREEMIUM_PATTERNS_RECURRING_QUESTION_PLACEHOLDER,
+} from '@/lib/founder-dna/freemium-patterns-placeholders'
+import {
+  fetchUserProfileBundle,
+  invalidateUserProfileBundle,
+  type MorningUserProfileBundle,
+} from '@/lib/user-profile-bundle-cache'
+import { useInsightUpgradeNavigation } from '@/lib/insights/use-insight-upgrade-navigation'
 import type { JourneyBadge } from '@/lib/types/founder-dna'
 import {
   DECISION_STYLE_MIN_DAYS,
@@ -23,6 +38,21 @@ import {
 
 function hasFeature(unlocked: JourneyBadge[] | undefined, name: string): boolean {
   return unlocked?.some((f) => f.name === name) ?? false
+}
+
+function profileFromBundle(bundle: MorningUserProfileBundle | null): UserProfile {
+  return {
+    tier: bundle?.tier,
+    pro_features_enabled: bundle?.pro_features_enabled,
+    subscription_override: bundle?.subscription_override ?? null,
+    subscription_tier: bundle?.subscription_tier ?? null,
+    is_beta_retired: bundle?.is_beta_retired ?? null,
+    is_beta: bundle?.is_beta ?? null,
+    trial_starts_at: bundle?.trial_starts_at ?? null,
+    trial_ends_at: bundle?.trial_ends_at ?? null,
+    stripe_subscription_status: bundle?.stripe_subscription_status ?? null,
+    created_at: bundle?.created_at ?? null,
+  }
 }
 
 const PATTERNS_FIRST_UNLOCK_PEEK =
@@ -132,6 +162,47 @@ function PatternTeasersBlock({ teasers, variant }: { teasers: PatternTeaser[]; v
 
 export function PatternsPageContent() {
   const { data, loading, error } = useFounderJourney()
+  const [profileUser, setProfileUser] = useState<UserProfile | null>(null)
+  const openInsightUpgrade = useInsightUpgradeNavigation()
+
+  useEffect(() => {
+    let cancelled = false
+    const loadProfile = async () => {
+      const row = await fetchUserProfileBundle()
+      if (!cancelled) setProfileUser(profileFromBundle(row))
+    }
+    void loadProfile()
+    const onSim = () => {
+      invalidateUserProfileBundle()
+      void loadProfile()
+    }
+    window.addEventListener('wof-trial-sim-changed', onSim)
+    return () => {
+      cancelled = true
+      window.removeEventListener('wof-trial-sim-changed', onSim)
+    }
+  }, [])
+
+  const macroSummaryLocked = useMemo(
+    () => isPatternsInsightFeatureLocked('macro_summary', profileUser),
+    [profileUser],
+  )
+  const energyInsightsLocked = useMemo(
+    () => isPatternsInsightFeatureLocked('energy_insights', profileUser),
+    [profileUser],
+  )
+  const decisionInsightLocked = useMemo(
+    () => isPatternsInsightFeatureLocked('decision_insight', profileUser),
+    [profileUser],
+  )
+  const postponementInsightLocked = useMemo(
+    () => isPatternsInsightFeatureLocked('postponement_insight', profileUser),
+    [profileUser],
+  )
+  const recurringQuestionLocked = useMemo(
+    () => isPatternsInsightFeatureLocked('recurring_question_ai', profileUser),
+    [profileUser],
+  )
 
   if (loading && !data) {
     return <p className="text-sm text-gray-500 dark:text-gray-400 italic">Gathering your patterns…</p>
@@ -203,7 +274,11 @@ export function PatternsPageContent() {
       {hasMainSections ? (
         <>
           <div className="w-full mb-8">
-            <PatternsMasterSummaryCard />
+            <PatternsMasterSummaryCard
+              proSummaryLocked={macroSummaryLocked}
+              summaryTeaserMessage={FREEMIUM_PATTERNS_MACRO_SUMMARY_PLACEHOLDER}
+              onUpgradeClick={openInsightUpgrade}
+            />
           </div>
 
           <div className={patternsPageGridClassName}>
@@ -216,7 +291,12 @@ export function PatternsPageContent() {
                   titleId="patterns-deep-work"
                   titleEmoji="⚡"
                 >
-                  <EnergyMoodChart embedded />
+                  <EnergyMoodChart
+                    embedded
+                    proInsightsLocked={energyInsightsLocked}
+                    insightsTeaserMessage={FREEMIUM_PATTERNS_ENERGY_INSIGHTS_PLACEHOLDER}
+                    onUpgradeClick={openInsightUpgrade}
+                  />
                 </PatternsBlueprintCard>
               ) : null}
 
@@ -231,7 +311,12 @@ export function PatternsPageContent() {
                   titleId="patterns-disrupters"
                   titleEmoji="🪞"
                 >
-                  <PostponementPatternsCard embedded />
+                  <PostponementPatternsCard
+                    embedded
+                    proInsightLocked={postponementInsightLocked}
+                    insightTeaserMessage={FREEMIUM_PATTERNS_POSTPONEMENT_INSIGHT_PLACEHOLDER}
+                    onUpgradeClick={openInsightUpgrade}
+                  />
                 </PatternsBlueprintCard>
               ) : null}
 
@@ -243,7 +328,12 @@ export function PatternsPageContent() {
                   titleId="patterns-trajectory"
                   titleEmoji="📈"
                 >
-                  <DecisionStylePie embedded />
+                  <DecisionStylePie
+                    embedded
+                    proInsightLocked={decisionInsightLocked}
+                    insightTeaserMessage={FREEMIUM_PATTERNS_DECISION_INSIGHT_PLACEHOLDER}
+                    onUpgradeClick={openInsightUpgrade}
+                  />
                 </PatternsBlueprintCard>
               ) : null}
 
@@ -255,7 +345,12 @@ export function PatternsPageContent() {
                   titleId="patterns-sinkholes"
                   titleEmoji="💫"
                 >
-                  <RecurringQuestionCard embedded />
+                  <RecurringQuestionCard
+                    embedded
+                    proAiLocked={recurringQuestionLocked}
+                    aiTeaserMessage={FREEMIUM_PATTERNS_RECURRING_QUESTION_PLACEHOLDER}
+                    onUpgradeClick={openInsightUpgrade}
+                  />
                 </PatternsBlueprintCard>
               ) : null}
             </aside>

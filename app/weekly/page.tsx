@@ -45,9 +45,15 @@ import {
   type MorningUserProfileBundle,
 } from '@/lib/user-profile-bundle-cache'
 import { FREEMIUM_WEEKLY_REFLECTION_PLACEHOLDER } from '@/lib/weekly/freemium-weekly-insight-placeholder'
+import { insightArchiveHref, insightPeriodHref } from '@/lib/insights/insight-archive-url'
 import { weeklyInsightAccentMap } from '@/lib/insights/insight-period-accent-rotation'
 import { useInsightUpgradeNavigation } from '@/lib/insights/use-insight-upgrade-navigation'
 import { MOOD_LABELS } from '@/lib/weekly/weekly-mood-labels'
+import {
+  WeeklyInsightViewTabs,
+  type WeeklyInsightView,
+} from '@/components/weekly/WeeklyInsightViewTabs'
+import { WeeklyInsightChapterArchive } from '@/components/weekly/WeeklyInsightChapterArchive'
 const WEEKLY_INSIGHT_SHELL = 'max-w-4xl mx-auto px-4 py-8'
 
 interface WeeklyData {
@@ -212,9 +218,31 @@ export default function WeeklyPage() {
   }, [router])
 
   const weekStartParam = searchParams?.get('weekStart')
+  const showArchive = searchParams?.get('view') === 'archive'
+
+  const handleWeeklyViewChange = useCallback(
+    (view: WeeklyInsightView) => {
+      const validWeek =
+        weekStartParam && /^\d{4}-\d{2}-\d{2}$/.test(weekStartParam) ? weekStartParam : null
+      const week =
+        validWeek ?? periods[0] ?? format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
+
+      if (view === 'archive') {
+        router.push(insightArchiveHref('weekStart', week))
+        return
+      }
+      router.push(insightPeriodHref('weekStart', week))
+    },
+    [router, weekStartParam, periods],
+  )
+
   // When no weekStart in URL: fetch periods; if last completed week is missing, auto-generate it (root-cause repair), then redirect to latest
   useEffect(() => {
     if (insightUnlock?.isUnlocked === false) return
+    if (showArchive) {
+      setInitialRedirectDone(true)
+      return
+    }
     if (weekStartParam || initialRedirectDone) return
     const redirectToLatest = async () => {
       const session = await getUserSession()
@@ -264,13 +292,14 @@ export default function WeeklyPage() {
       }
     }
     redirectToLatest()
-  }, [weekStartParam, initialRedirectDone, router, lastCompletedWeekStart, insightUnlock?.isUnlocked])
+  }, [weekStartParam, initialRedirectDone, router, lastCompletedWeekStart, insightUnlock?.isUnlocked, showArchive])
   const effectiveWeekStart = weekStartParam && /^\d{4}-\d{2}-\d{2}$/.test(weekStartParam)
     ? weekStartParam
     : format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
 
   useEffect(() => {
     if (insightUnlock?.isUnlocked === false) return
+    if (showArchive) return
     // Don't fetch until we've either redirected to latest week or confirmed no periods
     if (!weekStartParam && !initialRedirectDone) return
 
@@ -492,10 +521,11 @@ export default function WeeklyPage() {
     }
 
     fetchWeekData()
-  }, [effectiveWeekStart, weekStartParam, initialRedirectDone, markAsViewed, insightUnlock?.isUnlocked])
+  }, [effectiveWeekStart, weekStartParam, initialRedirectDone, markAsViewed, insightUnlock?.isUnlocked, showArchive])
 
   useEffect(() => {
     if (insightUnlock?.isUnlocked === false) return
+    if (showArchive) return
     const fetchPeriods = async () => {
       const session = await getUserSession()
       if (!session) return
@@ -511,7 +541,7 @@ export default function WeeklyPage() {
       }
     }
     fetchPeriods()
-  }, [effectiveWeekStart, insightUnlock?.isUnlocked])
+  }, [effectiveWeekStart, insightUnlock?.isUnlocked, showArchive])
 
   useEffect(() => {
     if (!data?.dateRange?.start) return
@@ -747,6 +777,25 @@ export default function WeeklyPage() {
     )
   }
 
+  if (showArchive) {
+    const highlightWeek =
+      weekStartParam && /^\d{4}-\d{2}-\d{2}$/.test(weekStartParam) ? weekStartParam : null
+    return (
+      <div className={WEEKLY_INSIGHT_SHELL}>
+        <div className="flex flex-col gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-bold mb-1 flex items-center gap-2 text-gray-900 dark:text-gray-100">
+              <Calendar className="w-8 h-8" style={{ color: colors.coral.DEFAULT }} />
+              Weekly Insight
+            </h1>
+          </div>
+          <WeeklyInsightViewTabs activeView="archive" onViewChange={handleWeeklyViewChange} />
+        </div>
+        <WeeklyInsightChapterArchive highlightWeekStart={highlightWeek} />
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className={WEEKLY_INSIGHT_SHELL}>
@@ -833,6 +882,7 @@ export default function WeeklyPage() {
             </h1>
           </div>
         </div>
+        <WeeklyInsightViewTabs activeView="week" onViewChange={handleWeeklyViewChange} />
         <InsightNavigation
           type="weekly"
           currentPeriod={data.dateRange.start}
@@ -960,6 +1010,10 @@ export default function WeeklyPage() {
 
       <p className="text-sm text-gray-600 dark:text-gray-300 mt-8">
         Explore related views:{' '}
+        <Link href="/weekly?view=archive" className="text-[#ef725c] hover:underline">
+          Past chapters
+        </Link>
+        ,{' '}
         <Link href="/founder-dna/rhythm" className="text-[#ef725c] hover:underline">Rhythm</Link>,{' '}
         <Link href="/founder-dna/patterns" className="text-[#ef725c] hover:underline">Patterns</Link>,{' '}
         <Link href="/founder-dna/journey" className="text-[#ef725c] hover:underline">Journey</Link>.

@@ -46,8 +46,11 @@ import {
   type MorningUserProfileBundle,
 } from '@/lib/user-profile-bundle-cache'
 import { FREEMIUM_QUARTERLY_REFLECTION_PLACEHOLDER } from '@/lib/quarterly/freemium-quarterly-insight-placeholder'
+import { insightArchiveHref, insightPeriodHref } from '@/lib/insights/insight-archive-url'
 import { quarterlyInsightAccentMap } from '@/lib/insights/insight-period-accent-rotation'
 import { useInsightUpgradeNavigation } from '@/lib/insights/use-insight-upgrade-navigation'
+import { QuarterlyInsightViewTabs } from '@/components/quarterly/QuarterlyInsightViewTabs'
+import { QuarterlyInsightChapterArchive } from '@/components/quarterly/QuarterlyInsightChapterArchive'
 
 function profileFromBundle(
   bundle: MorningUserProfileBundle | null,
@@ -85,6 +88,7 @@ export default function QuarterlyPage() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const quarterParam = searchParams?.get('quarter')
+  const showArchive = searchParams?.get('view') === 'archive'
   const initialQuarter = quarterParam && /^\d{4}-Q[1-4]$/.test(quarterParam)
     ? (parseQuarterParam(quarterParam) ?? new Date())
     : new Date()
@@ -130,6 +134,21 @@ export default function QuarterlyPage() {
     const monthName = new Date(availableYear, availableMonthNum, 1).toLocaleString('default', { month: 'long' })
     return `Q${qNum} ${nextQuarterStart.getFullYear()} insights will be available on ${monthName} 1, ${availableYear}`
   }
+
+  const handleQuarterlyViewChange = useCallback(
+    (view: 'quarter' | 'archive') => {
+      const validQuarter =
+        quarterParam && /^\d{4}-Q[1-4]$/.test(quarterParam) ? quarterParam : null
+      const quarter = validQuarter ?? toQuarterParam(selectedQuarter)
+
+      if (view === 'archive') {
+        router.push(insightArchiveHref('quarter', quarter))
+        return
+      }
+      router.push(insightPeriodHref('quarter', quarter))
+    },
+    [router, quarterParam, selectedQuarter],
+  )
 
   const narrative = useMemo(() => {
     if (!quarterlyData) return null
@@ -216,7 +235,7 @@ export default function QuarterlyPage() {
   }, [session])
 
   useEffect(() => {
-    if (quarterParam || initialRedirectDone) return
+    if (showArchive || quarterParam || initialRedirectDone) return
     const redirectToLatest = async () => {
       const session = await getUserSession()
       if (!session) return
@@ -239,7 +258,7 @@ export default function QuarterlyPage() {
       }
     }
     redirectToLatest()
-  }, [quarterParam, initialRedirectDone, router])
+  }, [quarterParam, initialRedirectDone, router, showArchive])
 
   useEffect(() => {
     if (!session) return
@@ -264,7 +283,7 @@ export default function QuarterlyPage() {
   useEffect(() => {
     const fetchPeriods = async () => {
       const session = await getUserSession()
-      if (!session) return
+      if (!session || showArchive) return
       try {
         const {
           data: { session: supabaseSession },
@@ -285,10 +304,10 @@ export default function QuarterlyPage() {
       }
     }
     fetchPeriods()
-  }, [selectedQuarter])
+  }, [selectedQuarter, showArchive])
 
   useEffect(() => {
-    if (!session) return
+    if (!session || showArchive) return
     const fetchQuarterData = async () => {
       setLoading(true)
       const features = getFeatureAccess(profileUser ?? {
@@ -328,7 +347,7 @@ export default function QuarterlyPage() {
     }
 
     fetchQuarterData()
-  }, [selectedQuarter, session, profileUser])
+  }, [selectedQuarter, session, profileUser, showArchive])
 
   const handleGenerateInsight = async () => {
     if (!session) return
@@ -373,7 +392,15 @@ export default function QuarterlyPage() {
   }
 
   useEffect(() => {
-    if (!session || !showFullQuarterly || generating || hasTriggeredGenerate.current || aiSynthesisLocked) return
+    if (
+      !session ||
+      showArchive ||
+      !showFullQuarterly ||
+      generating ||
+      hasTriggeredGenerate.current ||
+      aiSynthesisLocked
+    )
+      return
     const hasInsight = quarterlyInsightOverride ?? quarterlyInsight
     if (hasInsight) return
     const doGenerate = async () => {
@@ -427,12 +454,32 @@ export default function QuarterlyPage() {
     generating,
     aiSynthesisLocked,
     profileUser,
+    showArchive,
   ])
 
   if (unlockProgress && !unlockProgress.isUnlocked) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8">
         <LockedFeature type="quarterly" progress={{ current: unlockProgress.current, required: unlockProgress.required }} />
+      </div>
+    )
+  }
+
+  if (showArchive) {
+    const highlightQuarterKey =
+      quarterParam && /^\d{4}-Q[1-4]$/.test(quarterParam) ? quarterParam : null
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <div className="flex flex-col gap-4 mb-8">
+          <div>
+            <h1 className="text-3xl font-bold mb-1 flex items-center gap-2 text-gray-900 dark:text-gray-100">
+              <TrendingUp className="w-8 h-8" style={{ color: colors.coral.DEFAULT }} />
+              Quarterly Trajectory
+            </h1>
+          </div>
+          <QuarterlyInsightViewTabs activeView="archive" onViewChange={handleQuarterlyViewChange} />
+        </div>
+        <QuarterlyInsightChapterArchive highlightQuarterKey={highlightQuarterKey} />
       </div>
     )
   }
@@ -456,6 +503,7 @@ export default function QuarterlyPage() {
             Quarterly Trajectory
           </h1>
         </div>
+        <QuarterlyInsightViewTabs activeView="quarter" onViewChange={handleQuarterlyViewChange} />
         <InsightNavigation
           type="quarterly"
           currentPeriod={toQuarterParam(selectedQuarter)}

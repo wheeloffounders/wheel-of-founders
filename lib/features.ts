@@ -10,7 +10,7 @@ function resolveOptsForClient() {
 export interface FeatureAccess {
   // History viewing limits (data stored forever for all)
   canViewFullHistory: boolean
-  viewableHistoryDays: number // Free: 2 days, others: Infinity
+  viewableHistoryDays: number // Free: 7 days, others: Infinity
   
   // REMOVED: Smart Constraints (feature deprecated - all AI from Mrs. Deer)
   smartConstraints: boolean      // Always false - feature removed
@@ -363,6 +363,94 @@ export function isFounderDNALocked(
   return isFounderDnaProSurfaceLocked(user, options)
 }
 
+/** Rhythm page: Mrs. Deer AI depth on journey-unlocked modules. */
+export type RhythmInsightFreemiumFeature =
+  | 'archetype_alignment'
+  | 'story_insights'
+  | 'celebration_gap_mirror'
+  | 'unseen_wins_ai'
+
+export type RhythmInsightProLockOptions = {
+  /** `/founder-dna/rhythm/free` — force freemium locks for UI audit. */
+  forceFreemiumAuditPath?: boolean
+}
+
+function isRhythmInsightFreemiumAuditPath(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.location.pathname.includes('/founder-dna/rhythm/free')
+  } catch {
+    return false
+  }
+}
+
+export function isRhythmInsightProSurfaceLocked(
+  user: UserProfile | null | undefined,
+  options?: RhythmInsightProLockOptions
+): boolean {
+  if (options?.forceFreemiumAuditPath || isRhythmInsightFreemiumAuditPath()) return true
+  return isWeeklyInsightProSurfaceLocked(user)
+}
+
+export function isRhythmInsightFeatureLocked(
+  feature: RhythmInsightFreemiumFeature,
+  user: UserProfile | null | undefined,
+  options?: RhythmInsightProLockOptions
+): boolean {
+  if (!isRhythmInsightProSurfaceLocked(user, options)) return false
+  return (
+    feature === 'archetype_alignment' ||
+    feature === 'story_insights' ||
+    feature === 'celebration_gap_mirror' ||
+    feature === 'unseen_wins_ai'
+  )
+}
+
+/** Patterns page: Mrs. Deer AI depth on journey-unlocked modules. */
+export type PatternsInsightFreemiumFeature =
+  | 'macro_summary'
+  | 'energy_insights'
+  | 'decision_insight'
+  | 'postponement_insight'
+  | 'recurring_question_ai'
+
+export type PatternsInsightProLockOptions = {
+  /** `/founder-dna/patterns/free` — force freemium locks for UI audit. */
+  forceFreemiumAuditPath?: boolean
+}
+
+function isPatternsInsightFreemiumAuditPath(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.location.pathname.includes('/founder-dna/patterns/free')
+  } catch {
+    return false
+  }
+}
+
+export function isPatternsInsightProSurfaceLocked(
+  user: UserProfile | null | undefined,
+  options?: PatternsInsightProLockOptions
+): boolean {
+  if (options?.forceFreemiumAuditPath || isPatternsInsightFreemiumAuditPath()) return true
+  return isWeeklyInsightProSurfaceLocked(user)
+}
+
+export function isPatternsInsightFeatureLocked(
+  feature: PatternsInsightFreemiumFeature,
+  user: UserProfile | null | undefined,
+  options?: PatternsInsightProLockOptions
+): boolean {
+  if (!isPatternsInsightProSurfaceLocked(user, options)) return false
+  return (
+    feature === 'macro_summary' ||
+    feature === 'energy_insights' ||
+    feature === 'decision_insight' ||
+    feature === 'postponement_insight' ||
+    feature === 'recurring_question_ai'
+  )
+}
+
 export function isEmergencyFeatureLocked(
   feature: EmergencyFreemiumFeature,
   user: UserProfile | null | undefined
@@ -398,7 +486,7 @@ export const getFeatureAccess = (user: UserProfile | null | undefined): FeatureA
   return {
     // History viewing limits
     canViewFullHistory: isProEntitled,
-    viewableHistoryDays: isFreeStrict ? 2 : Infinity, // Free: last 2 days only
+    viewableHistoryDays: isFreeStrict ? 7 : Infinity, // Free: last 7 days of daily archive
 
     // REMOVED: Smart Constraints - feature deprecated
     smartConstraints: false,

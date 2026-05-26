@@ -28,6 +28,8 @@ import { TransformationPairs } from '@/components/monthly/TransformationPairs'
 import { MonthlyTrends } from '@/components/monthly/MonthlyTrends'
 import { MonthlyWisdom } from '@/components/monthly/MonthlyWisdom'
 import { MonthlyPreview } from '@/components/monthly/MonthlyPreview'
+import { MonthlyInsightViewTabs } from '@/components/monthly/MonthlyInsightViewTabs'
+import { MonthlyInsightChapterArchive } from '@/components/monthly/MonthlyInsightChapterArchive'
 import { InsightNavigation } from '@/components/InsightNavigation'
 import { LockedFeature } from '@/components/LockedFeature'
 import { getMonthlyProgress } from '@/lib/progress'
@@ -45,6 +47,7 @@ import {
   FREEMIUM_MONTHLY_REFLECTION_PLACEHOLDER,
   FREEMIUM_MONTHLY_TRANSFORMATION_PLACEHOLDER,
 } from '@/lib/monthly/freemium-monthly-insight-placeholder'
+import { insightArchiveHref, insightPeriodHref } from '@/lib/insights/insight-archive-url'
 import { monthlyInsightAccentMap } from '@/lib/insights/insight-period-accent-rotation'
 import { useInsightUpgradeNavigation } from '@/lib/insights/use-insight-upgrade-navigation'
 
@@ -70,6 +73,7 @@ export default function MonthlyInsightPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const monthParam = searchParams?.get('month')
+  const showArchive = searchParams?.get('view') === 'archive'
   const initialMonth = monthParam && /^\d{4}-\d{2}$/.test(monthParam)
     ? new Date(monthParam + '-01')
     : new Date()
@@ -119,6 +123,20 @@ export default function MonthlyInsightPage() {
     const availableMonth = availableDate.toLocaleString('default', { month: 'long' })
     return `${monthName} insights will be available on ${availableMonth} 1, ${availableDate.getFullYear()}`
   }
+
+  const handleMonthlyViewChange = useCallback(
+    (view: 'month' | 'archive') => {
+      const validMonth = monthParam && /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : null
+      const month = validMonth ?? currentMonthStr
+
+      if (view === 'archive') {
+        router.push(insightArchiveHref('month', month))
+        return
+      }
+      router.push(insightPeriodHref('month', month))
+    },
+    [router, monthParam, currentMonthStr],
+  )
 
   useEffect(() => {
     if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
@@ -213,7 +231,7 @@ export default function MonthlyInsightPage() {
 
   // When no month in URL, redirect to most recent month WITH data
   useEffect(() => {
-    if (!session || monthParam || initialRedirectDone) return
+    if (showArchive || !session || monthParam || initialRedirectDone) return
     const redirectToLatest = async () => {
       try {
         const { data: { session: supabaseSession } } = await supabase.auth.getSession()
@@ -232,10 +250,10 @@ export default function MonthlyInsightPage() {
       }
     }
     redirectToLatest()
-  }, [session, monthParam, initialRedirectDone, router])
+  }, [session, monthParam, initialRedirectDone, router, showArchive])
 
   useEffect(() => {
-    if (!session) return
+    if (!session || showArchive) return
     const fetchPeriods = async () => {
       try {
         const { data: { session: supabaseSession } } = await supabase.auth.getSession()
@@ -250,10 +268,10 @@ export default function MonthlyInsightPage() {
       }
     }
     fetchPeriods()
-  }, [session, selectedMonth])
+  }, [session, selectedMonth, showArchive])
 
   useEffect(() => {
-    if (!session) return
+    if (!session || showArchive) return
     const fetchMonthData = async () => {
       setLoading(true)
       const features = getFeatureAccess({
@@ -386,7 +404,7 @@ export default function MonthlyInsightPage() {
     }
 
     fetchMonthData()
-  }, [session, selectedMonth, profileUser])
+  }, [session, selectedMonth, profileUser, showArchive])
 
   const handleGenerateInsight = async () => {
     const features = session ? getFeatureAccess({ tier: session.user.tier, pro_features_enabled: session.user.pro_features_enabled }) : null
@@ -424,7 +442,7 @@ export default function MonthlyInsightPage() {
 
   // Auto-generate insight on load when no insight exists
   useEffect(() => {
-    if (!session || !showFullMonthly || generating || hasTriggeredGenerate.current || aiSynthesisLocked) return
+    if (!session || showArchive || !showFullMonthly || generating || hasTriggeredGenerate.current || aiSynthesisLocked) return
     const hasInsight = monthlyInsightOverride ?? monthlyInsight
     if (hasInsight) return
     const doGenerate = async () => {
@@ -471,10 +489,12 @@ export default function MonthlyInsightPage() {
     selectedMonth,
     generating,
     aiSynthesisLocked,
+    showArchive,
   ])
 
   // Fetch AI-parsed transformation pairs when we have wins/lessons
   useEffect(() => {
+    if (showArchive) return
     if (
       !showFullMonthly ||
       transformationLocked ||
@@ -598,6 +618,26 @@ export default function MonthlyInsightPage() {
     )
   }
 
+  if (showArchive) {
+    const highlightMonthKey = monthParam && /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : null
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <div className="flex flex-col gap-4 mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold mb-1 flex items-center gap-2 text-gray-900 dark:text-gray-100 dark:text-white">
+                <Calendar className="w-8 h-8" style={{ color: colors.coral.DEFAULT }} />
+                Monthly Insight
+              </h1>
+            </div>
+          </div>
+          <MonthlyInsightViewTabs activeView="archive" onViewChange={handleMonthlyViewChange} />
+        </div>
+        <MonthlyInsightChapterArchive highlightMonthKey={highlightMonthKey} />
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -618,6 +658,7 @@ export default function MonthlyInsightPage() {
             </h1>
           </div>
         </div>
+        <MonthlyInsightViewTabs activeView="month" onViewChange={handleMonthlyViewChange} />
         <InsightNavigation
           type="monthly"
           currentPeriod={format(startOfMonth(selectedMonth), 'yyyy-MM-dd')}

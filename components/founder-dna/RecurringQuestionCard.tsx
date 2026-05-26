@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { AlertTriangle, Loader2, Lock } from 'lucide-react'
+import { InsightPeriodTeaserLock } from '@/components/insights/InsightPeriodTeaserLock'
 import { colors } from '@/lib/design-tokens'
 import type { RecurringQuestionResponse } from '@/lib/types/founder-dna'
 import { RECURRING_QUESTION_MIN_DAYS } from '@/lib/founder-dna/unlock-schedule-config'
@@ -16,9 +17,17 @@ type LockedBody = {
 
 type RecurringQuestionCardProps = {
   embedded?: boolean
+  proAiLocked?: boolean
+  aiTeaserMessage?: string
+  onUpgradeClick?: () => void
 }
 
-export function RecurringQuestionCard({ embedded = false }: RecurringQuestionCardProps) {
+export function RecurringQuestionCard({
+  embedded = false,
+  proAiLocked = false,
+  aiTeaserMessage,
+  onUpgradeClick,
+}: RecurringQuestionCardProps) {
   const shell = (extra?: string) =>
     cn(patternModuleSurfaceClass(embedded), embedded ? extra : cn('p-4', extra))
   const [loading, setLoading] = useState(true)
@@ -54,11 +63,18 @@ export function RecurringQuestionCard({ embedded = false }: RecurringQuestionCar
         if (!cancelled) setLoading(false)
       }
     }
+    if (proAiLocked) {
+      setLoading(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
     run()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [proAiLocked])
 
   if (loading) {
     return (
@@ -103,6 +119,20 @@ export function RecurringQuestionCard({ embedded = false }: RecurringQuestionCar
           Could not load Recurring Question
         </div>
         <p className="text-sm text-red-700/90 dark:text-red-100 mt-2">{error}</p>
+      </div>
+    )
+  }
+
+  if (proAiLocked && aiTeaserMessage) {
+    return (
+      <div className={shell()}>
+        <InsightPeriodTeaserLock
+          message={aiTeaserMessage}
+          markdown
+          ctaHeadingId="patterns-recurring-module-pro-cta"
+          ctaDescription="Pro unlocks recurring questions Mrs. Deer hears in your lessons and decisions — with an observation under each echo."
+          onUpgradeClick={onUpgradeClick}
+        />
       </div>
     )
   }

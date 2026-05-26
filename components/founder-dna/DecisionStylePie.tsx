@@ -10,6 +10,7 @@ import {
   Legend,
 } from 'recharts'
 import { Loader2, Lock, AlertTriangle } from 'lucide-react'
+import { InsightPeriodTeaserLock } from '@/components/insights/InsightPeriodTeaserLock'
 import { patternModuleSurfaceClass } from '@/lib/founder-dna/pattern-card-surface'
 import { cn } from '@/components/ui/utils'
 
@@ -34,9 +35,17 @@ type DecisionStyleResponse = {
 
 type DecisionStylePieProps = {
   embedded?: boolean
+  proInsightLocked?: boolean
+  insightTeaserMessage?: string
+  onUpgradeClick?: () => void
 }
 
-export function DecisionStylePie({ embedded = false }: DecisionStylePieProps) {
+export function DecisionStylePie({
+  embedded = false,
+  proInsightLocked = false,
+  insightTeaserMessage,
+  onUpgradeClick,
+}: DecisionStylePieProps) {
   const shell = (extra?: string) =>
     cn(patternModuleSurfaceClass(embedded), embedded ? extra : cn('p-4', extra))
   const [loading, setLoading] = useState(true)
@@ -70,11 +79,18 @@ export function DecisionStylePie({ embedded = false }: DecisionStylePieProps) {
       }
     }
 
+    if (proInsightLocked) {
+      setLoading(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
     load()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [proInsightLocked])
 
   const chartData = useMemo(() => {
     if (!data) return []
@@ -114,6 +130,20 @@ export function DecisionStylePie({ embedded = false }: DecisionStylePieProps) {
         <div className="text-sm text-gray-600 dark:text-gray-300 mt-2">
           Unlocks on day 9 active (or when your 5th decision is logged — whichever comes first).
         </div>
+      </div>
+    )
+  }
+
+  if (proInsightLocked && insightTeaserMessage) {
+    return (
+      <div className={shell()}>
+        <InsightPeriodTeaserLock
+          message={insightTeaserMessage}
+          markdown
+          ctaHeadingId="patterns-decision-module-pro-cta"
+          ctaDescription="Pro unlocks your strategic vs tactical mix, what it means, and a recent example from your decisions."
+          onUpgradeClick={onUpgradeClick}
+        />
       </div>
     )
   }

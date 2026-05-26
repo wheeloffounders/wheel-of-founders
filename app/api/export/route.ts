@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid export type' }, { status: 400 })
     }
 
-    // Limit free users to 2 days
+    // Limit free users to viewableHistoryDays (7)
     if (!features.canViewFullHistory) {
       const maxStartDate = subDays(endDate, features.viewableHistoryDays)
       if (startDate < maxStartDate) {

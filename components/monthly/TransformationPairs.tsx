@@ -17,6 +17,8 @@ interface TransformationPairsProps {
   transformationLocked?: boolean
   teaserMessage: string
   onUpgradeClick?: () => void
+  /** Defaults to monthly copy; pass `week` for weekly insight layout parity. */
+  cadence?: 'month' | 'week'
 }
 
 function formatPairsTeaserBody(pairs: TransformationPair[]): string {
@@ -31,12 +33,15 @@ export function TransformationPairs({
   transformationLocked = false,
   teaserMessage,
   onUpgradeClick,
+  cadence = 'month',
 }: TransformationPairsProps) {
   const body =
     pairs.length > 0 ? formatPairsTeaserBody(pairs) : 'Add wins and lessons in your evening reviews to see your transformation pairs here.'
+  const evolutionTitle = cadence === 'week' ? 'Your Week of Evolution' : 'Your Month of Evolution'
+  const ctaHeadingId = cadence === 'week' ? 'weekly-transformation-pro-cta' : 'monthly-transformation-pro-cta'
 
   return (
-    <InsightPeriodSection title="Your Month of Evolution" accent={accent}>
+    <InsightPeriodSection title={evolutionTitle} accent={accent}>
       <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
         From where you started to where you are now
       </p>
@@ -46,7 +51,7 @@ export function TransformationPairs({
         <InsightPeriodTeaserLock
           message={teaserMessage}
           markdown
-          ctaHeadingId="monthly-transformation-pro-cta"
+          ctaHeadingId={ctaHeadingId}
           ctaDescription="Pro unlocks AI-parsed before → after pairs from your real wins and lessons."
           onUpgradeClick={onUpgradeClick}
         />
