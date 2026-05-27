@@ -22,7 +22,7 @@ const CONCURRENCY = 5
 
 /**
  * Cron: Generate weekly insights when a user's local time is Monday 00:xx–01:xx.
- * Schedule: every 5 minutes from UTC Sunday 10:00 through Tuesday 09:59 (see vercel.json)
+ * Schedule: every 15 minutes from UTC Sunday 10:00 through Tuesday 09:59 (see vercel.json)
  * so all IANA zones are covered (e.g. Asia/Hong_Kong midnight on UTC Sunday). Batch cursor uses
  * getWeeklyInsightBatchWeekId so APAC and Americas share one wave.
  * Secured by CRON_SECRET (Bearer).

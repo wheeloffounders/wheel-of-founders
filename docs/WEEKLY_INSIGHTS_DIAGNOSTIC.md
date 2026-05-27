@@ -2,7 +2,7 @@
 
 ## How it works
 
-- **Cron:** Runs **every 5 minutes from UTC Sunday 10:00 through Tuesday 09:59** (`*/5 10-23 * * 0`, `*/5 * * * 1`, `*/5 0-9 * * 2` in `vercel.json`) so every timezone’s local Monday midnight falls while the job is active (e.g. Hong Kong Monday 00:00 = UTC Sunday 16:00).
+- **Cron:** Runs **every 15 minutes from UTC Sunday 10:00 through Tuesday 09:59** (`*/15 10-23 * * 0`, `*/15 * * * 1`, `*/15 0-9 * * 2` in `vercel.json`) so every timezone’s local Monday midnight falls while the job is active (e.g. Hong Kong Monday 00:00 = UTC Sunday 16:00).
 - **Week generated:** Always the **previous** week (Monday–Sunday that just ended).
   - Example: When the cron runs at **Monday March 9 00:00 UTC**, it generates for **March 2 – March 8** (the week that just ended).
   - So on **March 9 at 3am** (in most timezones), the cron has already run and the **March 2 – March 8** insight should be available.
