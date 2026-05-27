@@ -226,10 +226,10 @@ export function nextIntervalInTimeZone(
 
 // --- Cron: user-local windows ---
 
-/** True during user's local Monday 00:00–00:59 (hour 0). */
+/** True during user's local Monday 00:00–01:59 (hours 0–1; extra hour for missed 5-min ticks). */
 export function shouldRunWeeklyInsightForUser(now: Date, timeZone: string): boolean {
   const h = parseInt(formatInTimeZone(now, timeZone, 'H'), 10)
-  return getLocalDayOfWeekSun0(now, timeZone) === 1 && h === 0
+  return getLocalDayOfWeekSun0(now, timeZone) === 1 && (h === 0 || h === 1)
 }
 
 /** Previous ISO week Mon–Sun (yyyy-MM-dd) in user TZ; call when weekly job runs on Monday local. */

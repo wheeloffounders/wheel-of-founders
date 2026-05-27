@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
-import { getFeatureAccess } from '@/lib/features'
 import { generateWeeklyInsightForUser } from '@/lib/batch-weekly-insight'
-import { getLastMonday, getLastSunday, toDateStr } from '@/lib/date-utils'
+import { getUserTimezoneFromProfile, getLastCompletedIsoWeekRangeYmdInTimeZone } from '@/lib/timezone'
+import { userHasWeeklyInsightGenerationUnlocked } from '@/lib/weekly-insight/generation-eligibility'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -22,25 +22,23 @@ export async function POST(request: NextRequest) {
 
     const db = getServerSupabase()
 
-    // Fetch user profile for tier / feature flags (server-side session only has id/email)
-    const { data: profileData } = await db
-      .from('user_profiles')
-      .select('tier, pro_features_enabled')
-      .eq('id', session.user.id)
-      .maybeSingle()
-    type ProfileRow = { tier?: string | null; pro_features_enabled?: boolean | null }
-    const profile = profileData as ProfileRow | null
-
-    const access = getFeatureAccess({
-      tier: profile?.tier || 'beta',
-      pro_features_enabled: profile?.pro_features_enabled ?? true,
-    })
-    if (!access.personalWeeklyInsight) {
-      return NextResponse.json({ error: 'Weekly insights not available for your plan' }, { status: 403 })
+    const generationUnlocked = await userHasWeeklyInsightGenerationUnlocked(session.user.id, db)
+    if (!generationUnlocked) {
+      return NextResponse.json(
+        { error: 'Weekly insights unlock after enough days with entries' },
+        { status: 403 },
+      )
     }
 
-    const weekStart = toDateStr(getLastMonday())
-    const weekEnd = toDateStr(getLastSunday())
+    const { data: profileTzRow } = await db
+      .from('user_profiles')
+      .select('timezone')
+      .eq('id', session.user.id)
+      .maybeSingle()
+    const timeZone = getUserTimezoneFromProfile(
+      profileTzRow as { timezone?: string | null } | null,
+    )
+    const { weekStart, weekEnd } = getLastCompletedIsoWeekRangeYmdInTimeZone(new Date(), timeZone)
 
     // If a weekly_insights row already exists with insight_text, reuse it to avoid re-running heavy AI
     const { data: existingRow } = await db

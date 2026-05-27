@@ -6,8 +6,8 @@ import { getLastMonday, toDateStr } from '@/lib/date-utils'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const WEEKLY_CRON_SCHEDULE_UTC = '0 0 * * 1'
-const WEEKLY_CRON_LABEL = 'Monday 00:00 UTC (previous Mon–Sun week)'
+const WEEKLY_CRON_SCHEDULE_UTC = '*/5 10-23 Sun, */5 Mon, */5 00-09 Tue (UTC)'
+const WEEKLY_CRON_LABEL = 'Every 5 min UTC Sun 10:00 → Tue 09:59; per-user local Mon 00:00–01:59'
 
 /**
  * Ops / debugging: cron health hints. Requires Bearer CRON_SECRET.

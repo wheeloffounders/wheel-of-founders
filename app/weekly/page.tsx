@@ -316,6 +316,7 @@ export default function WeeklyPage() {
       if (!profileUser) setProfileUser(profileForAccess)
 
       const features = getFeatureAccess(profileForAccess)
+      const synthesisLocked = isWeeklyInsightFeatureLocked('ai_synthesis', profileForAccess)
 
       const weekStart = new Date(effectiveWeekStart)
       const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
@@ -357,7 +358,7 @@ export default function WeeklyPage() {
           .gte('plan_date', startStr)
           .lte('plan_date', endStr)
           .eq('user_id', session.user.id),
-        features.personalWeeklyInsight
+        !synthesisLocked
           ? supabase
               .from('personal_prompts')
               .select('prompt_text, prompt_date, generated_at')

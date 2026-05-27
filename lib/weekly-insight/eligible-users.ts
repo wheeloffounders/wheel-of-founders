@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getFeatureAccess } from '@/lib/features'
 import { getUserTimezoneFromProfile, shouldRunWeeklyInsightForUser } from '@/lib/timezone'
+import { userHasWeeklyInsightGenerationUnlocked } from '@/lib/weekly-insight/generation-eligibility'
 
 export type WeeklyInsightEligibleProfile = {
   id: string
@@ -10,7 +10,8 @@ export type WeeklyInsightEligibleProfile = {
 }
 
 /**
- * Users with activity in the last 7 days, personal weekly insight access, and local Monday 00:xx (same bar as legacy cron).
+ * Users with activity in the last 7 days, weekly page unlocked (days with entries), and local Monday 00:xx–01:xx.
+ * Pro is not required — free tier gets generation too; UI/API strip narrative for non-Pro.
  * Sorted by `id` for stable batch cursor semantics.
  */
 export async function getEligibleUsersForWeeklyInsight(
@@ -60,17 +61,18 @@ export async function getEligibleUsersForWeeklyInsight(
     const tz = getUserTimezoneFromProfile(p)
     const testBypass = Boolean(p.is_test_user)
     const inWeeklyWindow = testBypass || shouldRunWeeklyInsightForUser(now, tz)
-    if (
-      getFeatureAccess({ tier: p.tier, pro_features_enabled: p.pro_features_enabled }).personalWeeklyInsight &&
-      inWeeklyWindow
-    ) {
-      eligible.push({
-        id: p.id,
-        tier: p.tier,
-        pro_features_enabled: p.pro_features_enabled,
-        timezone: tz,
-      })
-    }
+    if (!inWeeklyWindow) continue
+
+    const generationUnlocked =
+      testBypass || (await userHasWeeklyInsightGenerationUnlocked(p.id, db))
+    if (!generationUnlocked) continue
+
+    eligible.push({
+      id: p.id,
+      tier: p.tier,
+      pro_features_enabled: p.pro_features_enabled,
+      timezone: tz,
+    })
   }
 
   eligible.sort((a, b) => a.id.localeCompare(b.id))

@@ -4,7 +4,7 @@ import { getServerSupabase } from '@/lib/server-supabase'
 import { authorizeCronRequest, logCronRequestMeta } from '@/lib/cron-auth'
 import { getEligibleUsersForWeeklyInsight } from '@/lib/weekly-insight/eligible-users'
 import { processUserWeeklyInsight } from '@/lib/weekly-insight/process-user'
-import { getUtcIsoWeekId } from '@/lib/weekly-insight/utc-iso-week'
+import { getWeeklyInsightBatchWeekId } from '@/lib/weekly-insight/utc-iso-week'
 import {
   ensureWeeklyInsightWeekRollover,
   getWeeklyInsightCursor,
@@ -21,9 +21,10 @@ const BATCH_SIZE = 50
 const CONCURRENCY = 5
 
 /**
- * Cron: Generate weekly insights for active users whose local time is Monday 00:xx.
- * Schedule: every 5 minutes (see vercel.json) — each run processes up to BATCH_SIZE users,
- * continuing from cron_state until the eligible list for this UTC ISO week is exhausted.
+ * Cron: Generate weekly insights when a user's local time is Monday 00:xx–01:xx.
+ * Schedule: every 5 minutes from UTC Sunday 10:00 through Tuesday 09:59 (see vercel.json)
+ * so all IANA zones are covered (e.g. Asia/Hong_Kong midnight on UTC Sunday). Batch cursor uses
+ * getWeeklyInsightBatchWeekId so APAC and Americas share one wave.
  * Secured by CRON_SECRET (Bearer).
  */
 export async function GET(request: NextRequest) {
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now()
   const now = new Date()
   const db = getServerSupabase()
-  const weekId = getUtcIsoWeekId(now)
+  const weekId = getWeeklyInsightBatchWeekId(now)
 
   await ensureWeeklyInsightWeekRollover(db, weekId)
 

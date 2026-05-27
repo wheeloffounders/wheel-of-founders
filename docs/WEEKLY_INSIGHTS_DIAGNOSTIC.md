@@ -2,7 +2,7 @@
 
 ## How it works
 
-- **Cron:** Runs **every Monday at 00:00 UTC** (`0 0 * * 1` in `vercel.json`).
+- **Cron:** Runs **every 5 minutes from UTC Sunday 10:00 through Tuesday 09:59** (`*/5 10-23 * * 0`, `*/5 * * * 1`, `*/5 0-9 * * 2` in `vercel.json`) so every timezone’s local Monday midnight falls while the job is active (e.g. Hong Kong Monday 00:00 = UTC Sunday 16:00).
 - **Week generated:** Always the **previous** week (Monday–Sunday that just ended).
   - Example: When the cron runs at **Monday March 9 00:00 UTC**, it generates for **March 2 – March 8** (the week that just ended).
   - So on **March 9 at 3am** (in most timezones), the cron has already run and the **March 2 – March 8** insight should be available.
@@ -13,8 +13,8 @@
    The dropdown / redirect uses `/api/insights/periods?type=weekly`, which used to only look at `personal_prompts` and `insight_history`. If the cron wrote only to `weekly_insights` (e.g. no wins/lessons so no AI insight was saved to `personal_prompts`), that week never appeared in the list.  
    **Fix:** The periods API now also includes `weekly_insights.week_start` for `type=weekly`, so any week that has a row in `weekly_insights` will show up.
 
-2. **Cron hasn’t run yet (timezone)**  
-   Cron is **00:00 Monday UTC**. In your local time that may still be Sunday (e.g. Sunday 4:00pm PST). So “Monday 3:05am” in PST is **after** the cron (it ran Sunday 4pm PST). If you’re in a timezone where Monday 3:05am is **before** 00:00 Monday UTC, the cron hasn’t run and the new week won’t exist yet.
+2. **Cron window vs your timezone**  
+   Eligible users are processed when local time is **Monday 00:00–01:59**. The job runs from **UTC Sunday 10:00 through Tuesday 09:59**, which covers local Monday midnight for all IANA timezones.
 
 3. **Cron failed or wasn’t triggered**  
    Check Vercel (or your host) cron logs for `/api/cron/generate-weekly-insights`. It must be called with `Authorization: Bearer <CRON_SECRET>`.
