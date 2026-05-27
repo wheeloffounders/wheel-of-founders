@@ -310,16 +310,17 @@ export default function QuarterlyPage() {
     if (!session || showArchive) return
     const fetchQuarterData = async () => {
       setLoading(true)
-      const features = getFeatureAccess(profileUser ?? {
+      const profileForLock: UserProfile = profileUser ?? {
         tier: session.user.tier,
         pro_features_enabled: session.user.pro_features_enabled,
-      })
+      }
+      const synthesisLocked = isQuarterlyInsightFeatureLocked('ai_synthesis', profileForLock)
 
       const quarterStart = format(startOfQuarter(selectedQuarter), 'yyyy-MM-dd')
 
       const [data, promptsRes] = await Promise.all([
         fetchQuarterlyData(supabase, session.user.id, selectedQuarter),
-        features.personalQuarterlyInsight && !isQuarterlyInsightFeatureLocked('ai_synthesis', profileUser)
+        !synthesisLocked
           ? supabase
               .from('personal_prompts')
               .select('prompt_text')

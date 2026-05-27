@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getFeatureAccess } from '@/lib/features'
 import { fetchCompletedQuarterlyInsightKeys } from '@/lib/quarterly-insight/completed-check'
+import { userHasQuarterlyInsightGenerationUnlocked } from '@/lib/weekly-insight/generation-eligibility'
 import {
   getPreviousQuarterRangeYmdInTimeZone,
   getUserTimezoneFromProfile,
@@ -15,7 +15,8 @@ export type QuarterlyInsightEligibleProfile = {
 }
 
 /**
- * Quarterly cron: do not skip on Monday 00 local (weekly window) so quarter-start Mondays still run.
+ * Quarterly cron: activity in last 90 days, page unlocked, local Jan/Apr/Jul/Oct 1 (any hour).
+ * Pro not required — narrative gated on read. Does not skip weekly Monday window.
  */
 export async function getEligibleUsersForQuarterlyInsightCron(
   db: SupabaseClient,
@@ -66,12 +67,6 @@ export async function getEligibleUsersForQuarterlyInsightCron(
   for (const p of rows) {
     const tz = getUserTimezoneFromProfile(p)
     const testBypass = Boolean(p.is_test_user)
-    const hasFeature = getFeatureAccess({
-      tier: p.tier,
-      pro_features_enabled: p.pro_features_enabled,
-    }).personalQuarterlyInsight
-    if (!hasFeature) continue
-
     if (testBypass) {
       eligible.push({
         id: p.id,
@@ -83,6 +78,11 @@ export async function getEligibleUsersForQuarterlyInsightCron(
     }
 
     if (!isUserLocalQuarterStartCalendarDay(now, tz)) continue
+
+    const generationUnlocked =
+      testBypass || (await userHasQuarterlyInsightGenerationUnlocked(p.id, db))
+    if (!generationUnlocked) continue
+
     const range = getPreviousQuarterRangeYmdInTimeZone(now, tz)
     if (!range) continue
     pending.push({ ...p, quarterStart: range.quarterStart })

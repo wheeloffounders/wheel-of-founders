@@ -3,7 +3,7 @@ import { getServerSupabase } from '@/lib/server-supabase'
 import { authorizeCronRequest, logCronRequestMeta } from '@/lib/cron-auth'
 import { getEligibleUsersForMonthlyInsightCron } from '@/lib/monthly-insight/eligible-users'
 import { processMonthlyInsightCronUser } from '@/lib/monthly-insight/process-user'
-import { getUtcIsoMonthId } from '@/lib/monthly-insight/utc-iso-month'
+import { getMonthlyInsightBatchMonthId } from '@/lib/monthly-insight/utc-iso-month'
 import {
   ensureMonthlyInsightMonthRollover,
   getMonthlyInsightCursor,
@@ -22,8 +22,8 @@ const CONCURRENCY = 5
 
 /**
  * Cron: Monthly insights for users on local calendar day 1 (any hour) when not already completed.
- * Schedule (vercel.json): every 5 min, UTC 10:00–23:59 on day 31 and 00:00–14:59 on day 1 (~29h)
- * so all timezones plus retry headroom are covered.
+ * Schedule (vercel.json): every 15 min, UTC days 28–31 10:00–23:59, day 1 all day, day 2 00:00–09:59
+ * so all timezones' local 1st are covered (e.g. Asia/Hong_Kong midnight on prior-month UTC day 28–31).
  * Batch + cron_state cursor until the UTC-month wave completes.
  */
 export async function GET(request: NextRequest) {
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now()
   const now = new Date()
   const db = getServerSupabase()
-  const monthId = getUtcIsoMonthId(now)
+  const monthId = getMonthlyInsightBatchMonthId(now)
 
   await ensureMonthlyInsightMonthRollover(db, monthId)
 

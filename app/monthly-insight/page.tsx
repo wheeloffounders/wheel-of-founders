@@ -274,10 +274,11 @@ export default function MonthlyInsightPage() {
     if (!session || showArchive) return
     const fetchMonthData = async () => {
       setLoading(true)
-      const features = getFeatureAccess({
+      const profileForLock: UserProfile = profileUser ?? {
         tier: session.user.tier,
         pro_features_enabled: session.user.pro_features_enabled,
-      })
+      }
+      const synthesisLocked = isMonthlyInsightFeatureLocked('ai_synthesis', profileForLock)
 
       const monthStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd')
       const monthEnd = format(endOfMonth(selectedMonth), 'yyyy-MM-dd')
@@ -307,7 +308,7 @@ export default function MonthlyInsightPage() {
           .gte('plan_date', monthStart)
           .lte('plan_date', monthEnd)
           .eq('user_id', session.user.id),
-        features.personalMonthlyInsight && !isMonthlyInsightFeatureLocked('ai_synthesis', profileUser)
+        !synthesisLocked
           ? supabase
               .from('personal_prompts')
               .select('prompt_text')

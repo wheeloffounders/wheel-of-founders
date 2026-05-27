@@ -3,7 +3,7 @@ import { getServerSupabase } from '@/lib/server-supabase'
 import { authorizeCronRequest, logCronRequestMeta } from '@/lib/cron-auth'
 import { getEligibleUsersForQuarterlyInsightCron } from '@/lib/quarterly-insight/eligible-users'
 import { processQuarterlyInsightCronUser } from '@/lib/quarterly-insight/process-user'
-import { getUtcIsoQuarterId } from '@/lib/quarterly-insight/utc-iso-quarter'
+import { getQuarterlyInsightBatchQuarterId } from '@/lib/quarterly-insight/utc-iso-quarter'
 import {
   ensureQuarterlyInsightQuarterRollover,
   getQuarterlyInsightCursor,
@@ -21,8 +21,8 @@ const CONCURRENCY = 5
 
 /**
  * Cron: Quarterly insights for users on local quarter-start days (any hour) when not already completed.
- * Schedule (vercel.json): every 5 min, UTC 10:00–23:59 on day 31 and 00:00–14:59 on day 1, months
- * 1,4,7,10 only (~29h window per quarter rollover).
+ * Schedule (vercel.json): every 15 min, UTC days 28–31 10:00–23:59, day 1 all day, day 2 00:00–09:59
+ * (same global window as monthly). Eligible on local Jan/Apr/Jul/Oct 1 only.
  * Batch + cron_state cursor until the UTC-quarter wave completes.
  * Does not skip users on Monday 00 local (quarter-start Mondays included).
  */
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now()
   const now = new Date()
   const db = getServerSupabase()
-  const quarterId = getUtcIsoQuarterId(now)
+  const quarterId = getQuarterlyInsightBatchQuarterId(now)
 
   await ensureQuarterlyInsightQuarterRollover(db, quarterId)
 

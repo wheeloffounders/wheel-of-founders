@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getFeatureAccess } from '@/lib/features'
 import { fetchCompletedMonthlyInsightKeys } from '@/lib/monthly-insight/completed-check'
+import { userHasMonthlyInsightGenerationUnlocked } from '@/lib/weekly-insight/generation-eligibility'
 import {
   getPreviousMonthRangeYmdInTimeZone,
   getUserTimezoneFromProfile,
@@ -16,7 +16,10 @@ export type MonthlyInsightEligibleProfile = {
   timezone: string
 }
 
-/** Monthly-only cron: same exclusions as legacy route (no weekly or quarter-start day overlap). */
+/**
+ * Monthly cron: activity in last 30 days, page unlocked (days with entries), local calendar day 1.
+ * Pro not required — narrative gated on read. Skips weekly Monday 00–01 local and quarter-start days.
+ */
 export async function getEligibleUsersForMonthlyInsightCron(
   db: SupabaseClient,
   now: Date
@@ -70,12 +73,6 @@ export async function getEligibleUsersForMonthlyInsightCron(
       if (shouldRunWeeklyInsightForUser(now, tz)) continue
       if (isUserLocalQuarterStartCalendarDay(now, tz)) continue
     }
-    const hasFeature = getFeatureAccess({
-      tier: p.tier,
-      pro_features_enabled: p.pro_features_enabled,
-    }).personalMonthlyInsight
-    if (!hasFeature) continue
-
     if (testBypass) {
       eligible.push({
         id: p.id,
@@ -87,6 +84,11 @@ export async function getEligibleUsersForMonthlyInsightCron(
     }
 
     if (!isUserLocalFirstCalendarDayOfMonth(now, tz)) continue
+
+    const generationUnlocked =
+      testBypass || (await userHasMonthlyInsightGenerationUnlocked(p.id, db))
+    if (!generationUnlocked) continue
+
     const { monthStart } = getPreviousMonthRangeYmdInTimeZone(now, tz)
     pending.push({ ...p, monthStart })
   }
