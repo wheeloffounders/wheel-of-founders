@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { format, subDays } from 'date-fns'
-import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { findBestLessonForCelebrationGap } from '@/lib/founder-dna/celebration-gap-analysis'
 import {
@@ -24,6 +23,7 @@ import type { CelebrationGapResponse } from '@/lib/types/founder-dna'
 import type { UserProfileAccessRow } from '@/types/supabase'
 import { getUserTimezoneFromProfile } from '@/lib/timezone'
 import { getDaysWithEntries } from '@/lib/founder-dna/days-with-entries'
+import { resolveFounderDnaUserId } from '@/lib/founder-dna/resolve-user-for-cron'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -60,10 +60,8 @@ export async function GET(req: NextRequest) {
     console.log('[CelebrationGap API] forceRegenerate env:', process.env.CELEBRATION_GAP_FORCE_REGENERATE)
     console.log('[CelebrationGap API] mockInsights env:', process.env.CELEBRATION_GAP_MOCK_INSIGHTS)
 
-    const session = await getServerSessionFromRequest(req)
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const userId = session.user.id
+    const userId = await resolveFounderDnaUserId(req)
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const db = getServerSupabase()
 
     const profileRes = await db

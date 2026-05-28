@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { generateUnseenWinsPatternForUser } from '@/lib/patterns/generate-unseen-wins-pattern'
 import { SCHEDULE_UNSEEN_WINS_DAY } from '@/lib/founder-dna/unlock-schedule-config'
@@ -19,6 +18,7 @@ import {
 } from '@/lib/founder-dna/update-schedule'
 import type { UserProfileAccessRow } from '@/types/supabase'
 import { getDaysWithEntries } from '@/lib/founder-dna/days-with-entries'
+import { resolveFounderDnaUserId } from '@/lib/founder-dna/resolve-user-for-cron'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -28,12 +28,11 @@ export const revalidate = 0
  */
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSessionFromRequest(request)
-    if (!session) {
+    const userId = await resolveFounderDnaUserId(request)
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = session.user.id
     const db = getServerSupabase()
 
     const profileRes = await db

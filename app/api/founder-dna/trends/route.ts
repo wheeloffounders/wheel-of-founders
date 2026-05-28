@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 import type { EnergyMoodInsight } from '@/lib/types/founder-dna'
 import { SCHEDULE_ENERGY_MIN_DAYS } from '@/lib/founder-dna/unlock-schedule-config'
@@ -17,6 +16,7 @@ import type { EveningReviewTrendRow, UserProfileAccessRow } from '@/types/supaba
 import { fromZonedTime } from 'date-fns-tz'
 import { getLocalDayOfWeekSun0, getUserTimezoneFromProfile } from '@/lib/timezone'
 import { getDaysWithEntries } from '@/lib/founder-dna/days-with-entries'
+import { resolveFounderDnaUserId } from '@/lib/founder-dna/resolve-user-for-cron'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -195,12 +195,10 @@ export function computeEnergyMoodInsights(points: DayPoint[]): EnergyMoodInsight
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSessionFromRequest(req)
-    if (!session) {
+    const userId = await resolveFounderDnaUserId(req)
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    const userId = session.user.id
     const db = getServerSupabase()
 
     const [profileRes, unlockRes] = await Promise.all([

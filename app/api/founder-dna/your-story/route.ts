@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { format, subDays } from 'date-fns'
-import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { SCHEDULE_STORY_SO_FAR_DAY } from '@/lib/founder-dna/unlock-schedule-config'
 import {
@@ -22,6 +21,7 @@ import {
 } from '@/lib/founder-dna/generate-your-story-insights'
 import { getUserTimezoneFromProfile } from '@/lib/timezone'
 import { getDaysWithEntries } from '@/lib/founder-dna/days-with-entries'
+import { resolveFounderDnaUserId } from '@/lib/founder-dna/resolve-user-for-cron'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -91,10 +91,8 @@ function pickDisplayedWins(allWins: Win[], seedStr: string, max = 5): Win[] {
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSessionFromRequest(req)
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const userId = session.user.id
+    const userId = await resolveFounderDnaUserId(req)
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const db = getServerSupabase()
 
     const profileRes = await db

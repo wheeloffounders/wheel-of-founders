@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { getServerSupabase } from '@/lib/server-supabase'
 import { DECISION_STYLE_MIN_DAYS } from '@/lib/founder-dna/unlock-schedule-config'
 import {
@@ -16,6 +15,7 @@ import {
 import type { MorningDecisionBreakdownRow, UserProfileAccessRow } from '@/types/supabase'
 import { getUserTimezoneFromProfile } from '@/lib/timezone'
 import { getDaysWithEntries } from '@/lib/founder-dna/days-with-entries'
+import { resolveFounderDnaUserId } from '@/lib/founder-dna/resolve-user-for-cron'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -60,10 +60,8 @@ function isCompleteDecisionSnapshot(s: unknown): s is DecisionStyleSnapshot {
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSessionFromRequest(req)
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const userId = session.user.id
+    const userId = await resolveFounderDnaUserId(req)
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const db = getServerSupabase()
 
     const profileRes = await db
