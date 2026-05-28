@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       const { data: row } = await db
         .from('weekly_insights')
         .select('unseen_wins_pattern, week_start')
-        .eq('user_id', userId)
+        .eq('user_id', userId as string)
         .not('unseen_wins_pattern', 'is', null)
         .order('week_start', { ascending: false })
         .limit(1)

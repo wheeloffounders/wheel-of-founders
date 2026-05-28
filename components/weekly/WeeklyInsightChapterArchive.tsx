@@ -21,8 +21,8 @@ import {
 
 function profileFromBundle(bundle: MorningUserProfileBundle | null): UserProfile {
   return {
-    tier: bundle?.tier,
-    pro_features_enabled: bundle?.pro_features_enabled,
+    tier: bundle?.tier ?? undefined,
+    pro_features_enabled: bundle?.pro_features_enabled ?? undefined,
     subscription_override: bundle?.subscription_override ?? null,
     subscription_tier: bundle?.subscription_tier ?? null,
     is_beta_retired: bundle?.is_beta_retired ?? null,
@@ -68,14 +68,23 @@ export function WeeklyInsightChapterArchive({
     return () => window.removeEventListener('wof-trial-sim-changed', onSim)
   }, [refreshWeeklyNarrativeLock])
 
+  const syncArchiveUrl = useCallback(
+    (weekStart: string) => {
+      router.replace(insightArchiveHref('weekStart', weekStart), { scroll: false })
+    },
+    [router],
+  )
+
   useEffect(() => {
     if (weeks.length === 0) return
-    if (highlightWeekStart && weeks.some((w) => w.weekStart === highlightWeekStart)) {
-      setNavWeekStart(highlightWeekStart)
-      return
-    }
-    if (!navWeekStart) setNavWeekStart(weeks[0]!.weekStart)
-  }, [weeks, highlightWeekStart, navWeekStart])
+    const fromUrl =
+      highlightWeekStart && weeks.some((w) => w.weekStart === highlightWeekStart)
+        ? highlightWeekStart
+        : null
+    const next = fromUrl ?? weeks[0]!.weekStart
+    setNavWeekStart(next)
+    if (!fromUrl) syncArchiveUrl(next)
+  }, [weeks, highlightWeekStart, syncArchiveUrl])
 
   const openWeek = useCallback(
     (weekStart: string) => {

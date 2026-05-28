@@ -18,8 +18,8 @@ import { insightArchiveHref } from '@/lib/insights/insight-archive-url'
 
 function profileFromBundle(bundle: MorningUserProfileBundle | null): UserProfile {
   return {
-    tier: bundle?.tier,
-    pro_features_enabled: bundle?.pro_features_enabled,
+    tier: bundle?.tier ?? undefined,
+    pro_features_enabled: bundle?.pro_features_enabled ?? undefined,
     subscription_override: bundle?.subscription_override ?? null,
     subscription_tier: bundle?.subscription_tier ?? null,
     is_beta_retired: bundle?.is_beta_retired ?? null,
@@ -65,14 +65,23 @@ export function QuarterlyInsightChapterArchive({
     }
   }, [])
 
+  const syncArchiveUrl = useCallback(
+    (periodKey: string) => {
+      router.replace(insightArchiveHref('quarter', periodKey), { scroll: false })
+    },
+    [router],
+  )
+
   useEffect(() => {
     if (chapters.length === 0) return
-    if (highlightQuarterKey && chapters.some((c) => c.periodKey === highlightQuarterKey)) {
-      setActivePeriodKey(highlightQuarterKey)
-      return
-    }
-    if (!activePeriodKey) setActivePeriodKey(chapters[0]!.periodKey)
-  }, [chapters, highlightQuarterKey, activePeriodKey])
+    const fromUrl =
+      highlightQuarterKey && chapters.some((c) => c.periodKey === highlightQuarterKey)
+        ? highlightQuarterKey
+        : null
+    const next = fromUrl ?? chapters[0]!.periodKey
+    setActivePeriodKey(next)
+    if (!fromUrl) syncArchiveUrl(next)
+  }, [chapters, highlightQuarterKey, syncArchiveUrl])
 
   const openQuarter = useCallback(
     (periodKey: string) => {

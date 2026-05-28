@@ -18,8 +18,8 @@ import { insightArchiveHref } from '@/lib/insights/insight-archive-url'
 
 function profileFromBundle(bundle: MorningUserProfileBundle | null): UserProfile {
   return {
-    tier: bundle?.tier,
-    pro_features_enabled: bundle?.pro_features_enabled,
+    tier: bundle?.tier ?? undefined,
+    pro_features_enabled: bundle?.pro_features_enabled ?? undefined,
     subscription_override: bundle?.subscription_override ?? null,
     subscription_tier: bundle?.subscription_tier ?? null,
     is_beta_retired: bundle?.is_beta_retired ?? null,
