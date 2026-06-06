@@ -2,7 +2,14 @@
  * Values allowed for public.insight_feedback.feedback and POST /api/feedback/insight `feedback`.
  * insight_id column is TEXT (UUID string or other stable id from the app).
  */
-export const INSIGHT_FEEDBACK_VALUES = ['helpful', 'not-helpful', 'tone-adjustment'] as const
+export const INSIGHT_FEEDBACK_VALUES = [
+  'helpful',
+  'not-helpful',
+  'tone-adjustment',
+  'felt-fresh',
+  'felt-same',
+  'too-long',
+] as const
 
 export type InsightFeedbackValue = (typeof INSIGHT_FEEDBACK_VALUES)[number]
 

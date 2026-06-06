@@ -32,6 +32,7 @@ import { SplashWithMicroLesson } from '@/components/SplashWithMicroLesson'
 import { PullToRefresh } from '@/components/PullToRefresh'
 import { SafeAreaDebugOverlay } from '@/components/SafeAreaDebugOverlay'
 import { SessionSourceCapture } from '@/components/analytics/SessionSourceCapture'
+import { AcquisitionSnapshotCapture } from '@/components/analytics/AcquisitionSnapshotCapture'
 import { EmergencyModeProvider, EmergencyShell } from '@/components/emergency/EmergencyModeProvider'
 import { SupabaseAuthDebugListener } from '@/components/SupabaseAuthDebugListener'
 import { OnboardingSessionGate } from '@/components/OnboardingSessionGate'
@@ -131,6 +132,7 @@ export default async function RootLayout({
         </Suspense>
         <Suspense fallback={null}>
           <SessionSourceCapture />
+          <AcquisitionSnapshotCapture />
         </Suspense>
         <MainWithPadding>{children}</MainWithPadding>
         <BottomNav />

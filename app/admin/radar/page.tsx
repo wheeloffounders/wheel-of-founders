@@ -9,9 +9,15 @@ import { InfoTooltip } from '@/components/InfoTooltip'
 
 const RADAR_LEADER_HINTS = {
   funnel:
-    'The specific blog widget or homepage tool the user interacted with (funnel id).',
+    'The specific blog widget or homepage tool the user interacted with (funnel id). Posts without a widget use post_* ids.',
+  lands:
+    'Page views: someone opened the blog post (or index) this session — includes read-only visits with no widget tap.',
   starts:
     'Total times someone first engaged with an input or control in this widget. Measures curiosity.',
+  readOnly:
+    'Approx. lands minus starts in this window (same visitor can land without starting). High = content readers who skip the tool.',
+  engagedFromLand:
+    'Widget engagement rate: starts ÷ lands. Low = people read but do not try the interactive tool.',
   completes:
     'Total times someone reached the final summary or payoff screen. Measures value delivered.',
   conversions:
@@ -32,6 +38,10 @@ const RADAR_RECENT_HINTS = {
 } as const
 
 const RADAR_TOP_STATS_HINTS = {
+  blogLands:
+    'Blog page opens (page_view) in the last 30 days — includes visitors who read without using the widget.',
+  landToStart:
+    'Of everyone who landed on a tracked blog/home page, what percent also started a widget? Low = content-only traffic.',
   activeTrials:
     'How many profiles are in an active blog/home Pro trial right now: is_pro_trial is true and trial_ends_at is still in the future. Think open gift windows, not lifetime revenue.',
   signupsToday:
@@ -60,11 +70,14 @@ function HeaderWithHint({ label, hint }: { label: string; hint: string }) {
 
 type LeaderRow = {
   funnel_id: string
+  lands: number
   starts: number
   completes: number
   conversions: number
   complete_to_conversion: number
   start_to_complete_pct: number
+  start_from_land_pct: number
+  read_only_lands: number
 }
 
 type RecentConversionRow = {
@@ -82,6 +95,8 @@ type RadarPayload = {
   radar_warnings?: string[]
   signups_today: number
   diagnostic_completion_rate_pct: number | null
+  land_to_start_rate_pct: number | null
+  funnel_lands_30d: number
   funnel_starts_30d: number
   funnel_completes_30d: number
   leaderboard: LeaderRow[]
@@ -156,7 +171,12 @@ export default function AdminFounderRadarPage() {
             <Gauge className="h-6 w-6 text-[#ef725c]" aria-hidden />
             <div>
               <h1 className="text-xl font-bold tracking-tight text-white">Founder Radar</h1>
-              <p className="text-xs text-zinc-500">Funnel intent · last {data?.window_days ?? 30} days</p>
+              <p className="text-xs text-zinc-500">
+                Widget funnel detail · last {data?.window_days ?? 30} days ·{' '}
+                <Link href="/admin/acquisition" className="text-[#ef725c] hover:underline">
+                  full traffic → Acquisition
+                </Link>
+              </p>
             </div>
           </div>
         </div>
@@ -188,7 +208,21 @@ export default function AdminFounderRadarPage() {
             ) : null}
             <section>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Top stats</h2>
-              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border border-zinc-800 bg-[#111822] p-5 shadow-lg">
+                  <StatCardTitleWithHint label="Blog lands (30d)" hint={RADAR_TOP_STATS_HINTS.blogLands} />
+                  <p className="mt-2 text-3xl font-bold tabular-nums text-sky-300">{data.funnel_lands_30d}</p>
+                  <p className="mt-1 text-xs text-zinc-500">page_view events (session deduped)</p>
+                </div>
+                <div className="rounded-xl border border-zinc-800 bg-[#111822] p-5 shadow-lg">
+                  <StatCardTitleWithHint label="Engaged after land" hint={RADAR_TOP_STATS_HINTS.landToStart} />
+                  <p className="mt-2 text-3xl font-bold tabular-nums text-[#fbbf24]">
+                    {data.land_to_start_rate_pct != null ? `${data.land_to_start_rate_pct}%` : '—'}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    starts ÷ lands ({data.funnel_starts_30d} / {data.funnel_lands_30d})
+                  </p>
+                </div>
                 <div className="rounded-xl border border-zinc-800 bg-[#111822] p-5 shadow-lg">
                   <StatCardTitleWithHint label="Active Pro trials" hint={RADAR_TOP_STATS_HINTS.activeTrials} />
                   <p className="mt-2 text-3xl font-bold tabular-nums text-white">{data.active_pro_trials}</p>
@@ -218,18 +252,28 @@ export default function AdminFounderRadarPage() {
             <section>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Funnel leaderboard</h2>
               <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-                MVP = highest conversion per completed diagnostic (ties favor more completions). Ratios use the same
-                30-day window as stats above.
+                MVP = highest conversion per completed diagnostic (ties favor more completions).{' '}
+                <strong className="font-medium text-zinc-300">Lands</strong> count read-only blog visits;{' '}
+                <strong className="font-medium text-zinc-300">Starts</strong> require widget interaction.
               </p>
               <div className="mt-4 overflow-x-auto rounded-xl border border-zinc-800 bg-[#111822] shadow-lg">
-                <table className="w-full min-w-[640px] text-left text-sm">
+                <table className="w-full min-w-[880px] text-left text-sm">
                   <thead>
                     <tr className="border-b border-zinc-800 text-xs uppercase tracking-wide text-zinc-500">
                       <th scope="col" className="px-4 py-3">
                         <HeaderWithHint label="Funnel" hint={RADAR_LEADER_HINTS.funnel} />
                       </th>
                       <th scope="col" className="px-4 py-3 tabular-nums">
+                        <HeaderWithHint label="Lands" hint={RADAR_LEADER_HINTS.lands} />
+                      </th>
+                      <th scope="col" className="px-4 py-3 tabular-nums">
                         <HeaderWithHint label="Starts" hint={RADAR_LEADER_HINTS.starts} />
+                      </th>
+                      <th scope="col" className="px-4 py-3 tabular-nums">
+                        <HeaderWithHint label="Read-only" hint={RADAR_LEADER_HINTS.readOnly} />
+                      </th>
+                      <th scope="col" className="px-4 py-3 tabular-nums">
+                        <HeaderWithHint label="Engaged %" hint={RADAR_LEADER_HINTS.engagedFromLand} />
                       </th>
                       <th scope="col" className="px-4 py-3 tabular-nums">
                         <HeaderWithHint label="Completes" hint={RADAR_LEADER_HINTS.completes} />
@@ -248,18 +292,23 @@ export default function AdminFounderRadarPage() {
                   <tbody>
                     {data.leaderboard.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
-                          No funnel_analytics rows yet. Open a blog widget and run migration 146.
+                        <td colSpan={9} className="px-4 py-8 text-center text-zinc-500">
+                          No funnel_analytics rows yet. Open a blog post and run migrations 146 + 150.
                         </td>
                       </tr>
                     ) : (
                       data.leaderboard.map((row, i) => (
                         <tr
                           key={row.funnel_id}
-                          className={`border-b border-zinc-800/80 ${i === 0 ? 'bg-[#ef725c]/10' : ''}`}
+                          className={`border-b border-zinc-800/80 ${i === 0 && row.conversions > 0 ? 'bg-[#ef725c]/10' : ''}`}
                         >
                           <td className="px-4 py-3 font-mono text-xs text-zinc-200">{row.funnel_id}</td>
+                          <td className="px-4 py-3 tabular-nums text-sky-200/90">{row.lands}</td>
                           <td className="px-4 py-3 tabular-nums text-zinc-300">{row.starts}</td>
+                          <td className="px-4 py-3 tabular-nums text-zinc-500">{row.read_only_lands}</td>
+                          <td className="px-4 py-3 tabular-nums text-zinc-300">
+                            {row.lands > 0 ? `${row.start_from_land_pct}%` : '—'}
+                          </td>
                           <td className="px-4 py-3 tabular-nums text-zinc-300">{row.completes}</td>
                           <td className="px-4 py-3 tabular-nums text-emerald-300">{row.conversions}</td>
                           <td className="px-4 py-3 tabular-nums font-medium text-[#fbbf24]">

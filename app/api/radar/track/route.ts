@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { deriveInboundTouchLabel } from '@/lib/radar-inbound-label'
+import { normalizeInboundFromBody } from '@/lib/acquisition-snapshot'
+import { isInternalTrafficPath, isExcludedFromAdminAnalytics } from '@/lib/admin/internal-traffic-exclusion'
+import { isLocalhostRequest } from '@/lib/analytics/skip-internal-analytics'
+import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { serverSupabase } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
-const EVENTS = new Set(['start', 'complete', 'conversion'])
+const EVENTS = new Set(['page_view', 'start', 'complete', 'conversion'])
 const SOURCES = new Set(['home', 'blog'])
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const FUNNEL_RE = /^[a-z0-9_]{1,96}$/
@@ -14,39 +18,22 @@ type InboundRow = {
   utm_source: string
   utm_medium: string
   utm_campaign: string
+  utm_term: string
+  search_keyword: string
+  search_engine: string
   first_landing_page: string
   captured_at: string
   touch_label: string
 }
 
 function sanitizeInboundSnapshot(raw: unknown): InboundRow | null {
-  if (raw == null) return null
-  if (typeof raw !== 'object' || Array.isArray(raw)) return null
-  const o = raw as Record<string, unknown>
-  const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '')
-  const referrer = str(o.referrer, 500)
-  const utm_source = str(o.utm_source, 200)
-  const utm_medium = str(o.utm_medium, 200)
-  const utm_campaign = str(o.utm_campaign, 200)
-  const first_landing_page = str(o.first_landing_page, 2000)
-  const captured_at = str(o.captured_at, 40)
-  const hasSomething =
-    referrer.length > 0 ||
-    utm_source.length > 0 ||
-    utm_medium.length > 0 ||
-    utm_campaign.length > 0 ||
-    first_landing_page.length > 0
-  if (!hasSomething) return null
-  const touch_label = deriveInboundTouchLabel({ utm_source, referrer })
-  return {
-    referrer,
-    utm_source,
-    utm_medium,
-    utm_campaign,
-    first_landing_page,
-    captured_at,
-    touch_label,
-  }
+  const normalized = normalizeInboundFromBody(raw)
+  if (!normalized) return null
+  const touch_label = deriveInboundTouchLabel({
+    utm_source: normalized.utm_source,
+    referrer: normalized.referrer,
+  })
+  return { ...normalized, touch_label }
 }
 
 /**
@@ -60,6 +47,7 @@ export async function POST(req: NextRequest) {
       source?: string
       visitor_id?: string
       inbound_snapshot?: unknown
+      page_path?: string
     } | null
     if (!body) return NextResponse.json({ ok: false }, { status: 400 })
 
@@ -72,8 +60,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false }, { status: 400 })
     }
 
+    if (isLocalhostRequest(req)) {
+      return NextResponse.json({ ok: true, skipped: 'localhost' })
+    }
+
+    const page_path =
+      typeof body.page_path === 'string' ? body.page_path.trim().slice(0, 2000) : ''
+    if (event_type === 'page_view') {
+      if (!page_path.startsWith('/') || isInternalTrafficPath(page_path)) {
+        return NextResponse.json({ ok: false }, { status: 400 })
+      }
+    }
+
+    const session = await getServerSessionFromRequest(req)
+    if (
+      session?.user?.id &&
+      isExcludedFromAdminAnalytics({ id: session.user.id, email: session.user.email })
+    ) {
+      return NextResponse.json({ ok: true, skipped: 'internal_team' })
+    }
+
     let inbound = sanitizeInboundSnapshot(body.inbound_snapshot)
-    if (inbound && event_type !== 'start' && event_type !== 'conversion') {
+    if (inbound && event_type !== 'start' && event_type !== 'conversion' && event_type !== 'page_view') {
       inbound = null
     }
 
@@ -83,6 +91,9 @@ export async function POST(req: NextRequest) {
       event_type,
       source,
       visitor_id,
+    }
+    if (event_type === 'page_view') {
+      row.page_path = page_path
     }
     if (inbound) {
       row.inbound_snapshot = inbound

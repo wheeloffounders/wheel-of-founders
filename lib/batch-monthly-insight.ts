@@ -5,6 +5,9 @@ import { startOfWeek, endOfWeek, addDays, startOfMonth, endOfMonth, addMonths } 
 import { getServerSupabase } from '@/lib/server-supabase'
 import { generateAIPrompt } from '@/lib/ai-client'
 import { checkUserHistory } from '@/lib/user-history'
+import { getDaysWithEntries } from '@/lib/founder-dna/days-with-entries'
+import { getRelationshipPhase, buildMonthlyChapterSystemPrompt } from '@/lib/mrs-deer/coaching-evolution'
+import { getFounderThemes, buildFounderThemesPromptBlock } from '@/lib/mrs-deer/founder-themes'
 import { detectWinThemes } from '@/lib/weekly-analysis'
 import { PARSE_INSTRUCTION } from '@/lib/insight-parse-instructions'
 import type { WinWithDate, LessonWithDate } from '@/lib/weekly-analysis'
@@ -184,6 +187,10 @@ OUTPUT FORMAT: Use markdown ## headers for section titles. Structure as 6-8 sect
   const { hasHistory } = await checkUserHistory(userId)
   const MRS_DEER_RULES = `You are Mrs. Deer, a warm, wise coach for founders. You've sat with many founders. You validate before reframing. You think with them, not at them.`
   const historyNote = hasHistory ? '' : ' CRITICAL: User has NO prior history. ONLY use what they wrote this month. DO NOT say "I recall" or invent context. Be a mirror, not a coach.'
+  const daysWithEntries = await getDaysWithEntries(userId, db)
+  const phase = getRelationshipPhase(daysWithEntries)
+  const themes = await getFounderThemes(userId, db)
+  const themesBlock = buildFounderThemesPromptBlock(themes, 'monthly')
 
   async function persistMonthlyInsightArtifacts(insight: string) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -205,7 +212,7 @@ OUTPUT FORMAT: Use markdown ## headers for section titles. Structure as 6-8 sect
 
   try {
     const insight = await generateAIPrompt({
-      systemPrompt: `${MRS_DEER_RULES}\n\nMonthly insight: max 800 words. Output 6-8 sections with ## markdown headers. BANNED: needle mover, action plan, smart constraint, power list.${historyNote}`,
+      systemPrompt: `${MRS_DEER_RULES}\n\n${buildMonthlyChapterSystemPrompt(phase)}${themesBlock}${historyNote}`,
       userPrompt,
       maxTokens: 2000,
       temperature: 0.7,

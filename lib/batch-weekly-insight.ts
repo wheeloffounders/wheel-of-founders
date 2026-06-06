@@ -5,6 +5,13 @@
 import { getServerSupabase } from '@/lib/server-supabase'
 import { generateAIPrompt } from '@/lib/ai-client'
 import { checkUserHistory } from '@/lib/user-history'
+import { getDaysWithEntries } from '@/lib/founder-dna/days-with-entries'
+import { getRelationshipPhase, buildWeeklyArcSystemPrompt } from '@/lib/mrs-deer/coaching-evolution'
+import {
+  getFounderThemes,
+  buildFounderThemesPromptBlock,
+  refreshFounderThemes,
+} from '@/lib/mrs-deer/founder-themes'
 import { PARSE_INSTRUCTION } from '@/lib/insight-parse-instructions'
 import { adminSupabase } from '@/lib/supabase/admin'
 import * as Sentry from '@sentry/nextjs'
@@ -370,6 +377,10 @@ export async function generateWeeklyInsightForUser(
   const { hasHistory } = await checkUserHistory(userId)
   const MRS_DEER_RULES = `You are Mrs. Deer, a warm, wise coach for founders. You've sat with many founders. You validate before reframing. You think with them, not at them.`
   const historyNote = hasHistory ? '' : ' CRITICAL: User has NO prior history. ONLY use what they wrote this week. DO NOT say "I recall" or invent context. Be a mirror, not a coach.'
+  const daysWithEntries = await getDaysWithEntries(userId, db)
+  const phase = getRelationshipPhase(daysWithEntries)
+  const themes = await getFounderThemes(userId, db)
+  const themesBlock = buildFounderThemesPromptBlock(themes, 'weekly')
 
   await logWeeklyInsightDebug({
     userId,
@@ -386,7 +397,7 @@ export async function generateWeeklyInsightForUser(
 
   try {
     const insight = await generateAIPrompt({
-      systemPrompt: `${MRS_DEER_RULES}\n\nWeekly insight: max 350 words. Output exactly 4 sections with ## markdown headers and blank lines between sections. Let AI choose warm, natural titles. BANNED: needle mover, action plan, smart constraint, power list. Use natural language only.${historyNote}`,
+      systemPrompt: `${MRS_DEER_RULES}\n\n${buildWeeklyArcSystemPrompt(phase)}${themesBlock}${historyNote}`,
       userPrompt,
       maxTokens: 2000,
       temperature: 0.7,
@@ -411,6 +422,8 @@ export async function generateWeeklyInsightForUser(
       },
       { onConflict: 'user_id,insight_type,period_start,period_end' }
     )
+
+    void refreshFounderThemes(userId, weekEnd, db).catch(() => {})
 
     // Also ensure weekly_insights row reflects completed status (cron and on-demand keep it in sync)
     await (db.from('weekly_insights') as any).upsert(

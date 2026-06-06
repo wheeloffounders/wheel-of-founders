@@ -3,24 +3,26 @@
  * Events are persisted via POST /api/radar/track (service role insert).
  */
 
-export type RadarEventType = 'start' | 'complete' | 'conversion'
+import { blogSlugToPostFunnelId } from '@/lib/blog/extract-widget-funnel'
+import {
+  parseInboundCookieValue,
+  WOF_INBOUND_COOKIE,
+  inboundSnapshotPayload,
+  type InboundTouchSnapshot,
+} from '@/lib/acquisition-snapshot'
+import { resolveInboundSearchKeyword } from '@/lib/inbound-search-keyword'
+
+export type RadarEventType = 'page_view' | 'start' | 'complete' | 'conversion'
 export type RadarSource = 'home' | 'blog'
 
+/** @deprecated Use InboundTouchSnapshot from lib/acquisition-snapshot */
+export type RadarInboundSnapshot = InboundTouchSnapshot
+
 const VISITOR_COOKIE = 'wof_radar_visitor'
-const INBOUND_COOKIE = 'wof_inbound_ctx'
+const INBOUND_COOKIE = WOF_INBOUND_COOKIE
 const VISITOR_MAX_AGE_SEC = 60 * 60 * 24 * 400
 export const WOF_RADAR_LAST_FUNNEL_KEY = 'wof_radar_last_funnel_id'
 const WOF_RADAR_LAST_SOURCE_KEY = 'wof_radar_last_source'
-
-/** First-touch marketing context (cookie); stable for the visitor lifetime. */
-export type RadarInboundSnapshot = {
-  referrer: string
-  utm_source: string
-  utm_medium: string
-  utm_campaign: string
-  first_landing_page: string
-  captured_at: string
-}
 
 function randomUuid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -43,24 +45,8 @@ function readCookieValue(name: string): string | null {
   return null
 }
 
-function readInboundSnapshotFromCookie(): RadarInboundSnapshot | null {
-  const raw = readCookieValue(INBOUND_COOKIE)
-  if (!raw) return null
-  try {
-    const decoded = decodeURIComponent(raw)
-    const j = JSON.parse(decoded) as Partial<RadarInboundSnapshot>
-    if (!j || typeof j !== 'object') return null
-    return {
-      referrer: typeof j.referrer === 'string' ? j.referrer : '',
-      utm_source: typeof j.utm_source === 'string' ? j.utm_source : '',
-      utm_medium: typeof j.utm_medium === 'string' ? j.utm_medium : '',
-      utm_campaign: typeof j.utm_campaign === 'string' ? j.utm_campaign : '',
-      first_landing_page: typeof j.first_landing_page === 'string' ? j.first_landing_page : '',
-      captured_at: typeof j.captured_at === 'string' ? j.captured_at : '',
-    }
-  } catch {
-    return null
-  }
+function readInboundSnapshotFromCookie(): InboundTouchSnapshot | null {
+  return parseInboundCookieValue(readCookieValue(INBOUND_COOKIE))
 }
 
 /** Create first-touch cookie once: external referrer, UTMs, landing path. */
@@ -73,6 +59,7 @@ export function ensureInboundContextCookie(): void {
     const utm_source = (params.get('utm_source') ?? '').trim().slice(0, 200)
     const utm_medium = (params.get('utm_medium') ?? '').trim().slice(0, 200)
     const utm_campaign = (params.get('utm_campaign') ?? '').trim().slice(0, 200)
+    const utm_term = (params.get('utm_term') ?? '').trim().slice(0, 200)
 
     let referrer = ''
     try {
@@ -88,11 +75,15 @@ export function ensureInboundContextCookie(): void {
     }
 
     const first_landing_page = `${window.location.pathname}${window.location.search}`.slice(0, 2000)
-    const snapshot: RadarInboundSnapshot = {
+    const search = resolveInboundSearchKeyword({ referrer, utm_term, first_landing_page, utm_source })
+    const snapshot: InboundTouchSnapshot = {
       referrer,
       utm_source,
       utm_medium,
       utm_campaign,
+      utm_term: search.utm_term || utm_term,
+      search_keyword: search.search_keyword,
+      search_engine: search.search_engine,
       first_landing_page,
       captured_at: new Date().toISOString(),
     }
@@ -174,11 +165,14 @@ export function trackRadarEvent(funnelId: string, eventType: RadarEventType, sou
   if (!id) return
   void (async () => {
     try {
+      const { shouldSkipInternalAnalytics } = await import('@/lib/analytics/skip-internal-analytics')
+      if (await shouldSkipInternalAnalytics()) return
+
       const visitorId = getOrCreateRadarVisitorId()
       if (!visitorId) return
       if (eventType === 'start') rememberRadarFunnelContext(id, source)
 
-      const attachInbound = eventType === 'start' || eventType === 'conversion'
+      const attachInbound = eventType === 'start' || eventType === 'conversion' || eventType === 'page_view'
       const inbound = attachInbound ? readInboundSnapshotFromCookie() : null
 
       const body: Record<string, unknown> = {
@@ -189,14 +183,7 @@ export function trackRadarEvent(funnelId: string, eventType: RadarEventType, sou
       }
 
       if (inbound) {
-        body.inbound_snapshot = {
-          referrer: inbound.referrer,
-          utm_source: inbound.utm_source,
-          utm_medium: inbound.utm_medium,
-          utm_campaign: inbound.utm_campaign,
-          first_landing_page: inbound.first_landing_page,
-          captured_at: inbound.captured_at,
-        }
+        body.inbound_snapshot = inboundSnapshotPayload(inbound)
       }
 
       await fetch('/api/radar/track', {
@@ -215,4 +202,77 @@ export function trackRadarConversionForGiftClaim(): void {
   const ctx = readRadarContextForConversion()
   if (!ctx) return
   trackRadarEvent(ctx.funnelId, 'conversion', ctx.source)
+}
+
+/**
+ * Blog (or home) page opened — counts read-only visits, not only widget interaction.
+ * Deduped once per browser session per page_path.
+ */
+export function trackRadarPageView(params: {
+  pagePath: string
+  source: RadarSource
+  /** Widget funnel when post has InteractiveTemplate; groups lands with starts in Radar. */
+  widgetFunnelId?: string | null
+  /** Used to build post_* funnel_id when there is no widget. */
+  postSlug?: string
+}): void {
+  const pagePath = params.pagePath.trim()
+  if (!pagePath.startsWith('/')) return
+
+  try {
+    if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(`wof_radar_pv:${pagePath}`)) {
+      return
+    }
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(`wof_radar_pv:${pagePath}`, '1')
+    }
+  } catch {
+    return
+  }
+
+  let funnelId = params.widgetFunnelId?.trim().toLowerCase() || ''
+  if (!funnelId) {
+    if (params.postSlug) {
+      funnelId = blogSlugToPostFunnelId(params.postSlug)
+    } else {
+      const blogMatch = pagePath.match(/^\/blog\/([^/?#]+)/)
+      if (blogMatch?.[1]) {
+        funnelId = blogSlugToPostFunnelId(decodeURIComponent(blogMatch[1]))
+      } else {
+        funnelId = 'blog_page'
+      }
+    }
+  }
+
+  void (async () => {
+    try {
+      const { shouldSkipInternalAnalytics } = await import('@/lib/analytics/skip-internal-analytics')
+      if (await shouldSkipInternalAnalytics()) return
+
+      const visitorId = getOrCreateRadarVisitorId()
+      if (!visitorId) return
+
+      const inbound = readInboundSnapshotFromCookie()
+
+      const body: Record<string, unknown> = {
+        funnel_id: funnelId,
+        event_type: 'page_view',
+        source: params.source,
+        visitor_id: visitorId,
+        page_path: pagePath.slice(0, 2000),
+      }
+
+      if (inbound) {
+        body.inbound_snapshot = inboundSnapshotPayload(inbound)
+      }
+
+      await fetch('/api/radar/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    } catch {
+      /* silent */
+    }
+  })()
 }

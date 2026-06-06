@@ -15,9 +15,16 @@ export default function PageViewTracker() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const doSend = useCallback((path: string) => {
-    const sessionId = getOrCreatePageViewClientSessionId()
-    const referrer = typeof document !== 'undefined' ? document.referrer || null : null
-    trackPageView(path, { session_id: sessionId, referrer })
+    void (async () => {
+      const { shouldSkipInternalAnalytics, isInternalAnalyticsPath } = await import(
+        '@/lib/analytics/skip-internal-analytics'
+      )
+      if (isInternalAnalyticsPath(path)) return
+      if (await shouldSkipInternalAnalytics()) return
+      const sessionId = getOrCreatePageViewClientSessionId()
+      const referrer = typeof document !== 'undefined' ? document.referrer || null : null
+      trackPageView(path, { session_id: sessionId, referrer })
+    })()
   }, [])
 
   useEffect(() => {

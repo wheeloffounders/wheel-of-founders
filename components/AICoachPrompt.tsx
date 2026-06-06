@@ -23,6 +23,7 @@ import { InsightTeaserBlur } from '@/components/insights/InsightTeaserBlur'
 import { NextStepPrompt } from './NextStepPrompt'
 import { InsightFeedback } from './InsightFeedback'
 import { CalibrationRow } from './CalibrationRow'
+import { InsightFreshnessRow } from './InsightFreshnessRow'
 
 interface AICoachPromptProps {
   message: string
@@ -196,18 +197,26 @@ export function AICoachPrompt({
     </div>
   )
 
-  const calibrationInsideCard =
-    (trigger === 'morning_after' || trigger === 'emergency') &&
+  const showDailyFeedback =
     insightId &&
     insightTypeForFeedback &&
     !auditStreaming &&
     !insightFreemiumLocked &&
-    !isTeaser ? (
+    !isTeaser &&
+    (trigger === 'morning_after' || trigger === 'evening_after' || trigger === 'emergency')
+
+  const calibrationInsideCard =
+    showDailyFeedback && (trigger === 'morning_after' || trigger === 'emergency') ? (
       <CalibrationRow
         insightId={insightId}
         insightType={insightTypeForFeedback}
         toneAdjustLocked={toneAdjustLocked}
       />
+    ) : null
+
+  const freshnessInsideCard =
+    showDailyFeedback ? (
+      <InsightFreshnessRow insightId={insightId} insightType={insightTypeForFeedback} />
     ) : null
 
   const morningSparkCardClass = cn(
@@ -235,6 +244,7 @@ export function AICoachPrompt({
         <div className={morningSparkCardClass}>
           {body}
           {calibrationInsideCard}
+          {freshnessInsideCard}
         </div>
       ) : (
         <MrsDeerMessageBubble expression={expression} variant={variant}>
@@ -245,7 +255,10 @@ export function AICoachPrompt({
         <NextStepPrompt type={TRIGGER_TO_NEXT_STEP[trigger]} />
       )}
       {!morningSparkSurface && insightId && insightTypeForFeedback ? (
-        <InsightFeedback insightId={insightId} insightType={insightTypeForFeedback} />
+        <>
+          <InsightFeedback insightId={insightId} insightType={insightTypeForFeedback} />
+          <InsightFreshnessRow insightId={insightId} insightType={insightTypeForFeedback} />
+        </>
       ) : null}
     </div>
   )

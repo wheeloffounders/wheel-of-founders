@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { format, subDays } from 'date-fns'
 import { getServerSession } from '@/lib/server-auth'
 import { isWhitelistAdminEmail } from '@/lib/admin-emails'
-import { deriveInboundTouchLabel } from '@/lib/radar-inbound-label'
+import { inboundLabelFromSnapshot } from '@/lib/acquisition-snapshot'
 import { serverSupabase } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -80,19 +80,6 @@ async function countActiveProTrials(db: ReturnType<typeof serverSupabase>) {
     primaryError: primary.error,
     fallbackError: fallback.error,
   }
-}
-
-function inboundLabelFromSnapshot(snap: unknown): string {
-  if (!snap || typeof snap !== 'object' || Array.isArray(snap)) {
-    return '—'
-  }
-  const o = snap as Record<string, unknown>
-  const tl = typeof o.touch_label === 'string' ? o.touch_label.trim() : ''
-  if (tl.length > 0) return tl.slice(0, 128)
-  return deriveInboundTouchLabel({
-    utm_source: typeof o.utm_source === 'string' ? o.utm_source : '',
-    referrer: typeof o.referrer === 'string' ? o.referrer : '',
-  })
 }
 
 function compactErr(err: unknown): { message: string; code?: string } | null {
@@ -257,12 +244,19 @@ export async function GET() {
     const rows = (funnelRows ?? []) as FunnelRow[]
     let starts = 0
     let completes = 0
-    const byFunnel: Record<string, { start: number; complete: number; conversion: number }> = {}
+    let lands = 0
+    const byFunnel: Record<
+      string,
+      { start: number; complete: number; conversion: number; page_view: number }
+    > = {}
 
     for (const r of rows) {
       const fid = r.funnel_id
-      if (!byFunnel[fid]) byFunnel[fid] = { start: 0, complete: 0, conversion: 0 }
-      if (r.event_type === 'start') {
+      if (!byFunnel[fid]) byFunnel[fid] = { start: 0, complete: 0, conversion: 0, page_view: 0 }
+      if (r.event_type === 'page_view') {
+        lands += 1
+        byFunnel[fid].page_view += 1
+      } else if (r.event_type === 'start') {
         starts += 1
         byFunnel[fid].start += 1
       } else if (r.event_type === 'complete') {
@@ -274,17 +268,22 @@ export async function GET() {
     }
 
     const diagnosticCompletionRate = starts === 0 ? null : Math.round((completes / starts) * 1000) / 10
+    const landToStartRate = lands === 0 ? null : Math.round((starts / lands) * 1000) / 10
 
     const leaderboard = Object.entries(byFunnel)
       .map(([funnel_id, v]) => {
         const completeToConversion = v.complete > 0 ? v.conversion / v.complete : 0
+        const startFromLandPct = v.page_view > 0 ? Math.round((v.start / v.page_view) * 1000) / 10 : 0
         return {
           funnel_id,
+          lands: v.page_view,
           starts: v.start,
           completes: v.complete,
           conversions: v.conversion,
           complete_to_conversion: Math.round(completeToConversion * 1000) / 10,
           start_to_complete_pct: v.start > 0 ? Math.round((v.complete / v.start) * 1000) / 10 : 0,
+          start_from_land_pct: startFromLandPct,
+          read_only_lands: Math.max(0, v.page_view - v.start),
         }
       })
       .sort((a, b) => b.complete_to_conversion - a.complete_to_conversion)
@@ -298,6 +297,8 @@ export async function GET() {
       ...(radar_warnings ? { radar_warnings } : {}),
       signups_today: signupsToday ?? 0,
       diagnostic_completion_rate_pct: diagnosticCompletionRate,
+      land_to_start_rate_pct: landToStartRate,
+      funnel_lands_30d: lands,
       funnel_starts_30d: starts,
       funnel_completes_30d: completes,
       leaderboard,

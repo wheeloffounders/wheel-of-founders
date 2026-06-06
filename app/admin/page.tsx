@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   HeartPulse,
   Gauge,
+  Globe2,
 } from 'lucide-react'
 import { format } from 'date-fns'
 export const dynamic = 'force-dynamic'
@@ -27,7 +28,8 @@ export default async function AdminDashboardPage() {
   const newToday = (todayStats as { new_users?: number } | null)?.new_users ?? null
 
   const links = [
-    { href: '/admin/radar', label: 'Founder Radar (funnels)', icon: Gauge },
+    { href: '/admin/acquisition', label: 'Traffic & acquisition (master)', icon: Globe2 },
+    { href: '/admin/radar', label: 'Founder Radar (widget funnels)', icon: Gauge },
     { href: '/admin/list', label: 'Search User', icon: List },
     { href: '/admin/journey-funnel', label: 'User Journey Funnel', icon: TrendingDown },
     { href: '/admin/errors', label: 'Code Scary – Error Logs', icon: AlertTriangle },
@@ -62,6 +64,23 @@ export default async function AdminDashboardPage() {
               <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{newToday ?? '—'}</div>
             </div>
           </div>
+        </section>
+
+        <section>
+          <Link
+            href="/admin/acquisition"
+            className="block rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5 shadow transition hover:bg-emerald-500/15"
+          >
+            <div className="flex items-start gap-3">
+              <Globe2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <div>
+                <h2 className="font-semibold text-gray-900 dark:text-gray-100">Where visitors come from</h2>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  Master acquisition view — signups, blog lands, homepage visits, and widget steps in one place.
+                </p>
+              </div>
+            </div>
+          </Link>
         </section>
 
         <section>

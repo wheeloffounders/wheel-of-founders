@@ -7,14 +7,17 @@ import { GENTLE_ARCHITECT, MRS_DEER_RULES, FounderStage, toNaturalStage } from '
 import {
   FIRST_DAY_RULES,
   HISTORY_CONTEXT,
-  MORNING_STRUCTURE,
-  POST_MORNING_STRUCTURE,
-  EVENING_STRUCTURE,
-  WEEKLY_STRUCTURE,
-  MONTHLY_STRUCTURE,
   EMERGENCY_STRUCTURE,
   TONE_DETECTION_RULES,
 } from './mrs-deer-prompts'
+import { getRelationshipPhase, buildWeeklyArcSystemPrompt, buildMonthlyChapterSystemPrompt } from '@/lib/mrs-deer/coaching-evolution'
+import {
+  getFounderThemes,
+  buildFounderThemesPromptBlock,
+  fetchRecentLessonPhrases,
+} from '@/lib/mrs-deer/founder-themes'
+import { loadDailyCoachingContext } from '@/lib/mrs-deer/load-coaching-context'
+import { getDaysWithEntries } from '@/lib/founder-dna/days-with-entries'
 
 /** Ensure we don't leave em-dash thoughts hanging mid-sentence */
 function ensureThoughtComplete(text: string): string {
@@ -759,8 +762,13 @@ async function generateGentleArchitectPrompt(
   const historyContext = hasHistory ? '' : HISTORY_CONTEXT
   const baseRules = promptOverrides?.systemPrompt || MRS_DEER_RULES
   const toneRules = promptOverrides?.toneRules || TONE_DETECTION_RULES
+  const dailyCtx = await loadDailyCoachingContext({
+    userId: userData.userId,
+    kind: 'morning',
+    targetDate,
+  })
   let systemPrompt =
-    baseRules + '\n\n' + MORNING_STRUCTURE + toneRules + historyNote
+    baseRules + '\n\n' + dailyCtx.dailySystemStructure + dailyCtx.themesBlock + toneRules + historyNote
   systemPrompt = await withSmartCoachingContext(systemPrompt, userData.userId)
 
   const tone = detectTone({
@@ -785,7 +793,7 @@ Match your response to this tone. Burdened→acknowledge gently. Calm→celebrat
 
 CRITICAL: USE THEIR EXACT PHRASES from yesterday's data below. ${hasYesterdayData ? 'Quote at least one phrase they wrote.' : 'If data is sparse, reference what they did record (mood/energy)—do NOT say "blank" or "nothing to reflect on".'}
 
-VOICE: Warm, specific, earned. USE THEIR EXACT PHRASES from yesterday's wins/lessons below—quote what they wrote. Validate emotional reality before reframing. Then reframe lightly. End with ONE question that shifts perspective. No product terms, no clichés, no abstract metaphors.
+VOICE: Warm, specific, earned. USE THEIR EXACT PHRASES from yesterday's wins/lessons below—quote what they wrote. ${dailyCtx.questionHint} No product terms, no clichés, no abstract metaphors.
 
 YESTERDAY'S DATA:
 - Wins: ${(yesterdayData?.wins ? (typeof yesterdayData.wins === 'string' && yesterdayData.wins.startsWith('[') ? JSON.parse(yesterdayData.wins).join('; ') : yesterdayData.wins) : 'None recorded')}
@@ -828,8 +836,14 @@ async function analyzeMorningPlan(userData: UserData, userLang: ReturnType<typeo
   const historyContext = hasHistory ? '' : HISTORY_CONTEXT
   const baseRules = promptOverrides?.systemPrompt || MRS_DEER_RULES
   const toneRules = promptOverrides?.toneRules || TONE_DETECTION_RULES
+  const targetDatePm = userData.targetDate || format(new Date(), 'yyyy-MM-dd')
+  const dailyCtx = await loadDailyCoachingContext({
+    userId: userData.userId,
+    kind: 'post_morning',
+    targetDate: targetDatePm,
+  })
   let systemPrompt =
-    baseRules + '\n\n' + POST_MORNING_STRUCTURE + toneRules + historyNote
+    baseRules + '\n\n' + dailyCtx.dailySystemStructure + dailyCtx.themesBlock + toneRules + historyNote
   systemPrompt = await withSmartCoachingContext(systemPrompt, userData.userId)
 
   const tone = detectTone({
@@ -891,7 +905,7 @@ CRITICAL: You MUST reference their actual tasks and/or decision. ${taskDescripti
 
 When BOTH a decision and tasks are present: treat the decision as a possible mental background anchor (North Star, incubation) and tasks as active execution—they may diverge on purpose. It is OK to say their tasks skew toward execution while a strategic theme (e.g. delegation, systems) stays in the background for the day.
 
-VOICE: Warm, specific, earned. Focus on patterns, connections, and insights they haven't seen. If there's a particularly telling phrase, you MAY quote it back, shifted slightly. NEVER simply list their tasks back to them verbatim. End with ONE complete, specific question (no cut-offs). No product terms, no clichés, no abstract metaphors.
+VOICE: Warm, specific, earned. Focus on patterns, connections, and insights they haven't seen. If there's a particularly telling phrase, you MAY quote it back, shifted slightly. NEVER simply list their tasks back to them verbatim. ${dailyCtx.questionHint} No product terms, no clichés, no abstract metaphors.
 
 TODAY'S PLAN:
 - Total tasks: ${todayPlan.length}
@@ -911,7 +925,7 @@ ${hasHistory ? `PATTERN CONTEXT (last 14 days):
 - Total tasks: ${totalTasks}
 - Stage (natural language only): ${toNaturalStage(userData.stage)}
 
-` : ''}Generate an insight that shows them something they hadn't seen. Use warm, human language. Do NOT include statistics, percentages, or commentary on "all tasks marked important". Speak like a wise friend, not a data analyst. End with one complete, specific reframing question (no cut-offs). Feel like a person who knows their journey, not a template.`
+` : ''}Generate an insight that shows them something they hadn't seen. Use warm, human language. Do NOT include statistics, percentages, or commentary on "all tasks marked important". Speak like a wise friend, not a data analyst. ${dailyCtx.questionHint} Feel like a person who knows their journey, not a template.`
 
   const raw = await callAI(
     { systemPrompt, userPrompt, maxTokens: 400, temperature: 0.7 },
@@ -965,8 +979,17 @@ async function reflectOnDay(userData: UserData, userLang: ReturnType<typeof getU
   const historyContext = hasHistory ? '' : HISTORY_CONTEXT
   const baseRules = promptOverrides?.systemPrompt || MRS_DEER_RULES
   const toneRules = promptOverrides?.toneRules || TONE_DETECTION_RULES
-  const systemPrompt =
-    baseRules + '\n\n' + EVENING_STRUCTURE + toneRules + historyNote
+  const targetDateEv = userData.targetDate || format(new Date(), 'yyyy-MM-dd')
+  const recentLessons = await fetchRecentLessonPhrases(userData.userId, targetDateEv)
+  const dailyCtx = await loadDailyCoachingContext({
+    userId: userData.userId,
+    kind: 'post_evening',
+    targetDate: targetDateEv,
+    recentLessons,
+  })
+  let systemPrompt =
+    baseRules + '\n\n' + dailyCtx.dailySystemStructure + dailyCtx.themesBlock + toneRules + historyNote
+  systemPrompt = await withSmartCoachingContext(systemPrompt, userData.userId)
 
   const tone = detectTone({
     wins: todayReview?.wins,
@@ -1032,7 +1055,7 @@ ${goodnightBlock}
 
 CRITICAL: USE THEIR EXACT PHRASES from the data below. ${hasEveningData ? 'Quote at least one phrase from their wins, lessons, or journal.' : 'Reference what they did record (tasks, mood, energy)—do NOT say "blank", "nothing", or "empty reflection".'}
 
-VOICE: Warm, specific, earned. USE THEIR EXACT PHRASES from wins, lessons, or journal below—quote what they wrote. If mood or energy was low, validate first. Then reframe lightly. End with ONE question that reframes. No product terms, no clichés, no abstract metaphors.
+VOICE: Warm, specific, earned. USE THEIR EXACT PHRASES from wins, lessons, or journal below—quote what they wrote. If mood or energy was low, validate first. Then reframe lightly. ${dailyCtx.questionHint} No product terms, no clichés, no abstract metaphors.
 
 TODAY'S DATA:
 - Tasks planned: ${totalTasks}
@@ -1049,7 +1072,7 @@ ${hasHistory ? `PATTERN CONTEXT (last 14 days):
 - Total tasks: ${userData.patterns?.taskPatterns.totalTasks ?? 0}
 - Stage (natural language only): ${toNaturalStage(userData.stage)}
 
-` : ''}Write as a wise friend: one or two short paragraphs + one open question. Use natural stage language only. BANNED: Needle Mover, Action Plan, Smart Constraints, raw stage codes, Keep shining.`
+` : ''}Write as a wise friend: follow your response shape (may be one paragraph without a big question). Use natural stage language only. BANNED: Needle Mover, Action Plan, Smart Constraints, raw stage codes, Keep shining.`
 
   const raw = await callAI(
     { systemPrompt, userPrompt, maxTokens: 520, temperature: 0.7 },
@@ -1096,7 +1119,12 @@ async function generateWeeklyInsight(userData: UserData, userLang: ReturnType<ty
   })
 
   const profileData = await getUserProfileData(userData.userId)
-  const systemPrompt = MRS_DEER_RULES + '\n\n' + WEEKLY_STRUCTURE
+  const db = getServerSupabase()
+  const daysWithEntries = await getDaysWithEntries(userData.userId, db)
+  const phase = getRelationshipPhase(daysWithEntries)
+  const themes = await getFounderThemes(userData.userId, db)
+  const themesBlock = buildFounderThemesPromptBlock(themes, 'weekly')
+  const systemPrompt = MRS_DEER_RULES + '\n\n' + buildWeeklyArcSystemPrompt(phase) + themesBlock
 
   const hasWeekData = taskDescriptions || decisionTexts || winsList.length > 0 || lessonsList.length > 0
   const userPrompt = `Generate a personalized weekly insight for a founder.${profileData.context ? '\n\nCONTEXT (reference struggles/goals when relevant):\n' + profileData.context : ''}
@@ -1112,7 +1140,7 @@ THIS WEEK'S DATA (quote their exact words in your response):
 - Completion rate: ${patterns?.taskPatterns.completionRate ? Math.round(patterns.taskPatterns.completionRate * 100) : 0}%
 - Stage (natural language only): ${toNaturalStage(userData.stage)}
 
-VOICE: Warm, specific. USE THEIR EXACT PHRASES from above—quote what they wrote. Show what they hadn't noticed. End with one question that reframes the week. No product terms, clichés, or abstract metaphors. Feel like a person who knows their journey.`
+VOICE: Warm, specific. USE THEIR EXACT PHRASES from above—quote what they wrote. Name one thread across the week (arc), not seven daily summaries. End with one question or one line to carry into next week. No product terms, clichés, or abstract metaphors.`
 
   const raw = await generateAIPrompt({
     systemPrompt,
@@ -1180,7 +1208,11 @@ async function generateMonthlyInsight(userData: UserData, userLang: ReturnType<t
     .maybeSingle()
 
   const profileData = await getUserProfileData(userData.userId)
-  let systemPrompt = MRS_DEER_RULES + '\n\n' + MONTHLY_STRUCTURE
+  const daysWithEntries = await getDaysWithEntries(userData.userId, db)
+  const phase = getRelationshipPhase(daysWithEntries)
+  const themes = await getFounderThemes(userData.userId, db)
+  const themesBlock = buildFounderThemesPromptBlock(themes, 'monthly')
+  let systemPrompt = MRS_DEER_RULES + '\n\n' + buildMonthlyChapterSystemPrompt(phase) + themesBlock
   systemPrompt = await withSmartCoachingContext(systemPrompt, userData.userId)
 
   const hasMonthData = taskDescriptions || winsList.length > 0 || lessonsList.length > 0 || emergencyDescriptions
@@ -1197,7 +1229,7 @@ THIS MONTH'S DATA (quote their exact words in your response):
 - Longest streak: ${safeGet(profile, 'longest_streak', 0)} days
 - Stage (natural language only): ${toNaturalStage(userData.stage)}
 
-VOICE: USE THEIR EXACT PHRASES from above—quote what they wrote. Show what they hadn't noticed. End with one reframing question for next month. No product terms, clichés, or abstract metaphors.`
+VOICE: USE THEIR EXACT PHRASES from above—quote what they wrote. Name the chapter of this month; connect to ongoing themes when provided. No product terms, clichés, or abstract metaphors.`
 
   const raw = await generateAIPrompt({
     systemPrompt,

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSessionFromRequest } from '@/lib/server-auth'
 import { recordPageViewsBatch, type BatchPageViewInput } from '@/lib/analytics/journeys'
+import {
+  isExcludedFromAdminAnalytics,
+  isInternalTrafficPath,
+} from '@/lib/admin/internal-traffic-exclusion'
+import { isLocalhostRequest } from '@/lib/analytics/skip-internal-analytics'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -17,8 +22,19 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  */
 export async function POST(req: NextRequest) {
   try {
+    if (isLocalhostRequest(req)) {
+      return NextResponse.json({ ok: true, count: 0, skipped: 'localhost' })
+    }
+
     const session = await getServerSessionFromRequest(req)
     const userId = session?.user?.id ?? null
+
+    if (
+      userId &&
+      isExcludedFromAdminAnalytics({ id: userId, email: session?.user?.email })
+    ) {
+      return NextResponse.json({ ok: true, count: 0, skipped: 'internal_team' })
+    }
 
     const body = await req.json().catch(() => ({}))
     const raw = isRecord(body) ? body.pageViews : undefined
@@ -33,7 +49,7 @@ export async function POST(req: NextRequest) {
     for (const row of raw) {
       if (!isRecord(row)) continue
       const path = typeof row.path === 'string' ? row.path.trim() : ''
-      if (!path) continue
+      if (!path || isInternalTrafficPath(path)) continue
 
       const timestamp =
         typeof row.timestamp === 'number'

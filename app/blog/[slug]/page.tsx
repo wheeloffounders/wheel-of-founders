@@ -6,6 +6,8 @@ import { compileMDX } from 'next-mdx-remote/rsc'
 import { BlogCTA } from '@/components/blog/BlogCTA'
 import { InteractiveTemplate } from '@/components/blog/InteractiveTemplate'
 import { DecisionParserWidget } from '@/components/DecisionParserWidget'
+import { BlogPostRadarLand } from '@/components/blog/BlogPostRadarLand'
+import { extractPrimaryWidgetFunnelFromMdx } from '@/lib/blog/extract-widget-funnel'
 import { BlogArticleJsonLd, buildBlogArticleMetadata } from '@/lib/blog/blog-seo'
 import { getBlogSlugs, loadBlogPostFile } from '@/lib/blog/load-blog-post'
 import type { BlogFrontmatter } from '@/lib/blog/types'
@@ -55,9 +57,12 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
     options: { parseFrontmatter: true },
   })
 
+  const widgetFunnelId = extractPrimaryWidgetFunnelFromMdx(file.raw)
+
   return (
     <>
       <BlogArticleJsonLd slug={slug} frontmatter={file.frontmatter} />
+      <BlogPostRadarLand slug={slug} widgetFunnelId={widgetFunnelId} />
       <article
         className={[
           blogHeadings.variable,

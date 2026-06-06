@@ -2,6 +2,7 @@
 
 import { format } from 'date-fns'
 import { founderStruggles } from '@/lib/founder-struggles'
+import { AcquisitionSourceDisplay } from '@/components/admin/AcquisitionSourceDisplay'
 
 export interface UserSummaryHeaderProps {
   profile: {
@@ -13,6 +14,7 @@ export interface UserSummaryHeaderProps {
     created_at?: string | null
     struggles?: string[] | null
     struggles_other?: string | null
+    acquisition_snapshot?: unknown
   } | null
   auth: {
     email?: string | null
@@ -53,6 +55,13 @@ export function UserSummaryHeader({ profile, auth, userId }: UserSummaryHeaderPr
         <span className="text-gray-600 dark:text-gray-400">
           🔥 {streak}-day streak
         </span>
+      </div>
+
+      <div>
+        <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+          Acquisition
+        </h3>
+        <AcquisitionSourceDisplay snapshot={profile?.acquisition_snapshot} />
       </div>
 
       {goal && goal !== '—' && (

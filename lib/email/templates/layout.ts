@@ -22,12 +22,32 @@ export function emailSubjectGreetingFromUser(user: EmailTemplateUser): string {
   return safeName(user)
 }
 
+export type EmailUtmOptions = {
+  campaign: string
+  /** Defaults to campaign — appears as search keyword in /admin/acquisition */
+  term?: string
+  medium?: string
+}
+
+/** Standard email UTM query string (includes utm_term for acquisition tracking). */
+export function emailUtmQueryString(options: EmailUtmOptions): string {
+  const campaign = options.campaign.trim()
+  const term = (options.term ?? campaign).trim()
+  const medium = (options.medium ?? 'transactional').trim()
+  return new URLSearchParams({
+    utm_source: 'email',
+    utm_medium: medium,
+    utm_campaign: campaign,
+    utm_term: term,
+  }).toString()
+}
+
 export function managePrefsUrl(): string {
-  return `${APP_URL}/settings/notifications?utm_source=email&utm_medium=transactional&utm_campaign=manage_prefs`
+  return `${APP_URL}/settings/notifications?${emailUtmQueryString({ campaign: 'manage_prefs' })}`
 }
 
 export function unsubscribeUrl(token = '{{unsubscribe_token}}'): string {
-  return `${APP_URL}/settings/notifications?unsubscribe=${encodeURIComponent(token)}&utm_source=email&utm_medium=transactional&utm_campaign=unsubscribe`
+  return `${APP_URL}/settings/notifications?unsubscribe=${encodeURIComponent(token)}&${emailUtmQueryString({ campaign: 'unsubscribe' })}`
 }
 
 function trackClickUrl(url: string, emailLogId: string): string {
@@ -105,9 +125,9 @@ export function renderTextFooter(user?: EmailTemplateUser | null): string {
   return `\n\n"${line.text}" — ${line.author}\n\nManage preferences: ${managePrefsUrl()}\nUnsubscribe: ${unsubscribeUrl()}`
 }
 
-export function appUrlWithUtm(path: string, campaign: string): string {
+export function appUrlWithUtm(path: string, campaign: string, term?: string): string {
   const p = path.startsWith('/') ? path : `/${path}`
   const join = p.includes('?') ? '&' : '?'
-  return `${APP_URL}${p}${join}utm_source=email&utm_medium=transactional&utm_campaign=${encodeURIComponent(campaign)}`
+  return `${APP_URL}${p}${join}${emailUtmQueryString({ campaign, term })}`
 }
 

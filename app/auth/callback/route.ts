@@ -11,6 +11,17 @@ import { isWhitelistAdminEmail } from '@/lib/admin-emails'
 import { getBlogTrialGiftProfilePatch, WOF_PRO_TRIAL_WELCOME_COOKIE } from '@/lib/blog-trial-gift-profile'
 import { WOF_BLOG_TRIAL_GIFT_COOKIE } from '@/lib/blog-trial-gift-session'
 import { applyLegacyBetaRetirementIfNeeded } from '@/lib/beta-retirement'
+import {
+  buildUserAcquisitionSnapshot,
+  parseInboundCookieValue,
+  WOF_INBOUND_COOKIE,
+} from '@/lib/acquisition-snapshot'
+import { appUrlWithUtm } from '@/lib/email/templates/layout'
+
+function authProviderFromUser(user: { app_metadata?: Record<string, unknown> }): string | null {
+  const provider = user.app_metadata?.provider
+  return typeof provider === 'string' && provider.trim() ? provider.trim().slice(0, 64) : null
+}
 
 function authCallbackSuccessRedirect(
   requestUrl: URL,
@@ -212,6 +223,15 @@ export async function GET(request: NextRequest) {
         // Detect timezone
         const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
+        const inboundRaw = cookieStore.get(WOF_INBOUND_COOKIE)?.value
+        const inboundTouch = parseInboundCookieValue(inboundRaw)
+        const acquisitionSnapshot = inboundTouch
+          ? buildUserAcquisitionSnapshot(inboundTouch, 'oauth_callback', {
+              auth_provider: authProviderFromUser(user),
+              blog_trial_gift: blogTrialGiftCookie,
+            })
+          : null
+
         // Create user profile with beta defaults (use db to bypass RLS)
         const nowIso = new Date().toISOString()
         const trialEnds = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
@@ -227,6 +247,7 @@ export async function GET(request: NextRequest) {
           updated_at: nowIso,
           trial_starts_at: nowIso,
           trial_ends_at: trialEnds,
+          ...(acquisitionSnapshot ? { acquisition_snapshot: acquisitionSnapshot } : {}),
           ...(blogTrialGiftCookie ? { is_pro_trial: true } : {}),
           subscription_override: 'none',
           is_beta_retired: true,
@@ -245,12 +266,13 @@ export async function GET(request: NextRequest) {
         // Send welcome transactional email (if enabled - new users default to true)
         const emailAddr = user.email
         if (emailAddr) {
+          const welcomeUrl = appUrlWithUtm('/morning', 'welcome')
           sendTransactionalEmail({
             to: emailAddr,
             toName: user.user_metadata?.full_name ?? user.user_metadata?.name ?? emailAddr.split('@')[0],
             subject: 'Welcome to Wheel of Founders!',
-            html: `<!DOCTYPE html><html><body style="font-family:sans-serif;background:#f3f4f6;padding:40px;"><div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;box-shadow:0 4px 6px rgba(0,0,0,0.1);"><div style="background:linear-gradient(135deg,#152b50 0%,#1a3565 100%);color:#ef725c;padding:24px;border-radius:12px 12px 0 0;text-align:center;"><h1 style="margin:0;">Wheel of Founders</h1></div><div style="padding:24px;"><p>Hi ${user.user_metadata?.full_name ?? user.user_metadata?.name ?? emailAddr.split('@')[0]},</p><p>Welcome! Start your day with the Morning Power List, capture decisions, and end with an Evening Review.</p><p>Mrs. Deer, your AI companion will share insights as you build your pattern.</p><a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://wheeloffounders.com'}" style="display:inline-block;padding:12px 24px;background:#ef725c;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;margin-top:16px;">Open App</a></div></div></body></html>`,
-            text: `Hi ${user.user_metadata?.full_name ?? user.user_metadata?.name ?? emailAddr.split('@')[0]}, Welcome to Wheel of Founders! Start your day with the Morning Power List. Open: ${process.env.NEXT_PUBLIC_APP_URL || 'https://wheeloffounders.com'}`,
+            html: `<!DOCTYPE html><html><body style="font-family:sans-serif;background:#f3f4f6;padding:40px;"><div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;box-shadow:0 4px 6px rgba(0,0,0,0.1);"><div style="background:linear-gradient(135deg,#152b50 0%,#1a3565 100%);color:#ef725c;padding:24px;border-radius:12px 12px 0 0;text-align:center;"><h1 style="margin:0;">Wheel of Founders</h1></div><div style="padding:24px;"><p>Hi ${user.user_metadata?.full_name ?? user.user_metadata?.name ?? emailAddr.split('@')[0]},</p><p>Welcome! Start your day with the Morning Power List, capture decisions, and end with an Evening Review.</p><p>Mrs. Deer, your AI companion will share insights as you build your pattern.</p><a href="${welcomeUrl}" style="display:inline-block;padding:12px 24px;background:#ef725c;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;margin-top:16px;">Open App</a></div></div></body></html>`,
+            text: `Hi ${user.user_metadata?.full_name ?? user.user_metadata?.name ?? emailAddr.split('@')[0]}, Welcome to Wheel of Founders! Start your day with the Morning Power List. Open: ${welcomeUrl}`,
           }).catch((err) => {
             console.error('Welcome email failed (non-blocking):', err)
           })
