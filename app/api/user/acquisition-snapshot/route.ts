@@ -8,11 +8,6 @@ import {
 
 export const dynamic = 'force-dynamic'
 
-function authProviderFromUser(user: { app_metadata?: Record<string, unknown> }): string | null {
-  const provider = user.app_metadata?.provider
-  return typeof provider === 'string' && provider.trim() ? provider.trim().slice(0, 64) : null
-}
-
 /**
  * Backfill acquisition_snapshot when profile was created before callback could read the cookie.
  * Body: { inbound: InboundTouchSnapshot }
@@ -42,9 +37,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, skipped: 'already_set' })
     }
 
-    const snapshot = buildUserAcquisitionSnapshot(inbound, 'client_backfill', {
-      auth_provider: authProviderFromUser(session.user),
-    })
+    const snapshot = buildUserAcquisitionSnapshot(inbound, 'client_backfill')
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (db.from('user_profiles') as any)
