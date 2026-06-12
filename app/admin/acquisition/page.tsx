@@ -12,6 +12,7 @@ import type {
 } from '@/lib/admin/build-acquisition-hub'
 import { kindLabel } from '@/lib/admin/build-acquisition-hub'
 import { formatFallbackAcquisitionAdvice } from '@/lib/admin/acquisition-deer-advisor'
+import { formatDwellSeconds } from '@/lib/admin/flow-path-tags'
 import { InfoTooltip } from '@/components/InfoTooltip'
 import { MrsDeerAvatar } from '@/components/MrsDeerAvatar'
 import { MarkdownText } from '@/components/MarkdownText'
@@ -58,6 +59,14 @@ const ACQUISITION_HINTS = {
   keywordCol: 'Query or utm_term captured on first visit.',
   keywordEngineCol: 'Where the keyword came from: utm (paid tag), google, bing, duckduckgo, etc.',
   keywordFeedCol: 'Search keyword on first touch, when captured.',
+  referrerFeedCol:
+    'External referrer hostname from first-touch cookie (Radar) or page metadata. Empty when typed URL, bookmark, or referrer was stripped.',
+  utmFeedCol: 'UTM tags on first landing URL: source / medium / campaign, plus utm_term when present.',
+  firstLandingCol: 'First URL the visitor hit on this site (includes query string with ?utm_… when tagged).',
+  dwellCol:
+    'Seconds on this step before the next tracked action — next funnel step or next page in the same tab session.',
+  nextStepCol:
+    'Where they went next on-site: another page (→ /pricing), widget step, or trial signup. Blank if no further tracked action.',
 } as const
 
 const STAT_CARDS = [
@@ -600,6 +609,21 @@ export default function AdminAcquisitionPage() {
                         <HeaderWithHint label="Source" hint={ACQUISITION_HINTS.sourceFeedCol} />
                       </th>
                       <th className="px-4 py-3">
+                        <HeaderWithHint label="Referrer" hint={ACQUISITION_HINTS.referrerFeedCol} />
+                      </th>
+                      <th className="px-4 py-3">
+                        <HeaderWithHint label="UTM" hint={ACQUISITION_HINTS.utmFeedCol} />
+                      </th>
+                      <th className="px-4 py-3">
+                        <HeaderWithHint label="First landing" hint={ACQUISITION_HINTS.firstLandingCol} />
+                      </th>
+                      <th className="px-4 py-3">
+                        <HeaderWithHint label="On page" hint={ACQUISITION_HINTS.dwellCol} />
+                      </th>
+                      <th className="px-4 py-3">
+                        <HeaderWithHint label="Then" hint={ACQUISITION_HINTS.nextStepCol} />
+                      </th>
+                      <th className="px-4 py-3">
                         <HeaderWithHint label="Keyword" hint={ACQUISITION_HINTS.keywordFeedCol} />
                       </th>
                       <th className="px-4 py-3">Detail</th>
@@ -609,7 +633,7 @@ export default function AdminAcquisitionPage() {
                   <tbody>
                     {filteredFeed.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
+                        <td colSpan={11} className="px-4 py-8 text-center text-zinc-500">
                           No events for this filter.
                         </td>
                       </tr>
@@ -626,7 +650,34 @@ export default function AdminAcquisitionPage() {
                           </td>
                           <td className="px-4 py-3 font-medium text-emerald-300">{row.source}</td>
                           <td
-                            className="max-w-[140px] truncate px-4 py-3 text-violet-300/90 text-xs"
+                            className="max-w-[120px] truncate px-4 py-3 text-sky-300/90 text-xs"
+                            title={row.referrer_url || row.referrer || undefined}
+                          >
+                            {row.referrer || '—'}
+                          </td>
+                          <td
+                            className="max-w-[160px] truncate px-4 py-3 text-xs text-amber-200/80"
+                            title={row.utm_summary || undefined}
+                          >
+                            {row.utm_summary || '—'}
+                          </td>
+                          <td
+                            className="max-w-[160px] truncate px-4 py-3 font-mono text-[11px] text-zinc-500"
+                            title={row.first_landing}
+                          >
+                            {row.first_landing || '—'}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 tabular-nums text-xs text-zinc-400">
+                            {formatDwellSeconds(row.dwell_seconds ?? null) || '—'}
+                          </td>
+                          <td
+                            className="max-w-[140px] truncate px-4 py-3 text-xs text-zinc-300"
+                            title={row.next_step}
+                          >
+                            {row.next_step || '—'}
+                          </td>
+                          <td
+                            className="max-w-[120px] truncate px-4 py-3 text-violet-300/90 text-xs"
                             title={row.search_keyword}
                           >
                             {row.search_keyword || '—'}

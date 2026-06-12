@@ -14,6 +14,17 @@ import {
   isInternalTrafficPath,
 } from '@/lib/admin/internal-traffic-exclusion'
 import { isLocalhostReferrer } from '@/lib/analytics/skip-internal-analytics'
+import {
+  attributionFromInboundSnapshot,
+  attributionFromUserAcquisitionSnapshot,
+  buildFunnelVisitorTimelines,
+  buildPageViewSessionTimelines,
+  journeyFromFunnelTimeline,
+  journeyFromPageViewSession,
+  mergeJourneyFields,
+  type AcquisitionAttributionFields,
+  type AcquisitionJourneyFields,
+} from '@/lib/admin/acquisition-feed-attribution'
 
 export type AcquisitionFeedKind =
   | 'signup'
@@ -35,7 +46,8 @@ export type AcquisitionFeedRow = {
   visitor_id?: string
   search_keyword?: string
   search_engine?: string
-}
+} & AcquisitionAttributionFields &
+  AcquisitionJourneyFields
 
 export type AcquisitionKeywordRow = {
   keyword: string
@@ -298,6 +310,48 @@ function computeLeakHints(
   return hints.slice(0, 5)
 }
 
+function attachAttribution(row: AcquisitionFeedRow, raw: unknown): AcquisitionFeedRow {
+  return { ...row, ...attributionFromInboundSnapshot(raw) }
+}
+
+function attachJourney(
+  row: AcquisitionFeedRow,
+  journey: AcquisitionJourneyFields | null
+): AcquisitionFeedRow {
+  if (!journey || (journey.dwell_seconds == null && !journey.next_step)) return row
+  return {
+    ...row,
+    ...(journey.dwell_seconds != null ? { dwell_seconds: journey.dwell_seconds } : {}),
+    ...(journey.next_step ? { next_step: journey.next_step } : {}),
+  }
+}
+
+function enrichFeedJourney(
+  row: AcquisitionFeedRow,
+  funnelTimelines: ReturnType<typeof buildFunnelVisitorTimelines>,
+  sessionTimelines: ReturnType<typeof buildPageViewSessionTimelines>,
+  flatPageViews: Array<{
+    path: string
+    entered_at: string
+    duration_seconds?: number | null
+    client_session_id: string
+  }>,
+  funnelEventType?: string
+): AcquisitionFeedRow {
+  const funnelJourney =
+    row.visitor_id && funnelEventType
+      ? journeyFromFunnelTimeline(
+          row.visitor_id,
+          row.at,
+          funnelEventType,
+          row.funnel_id ?? '',
+          funnelTimelines
+        )
+      : null
+  const pageJourney = journeyFromPageViewSession(row.path, row.at, sessionTimelines, flatPageViews)
+  return attachJourney(row, mergeJourneyFields(funnelJourney, pageJourney))
+}
+
 function buildTopLandingPages(feed: AcquisitionFeedRow[]): AcquisitionLandingPageRow[] {
   const map = new Map<string, { visits: number; signups: number }>()
   for (const row of feed) {
@@ -337,7 +391,7 @@ export async function buildAcquisitionHub(
       .limit(400),
     db
       .from('page_views')
-      .select('path, entered_at, metadata, user_id')
+      .select('path, entered_at, duration_seconds, metadata, user_id')
       .gte('entered_at', sinceIso)
       .lte('entered_at', untilIso)
       .order('entered_at', { ascending: false })
@@ -368,6 +422,7 @@ export async function buildAcquisitionHub(
   type PageViewRow = {
     path: string
     entered_at: string
+    duration_seconds?: number | null
     metadata: unknown
     user_id: string | null
   }
@@ -375,6 +430,10 @@ export async function buildAcquisitionHub(
   const signups = (signupsRes.data ?? []) as SignupRow[]
   const funnelRows = (funnelRes.data ?? []) as FunnelRow[]
   const pageViews = (pageViewsRes.data ?? []) as PageViewRow[]
+
+  const funnelTimelines = buildFunnelVisitorTimelines(funnelRows)
+  const sessionTimelines = buildPageViewSessionTimelines(pageViews)
+  const flatPageViews = Array.from(sessionTimelines.values()).flat()
 
   const sourceMap = new Map<string, AcquisitionSourceRow>()
   const keywordMap = new Map<string, AcquisitionKeywordRow>()
@@ -417,6 +476,7 @@ export async function buildAcquisitionHub(
       ...(kw.search_keyword
         ? { search_keyword: kw.search_keyword, search_engine: kw.search_engine }
         : {}),
+      ...attributionFromUserAcquisitionSnapshot(row.acquisition_snapshot),
     })
   }
 
@@ -447,18 +507,29 @@ export async function buildAcquisitionHub(
 
     if (kw.search_keyword) bumpKeyword(keywordMap, kw.search_keyword, kw.search_engine)
 
-    feed.push({
-      at: row.created_at,
-      kind,
-      source,
-      detail: `${kindLabel(kind)} · ${row.funnel_id} (${row.source})`,
-      path,
-      funnel_id: row.funnel_id,
-      visitor_id: row.visitor_id,
-      ...(kw.search_keyword
-        ? { search_keyword: kw.search_keyword, search_engine: kw.search_engine }
-        : {}),
-    })
+    feed.push(
+      enrichFeedJourney(
+        attachAttribution(
+          {
+            at: row.created_at,
+            kind,
+            source,
+            detail: `${kindLabel(kind)} · ${row.funnel_id} (${row.source})`,
+            path,
+            funnel_id: row.funnel_id,
+            visitor_id: row.visitor_id,
+            ...(kw.search_keyword
+              ? { search_keyword: kw.search_keyword, search_engine: kw.search_engine }
+              : {}),
+          },
+          row.inbound_snapshot
+        ),
+        funnelTimelines,
+        sessionTimelines,
+        flatPageViews,
+        row.event_type
+      )
+    )
   }
 
   const radarLandPaths = new Set(
@@ -483,14 +554,24 @@ export async function buildAcquisitionHub(
     totals.site_visits += 1
     bumpSource(sourceMap, source).site_visits += 1
 
-    feed.push({
-      at: row.entered_at,
-      kind: 'site_visit',
-      source,
-      detail: `Visited ${normalized}${row.user_id ? ' (logged in)' : ''}`,
-      path: normalized,
-      user_id: row.user_id ?? undefined,
-    })
+    feed.push(
+      enrichFeedJourney(
+        attachAttribution(
+          {
+            at: row.entered_at,
+            kind: 'site_visit',
+            source,
+            detail: `Visited ${normalized}${row.user_id ? ' (logged in)' : ''}`,
+            path: normalized,
+            user_id: row.user_id ?? undefined,
+          },
+          referrer ? { referrer } : null
+        ),
+        funnelTimelines,
+        sessionTimelines,
+        flatPageViews
+      )
+    )
   }
 
   feed.sort((a, b) => b.at.localeCompare(a.at))

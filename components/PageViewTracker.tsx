@@ -23,7 +23,13 @@ export default function PageViewTracker() {
       if (await shouldSkipInternalAnalytics()) return
       const sessionId = getOrCreatePageViewClientSessionId()
       const referrer = typeof document !== 'undefined' ? document.referrer || null : null
-      trackPageView(path, { session_id: sessionId, referrer })
+      const { getOrCreateRadarVisitorId } = await import('@/lib/radar')
+      const radarVisitorId = getOrCreateRadarVisitorId()
+      trackPageView(path, {
+        session_id: sessionId,
+        referrer,
+        metadata: radarVisitorId ? { radar_visitor_id: radarVisitorId } : undefined,
+      })
     })()
   }, [])
 
