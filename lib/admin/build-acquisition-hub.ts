@@ -59,7 +59,13 @@ export type AcquisitionKeywordRow = {
 export type AcquisitionSourceRow = {
   source: string
   lands: number
+  /** Total page-view site visits (sum of path buckets below). */
   site_visits: number
+  homepage_visits: number
+  pricing_visits: number
+  signup_page_visits: number
+  login_visits: number
+  blog_visits: number
   widget_starts: number
   widget_completes: number
   signups: number
@@ -80,6 +86,16 @@ export type AcquisitionLandingPageRow = {
   signups: number
 }
 
+/** Fixed product paths — always shown on the acquisition hub (not blog posts). */
+export const KEY_SITE_PAGES = ['/', '/pricing', '/auth/signup'] as const
+
+export type AcquisitionKeySitePageRow = {
+  path: string
+  label: string
+  visits: number
+  signups: number
+}
+
 export type AcquisitionLeakHint = {
   id: string
   severity: 'high' | 'medium' | 'low'
@@ -95,6 +111,11 @@ export type AcquisitionHubPayload = {
     signups: number
     lands: number
     site_visits: number
+    homepage_visits: number
+    pricing_visits: number
+    signup_page_visits: number
+    login_visits: number
+    blog_visits: number
     widget_starts: number
     widget_completes: number
     trial_conversions: number
@@ -103,6 +124,7 @@ export type AcquisitionHubPayload = {
   by_source: AcquisitionSourceRow[]
   by_keyword: AcquisitionKeywordRow[]
   top_landing_pages: AcquisitionLandingPageRow[]
+  key_site_pages: AcquisitionKeySitePageRow[]
   leak_hints: AcquisitionLeakHint[]
   feed: AcquisitionFeedRow[]
   sample_note?: string
@@ -117,6 +139,35 @@ export type BuildAcquisitionOptions = {
 }
 
 const SITE_VISIT_PATHS = new Set(['/', '/pricing', '/auth/signup', '/auth/login', '/blog'])
+
+function emptySiteVisitCounts(): Pick<
+  AcquisitionSourceRow,
+  'site_visits' | 'homepage_visits' | 'pricing_visits' | 'signup_page_visits' | 'login_visits' | 'blog_visits'
+> {
+  return {
+    site_visits: 0,
+    homepage_visits: 0,
+    pricing_visits: 0,
+    signup_page_visits: 0,
+    login_visits: 0,
+    blog_visits: 0,
+  }
+}
+
+function bumpSiteVisitPath(
+  target: Pick<
+    AcquisitionSourceRow,
+    'site_visits' | 'homepage_visits' | 'pricing_visits' | 'signup_page_visits' | 'login_visits' | 'blog_visits'
+  >,
+  normalized: string
+): void {
+  target.site_visits += 1
+  if (normalized === '/') target.homepage_visits += 1
+  else if (normalized === '/pricing') target.pricing_visits += 1
+  else if (normalized === '/auth/signup') target.signup_page_visits += 1
+  else if (normalized === '/auth/login') target.login_visits += 1
+  else if (normalized === '/blog' || normalized.startsWith('/blog/')) target.blog_visits += 1
+}
 
 function pct(num: number, den: number): number | null {
   if (den <= 0) return null
@@ -189,7 +240,7 @@ function bumpSource(map: Map<string, AcquisitionSourceRow>, source: string): Acq
     row = {
       source: key,
       lands: 0,
-      site_visits: 0,
+      ...emptySiteVisitCounts(),
       widget_starts: 0,
       widget_completes: 0,
       signups: 0,
@@ -275,7 +326,7 @@ function computeLeakHints(
       id: 'homepage-not-blog',
       severity: 'medium',
       title: 'Homepage/pricing visits dominate',
-      detail: 'More general site visits than blog lands — growth may be direct/product-led, not content-led. Optimize / and /pricing, not only posts.',
+      detail: `More general site visits (${totals.site_visits}: home ${totals.homepage_visits}, pricing ${totals.pricing_visits}, blog page views ${totals.blog_visits}) than blog lands (${totals.lands}). Growth may be direct/product-led — optimize / and /pricing, not only posts.`,
     })
   }
 
@@ -368,6 +419,42 @@ function buildTopLandingPages(feed: AcquisitionFeedRow[]): AcquisitionLandingPag
     .slice(0, 12)
 }
 
+const KEY_SITE_PAGE_LABELS: Record<(typeof KEY_SITE_PAGES)[number], string> = {
+  '/': 'Homepage',
+  '/pricing': 'Pricing',
+  '/auth/signup': 'Signup',
+}
+
+function buildKeySitePageStats(
+  totals: AcquisitionHubPayload['totals'],
+  signups: Array<{ id: string; email: string | null; acquisition_snapshot: unknown }>
+): AcquisitionKeySitePageRow[] {
+  const signupCounts = new Map<string, number>()
+  for (const p of KEY_SITE_PAGES) signupCounts.set(p, 0)
+
+  for (const row of signups) {
+    if (isExcludedFromAdminAnalytics({ id: row.id, email: row.email })) continue
+    const snapshot = parseUserAcquisitionSnapshot(row.acquisition_snapshot)
+    const landing = snapshot?.first_landing_page?.split('?')[0]?.trim()
+    if (landing && (KEY_SITE_PAGES as readonly string[]).includes(landing)) {
+      signupCounts.set(landing, (signupCounts.get(landing) ?? 0) + 1)
+    }
+  }
+
+  const visitsByPath: Record<(typeof KEY_SITE_PAGES)[number], number> = {
+    '/': totals.homepage_visits,
+    '/pricing': totals.pricing_visits,
+    '/auth/signup': totals.signup_page_visits,
+  }
+
+  return KEY_SITE_PAGES.map((path) => ({
+    path,
+    label: KEY_SITE_PAGE_LABELS[path],
+    visits: visitsByPath[path],
+    signups: signupCounts.get(path) ?? 0,
+  }))
+}
+
 export async function buildAcquisitionHub(
   db: SupabaseClient,
   options: BuildAcquisitionOptions = {}
@@ -442,7 +529,7 @@ export async function buildAcquisitionHub(
   const totals = {
     signups: 0,
     lands: 0,
-    site_visits: 0,
+    ...emptySiteVisitCounts(),
     widget_starts: 0,
     widget_completes: 0,
     trial_conversions: 0,
@@ -551,8 +638,9 @@ export async function buildAcquisitionHub(
     const referrer = referrerFromMetadata(row.metadata)
     if (isLocalhostReferrer(referrer)) continue
     const source = inboundLabelFromReferrer(referrer)
-    totals.site_visits += 1
-    bumpSource(sourceMap, source).site_visits += 1
+    const srcRow = bumpSource(sourceMap, source)
+    bumpSiteVisitPath(totals, normalized)
+    bumpSiteVisitPath(srcRow, normalized)
 
     feed.push(
       enrichFeedJourney(
@@ -594,6 +682,7 @@ export async function buildAcquisitionHub(
 
   const fullFeed = feed.slice(0, 150)
   const top_landing_pages = buildTopLandingPages(fullFeed)
+  const key_site_pages = buildKeySitePageStats(totals, signups)
   const leak_hints = computeLeakHints(totals, by_source, funnel_rates)
 
   const sample_note =
@@ -610,6 +699,7 @@ export async function buildAcquisitionHub(
     by_source,
     by_keyword,
     top_landing_pages,
+    key_site_pages,
     leak_hints,
     feed: fullFeed,
     sample_note,

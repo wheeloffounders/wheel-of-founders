@@ -27,7 +27,12 @@ const ACQUISITION_HINTS = {
   lands:
     'Blog or home page opens tracked by Founder Radar (page_view). Includes read-only visitors who never tap the widget.',
   siteVisits:
-    'Homepage, pricing, auth, and blog paths from general page analytics when not already counted as a Radar land.',
+    'Total page-view visits across homepage, pricing, auth, and blog paths (not Radar lands). See split columns below.',
+  homepageVisitsCol: 'page_views to / (homepage).',
+  pricingVisitsCol: 'page_views to /pricing.',
+  signupPageVisitsCol: 'page_views to /auth/signup.',
+  loginVisitsCol: 'page_views to /auth/login.',
+  blogVisitsCol: 'page_views to /blog or /blog/… (excludes paths already counted as Radar lands).',
   widgetStarts: 'First interaction with an embedded blog/home diagnostic widget (funnel start event).',
   widgetCompletes: 'Visitor reached the widget payoff/summary screen (funnel complete event).',
   trialConversions: 'Claimed the blog trial gift and tied signup to that funnel (conversion event).',
@@ -46,6 +51,10 @@ const ACQUISITION_HINTS = {
   trialCol: 'Trial gift conversion events from this source.',
   topPages:
     'Pages with the most lands and site visits in this window. Signups column uses first landing page from acquisition_snapshot when available.',
+  keySitePages:
+    'Page views on core product paths (homepage, pricing, signup) from batched analytics — same date range as this hub. Excludes admin/localhost traffic.',
+  keySitePagesVisitsCol: 'Navigation events recorded in page_views for this path.',
+  keySitePagesSignupsCol: 'Accounts whose captured first landing page was this path.',
   activityFeed:
     'Chronological mix of signups, blog lands, widget steps, trial gifts, and key site visits — newest first.',
   eventCol: 'What happened: signup, land, widget step, trial conversion, or site visit.',
@@ -72,11 +81,23 @@ const ACQUISITION_HINTS = {
 const STAT_CARDS = [
   { key: 'signups' as const, label: 'Signups', hint: ACQUISITION_HINTS.signups },
   { key: 'lands' as const, label: 'Blog/home lands', hint: ACQUISITION_HINTS.lands },
-  { key: 'site_visits' as const, label: 'Site visits', hint: ACQUISITION_HINTS.siteVisits },
   { key: 'widget_starts' as const, label: 'Widget starts', hint: ACQUISITION_HINTS.widgetStarts },
   { key: 'widget_completes' as const, label: 'Widget completes', hint: ACQUISITION_HINTS.widgetCompletes },
   { key: 'trial_conversions' as const, label: 'Trial conversions', hint: ACQUISITION_HINTS.trialConversions },
-]
+] as const
+
+const SITE_VISIT_STAT_CARDS = [
+  { key: 'homepage_visits' as const, label: 'Homepage', path: '/', hint: ACQUISITION_HINTS.homepageVisitsCol },
+  { key: 'pricing_visits' as const, label: 'Pricing', path: '/pricing', hint: ACQUISITION_HINTS.pricingVisitsCol },
+  {
+    key: 'signup_page_visits' as const,
+    label: 'Signup page',
+    path: '/auth/signup',
+    hint: ACQUISITION_HINTS.signupPageVisitsCol,
+  },
+  { key: 'login_visits' as const, label: 'Login', path: '/auth/login', hint: ACQUISITION_HINTS.loginVisitsCol },
+  { key: 'blog_visits' as const, label: 'Blog (views)', path: '/blog…', hint: ACQUISITION_HINTS.blogVisitsCol },
+] as const
 
 const KIND_STYLES: Record<AcquisitionFeedKind, string> = {
   signup: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
@@ -319,7 +340,7 @@ export default function AdminAcquisitionPage() {
               </p>
             ) : null}
 
-            <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               {STAT_CARDS.map(({ key, label, hint }) => (
                 <div key={key} className="rounded-xl border border-zinc-800 bg-[#0d1219] px-4 py-3">
                   <StatTitleWithHint label={label} hint={hint} />
@@ -329,6 +350,32 @@ export default function AdminAcquisitionPage() {
                   </p>
                 </div>
               ))}
+            </section>
+
+            <section className="space-y-2">
+              <h2 className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Site page views
+                <InfoTooltip
+                  text={ACQUISITION_HINTS.siteVisits}
+                  presentation="popover"
+                  position="bottom"
+                  tone="controlRoom"
+                />
+                <span className="font-normal normal-case text-zinc-600">
+                  ({data.totals.site_visits} total)
+                </span>
+              </h2>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                {SITE_VISIT_STAT_CARDS.map(({ key, label, path, hint }) => (
+                  <div key={key} className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 px-4 py-3">
+                    <StatTitleWithHint label={label} hint={hint} />
+                    <p className="mt-1 text-xl font-semibold tabular-nums">{data.totals[key]}</p>
+                    <p className="truncate font-mono text-[10px] text-zinc-600" title={path}>
+                      {path}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </section>
 
             <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -438,8 +485,20 @@ export default function AdminAcquisitionPage() {
                       <th className="px-4 py-3">
                         <HeaderWithHint label="Lands" hint={ACQUISITION_HINTS.landsCol} />
                       </th>
-                      <th className="px-4 py-3">
-                        <HeaderWithHint label="Site visits" hint={ACQUISITION_HINTS.siteVisitsCol} />
+                      <th className="px-4 py-3 tabular-nums">
+                        <HeaderWithHint label="Home" hint={ACQUISITION_HINTS.homepageVisitsCol} />
+                      </th>
+                      <th className="px-4 py-3 tabular-nums">
+                        <HeaderWithHint label="Pricing" hint={ACQUISITION_HINTS.pricingVisitsCol} />
+                      </th>
+                      <th className="px-4 py-3 tabular-nums">
+                        <HeaderWithHint label="Signup" hint={ACQUISITION_HINTS.signupPageVisitsCol} />
+                      </th>
+                      <th className="px-4 py-3 tabular-nums">
+                        <HeaderWithHint label="Login" hint={ACQUISITION_HINTS.loginVisitsCol} />
+                      </th>
+                      <th className="px-4 py-3 tabular-nums">
+                        <HeaderWithHint label="Blog" hint={ACQUISITION_HINTS.blogVisitsCol} />
                       </th>
                       <th className="px-4 py-3">
                         <HeaderWithHint label="Starts" hint={ACQUISITION_HINTS.startsCol} />
@@ -455,7 +514,7 @@ export default function AdminAcquisitionPage() {
                   <tbody>
                     {data.by_source.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">
+                        <td colSpan={11} className="px-4 py-8 text-center text-zinc-500">
                           No traffic recorded in this range.
                         </td>
                       </tr>
@@ -465,7 +524,11 @@ export default function AdminAcquisitionPage() {
                           <td className="px-4 py-3 font-medium text-emerald-300">{row.source}</td>
                           <td className="px-4 py-3 tabular-nums">{row.signups}</td>
                           <td className="px-4 py-3 tabular-nums">{row.lands}</td>
-                          <td className="px-4 py-3 tabular-nums">{row.site_visits}</td>
+                          <td className="px-4 py-3 tabular-nums">{row.homepage_visits}</td>
+                          <td className="px-4 py-3 tabular-nums">{row.pricing_visits}</td>
+                          <td className="px-4 py-3 tabular-nums">{row.signup_page_visits}</td>
+                          <td className="px-4 py-3 tabular-nums">{row.login_visits}</td>
+                          <td className="px-4 py-3 tabular-nums">{row.blog_visits}</td>
                           <td className="px-4 py-3 tabular-nums">{row.widget_starts}</td>
                           <td className="px-4 py-3 tabular-nums">{row.widget_completes}</td>
                           <td className="px-4 py-3 tabular-nums">{row.trial_conversions}</td>
@@ -521,6 +584,50 @@ export default function AdminAcquisitionPage() {
                         </tr>
                       ))
                     )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold uppercase tracking-wider text-zinc-500">
+                Key site pages
+                <InfoTooltip
+                  text={ACQUISITION_HINTS.keySitePages}
+                  presentation="popover"
+                  position="bottom"
+                  tone="controlRoom"
+                />
+              </h2>
+              <div className="overflow-x-auto rounded-xl border border-zinc-800">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-800 bg-[#0d1219] text-left text-xs text-zinc-500">
+                      <th className="px-4 py-3">Page</th>
+                      <th className="px-4 py-3">
+                        <HeaderWithHint label="Visits" hint={ACQUISITION_HINTS.keySitePagesVisitsCol} />
+                      </th>
+                      <th className="px-4 py-3">
+                        <HeaderWithHint label="Signups" hint={ACQUISITION_HINTS.keySitePagesSignupsCol} />
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data.key_site_pages ?? []).map((row) => (
+                      <tr key={row.path} className="border-b border-zinc-800/80 last:border-0">
+                        <td className="px-4 py-3">
+                          <span className="font-medium text-zinc-200">{row.label}</span>
+                          <span
+                            className="mt-0.5 block max-w-md truncate font-mono text-xs text-zinc-500"
+                            title={row.path}
+                          >
+                            {row.path}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 tabular-nums">{row.visits}</td>
+                        <td className="px-4 py-3 tabular-nums">{row.signups}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
