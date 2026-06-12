@@ -1,10 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { adminSupabase } from '@/lib/supabase/admin'
-import { buildFounderJourneyCommandCenter } from '@/lib/admin/tracking'
+import {
+  buildFounderJourneyCommandCenter,
+  type FounderJourneyCommandCenterPayload,
+  type FounderJourneyPulseSectionPayload,
+} from '@/lib/admin/tracking'
 import { authorizeAdminApiRequest } from '@/lib/admin'
+import { withAdminCache } from '@/lib/admin/api-cache'
+import {
+  commandCenterCohortKey,
+  invalidateCommandCenterCohort,
+} from '@/lib/admin/command-center-cohort-cache'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+
+function isPulseSectionPayload(
+  payload: FounderJourneyCommandCenterPayload | FounderJourneyPulseSectionPayload
+): payload is FounderJourneyPulseSectionPayload {
+  return 'pulse' in payload && !('funnel' in payload)
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -16,32 +31,56 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Admin client not configured' }, { status: 500 })
     }
 
-    const pulseUserCap = parseInt(req.nextUrl.searchParams.get('pulseCap') ?? '400', 10)
-    const startDate = req.nextUrl.searchParams.get('startDate')?.trim()
-    const endDate = req.nextUrl.searchParams.get('endDate')?.trim()
+    const db = adminSupabase
+    const sp = req.nextUrl.searchParams
+    const pulseUserCap = parseInt(sp.get('pulseCap') ?? '100', 10)
+    const startDate = sp.get('startDate')?.trim()
+    const endDate = sp.get('endDate')?.trim()
+    const includePulse = sp.get('includePulse') !== '0' && sp.get('includePulse') !== 'false'
+    const pulseOnly = sp.get('pulseOnly') === '1' || sp.get('pulseOnly') === 'true'
 
-    let payload
-    try {
-      payload =
-        startDate && endDate
-          ? await buildFounderJourneyCommandCenter(adminSupabase, {
-              startDate,
-              endDate,
-              pulseUserCap,
-            })
-          : await buildFounderJourneyCommandCenter(adminSupabase, {
-              cohortDays: parseInt(req.nextUrl.searchParams.get('cohortDays') ?? '90', 10),
-              pulseUserCap,
-            })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : ''
-      if (msg.includes('startDate') || msg.includes('endDate') || msg.includes('yyyy-MM-dd')) {
-        return NextResponse.json({ error: msg || 'Invalid date range' }, { status: 400 })
+    if (sp.get('refresh') === '1' || sp.get('refresh') === 'true') {
+      if (startDate && endDate) {
+        invalidateCommandCenterCohort(commandCenterCohortKey(startDate, endDate))
+      } else {
+        invalidateCommandCenterCohort()
       }
-      throw err
     }
 
-    return NextResponse.json(payload)
+    const cacheKey = [
+      'command-center',
+      pulseOnly ? 'pulse' : includePulse ? 'full' : 'core',
+      startDate ?? '',
+      endDate ?? '',
+      String(pulseUserCap),
+    ].join(':')
+
+    const { data: payload, cached } = await withAdminCache(cacheKey, sp, async () => {
+      if (startDate && endDate) {
+        return buildFounderJourneyCommandCenter(db, {
+          startDate,
+          endDate,
+          pulseUserCap,
+          includePulse: pulseOnly ? true : includePulse,
+          pulseOnly,
+        })
+      }
+      return buildFounderJourneyCommandCenter(db, {
+        cohortDays: parseInt(sp.get('cohortDays') ?? '7', 10),
+        pulseUserCap,
+        includePulse: pulseOnly ? true : includePulse,
+        pulseOnly,
+      })
+    })
+
+    if (pulseOnly && isPulseSectionPayload(payload)) {
+      return NextResponse.json({ ...payload, meta: { cached, pulseOnly: true } })
+    }
+
+    return NextResponse.json({
+      ...(payload as FounderJourneyCommandCenterPayload),
+      meta: { cached, includePulse },
+    })
   } catch (e) {
     console.error('[admin/founder-journey-dashboard]', e)
     return NextResponse.json({ error: 'Failed to build dashboard' }, { status: 500 })

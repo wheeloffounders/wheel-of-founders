@@ -193,7 +193,9 @@ export function WhatsNewToday({ intelligenceLocked = false }: WhatsNewTodayProps
             <p className="text-base text-gray-900 dark:text-white">
               <span aria-hidden>{card.item.icon}</span> {card.item.typeLabel}
             </p>
-            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">{card.item.preview}</p>
+            <p className="text-sm text-gray-700 dark:text-gray-200 mt-2 leading-relaxed line-clamp-3">
+              {card.item.preview}
+            </p>
             <p className="text-sm font-medium text-[#ef725c] mt-3">Open full update →</p>
           </Link>
         )

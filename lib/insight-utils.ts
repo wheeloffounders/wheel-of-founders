@@ -278,3 +278,110 @@ export function applyWordCountWithBuffer(
 
   return result ? ensureCompleteInsight(result, type) : ensureCompleteInsight(trimmed.slice(0, maxWords * 8), type)
 }
+
+const PREVIEW_META_INTRO_RE =
+  /^here'?s your (monthly|weekly|quarterly) (reflection|insight|update)[^.!?]*[.!?:]\s*/i
+
+/** Strip markdown to plain text for short UI previews. */
+export function stripMarkdownForPreview(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*]{3,}\s*$/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function isPreviewMetaIntro(line: string): boolean {
+  return /^here'?s your (monthly|weekly|quarterly)/i.test(line.trim())
+}
+
+function isMarkdownDivider(line: string): boolean {
+  return /^[-*]{3,}\s*$/.test(line.trim())
+}
+
+function isHeaderOnlyLine(line: string): boolean {
+  return /^#{1,6}\s/.test(line.trim())
+}
+
+function lineToPreviewPlain(line: string): string {
+  return line
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .trim()
+}
+
+/**
+ * Pull the first substantive body paragraph from markdown insight text.
+ * Skips section headers, horizontal rules, and AI meta intros.
+ */
+export function extractInsightPreviewSource(text: string): string {
+  let t = scrubGenericSynthesisTransitions(filterInsightLabels(text)).trim()
+  if (!t) return ''
+
+  const blocks = t.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean)
+
+  for (const block of blocks) {
+    const lines = block.split('\n').map((l) => l.trim()).filter(Boolean)
+    const bodyLines: string[] = []
+
+    for (const line of lines) {
+      if (isHeaderOnlyLine(line) || isMarkdownDivider(line)) continue
+      const plain = lineToPreviewPlain(line)
+      if (!plain || isPreviewMetaIntro(plain)) continue
+      bodyLines.push(plain)
+    }
+
+    const joined = bodyLines.join(' ').replace(/\s+/g, ' ').trim()
+    if (joined.length < 24 || isPreviewMetaIntro(joined)) continue
+
+    return joined.replace(PREVIEW_META_INTRO_RE, '').trim()
+  }
+
+  const fallback = stripMarkdownForPreview(t).replace(PREVIEW_META_INTRO_RE, '').trim()
+  return fallback
+}
+
+/** Short plain-text excerpt for dashboard / notification previews. */
+export function buildDashboardInsightPreview(
+  text: string,
+  maxSentences = 2,
+  maxChars = 280
+): string {
+  const source = extractInsightPreviewSource(text)
+  if (!source) return ''
+
+  const parts = source.match(/[^.!?]+[.!?]+/g) ?? [source]
+  let acc = ''
+
+  for (let i = 0; i < parts.length && i < maxSentences; i++) {
+    const part = parts[i]!.trim()
+    const candidate = acc ? `${acc} ${part}` : part
+    if (candidate.length > maxChars) {
+      if (!acc) {
+        const slice = part.slice(0, maxChars)
+        const lastStop = Math.max(slice.lastIndexOf('.'), slice.lastIndexOf('!'), slice.lastIndexOf('?'))
+        if (lastStop > 40) return slice.slice(0, lastStop + 1).trim()
+        return `${slice.trim()}…`
+      }
+      break
+    }
+    acc = candidate
+  }
+
+  if (acc) return acc
+
+  const first = parts[0]?.trim() ?? source
+  if (first.length <= maxChars) return first
+
+  const slice = first.slice(0, maxChars)
+  const lastStop = Math.max(slice.lastIndexOf('.'), slice.lastIndexOf('!'), slice.lastIndexOf('?'))
+  if (lastStop > 40) return slice.slice(0, lastStop + 1).trim()
+  return `${slice.trim()}…`
+}

@@ -125,10 +125,17 @@ export type ProMorningCanvasProps = {
   /** Pro: hide per-row task microphone — typed needle movers only. */
   hideTaskRowMic?: boolean
   /**
-   * First session / guided tutorial: lead with brain dump + top priorities, no mood/energy, no “add 4th row”,
-   * minimal footer copy.
+   * First session / guided tutorial: simplified priorities layout, no mood/energy, no “add 4th row”,
+   * minimal footer copy. Brain dump can be hidden via {@link hideBrainDumpSection} on first-plan onboarding.
    */
   streamlinedOnboarding?: boolean
+  /** First-plan onboarding (`/morning?first=true`): hide brain dump so users go straight to Core Objective + tasks. */
+  hideBrainDumpSection?: boolean
+  /**
+   * First-plan onboarding only: one needle mover, no Strategic/Tactical, no AI helpers, softer copy.
+   * Normal `/morning` must not set this.
+   */
+  firstPlanOnboarding?: boolean
   /** Day-1 / streamlined onboarding: extra bottom padding on small screens so the in-flow save CTA clears the fixed Bottom Nav + home indicator (no overlapping fixed bar). */
   stickySaveBar?: boolean
   /** First non-tutorial save: overlay stays until parent finishes AI + min delay (no dismiss). */
@@ -306,6 +313,8 @@ export function ProMorningCanvas({
   morningIntelligenceGated = false,
   hideTaskRowMic = false,
   streamlinedOnboarding = false,
+  hideBrainDumpSection = false,
+  firstPlanOnboarding = false,
   stickySaveBar = false,
   saveOverlayMasterGate = false,
   showMrsDeerSaveProcessingOverlay = false,
@@ -346,8 +355,9 @@ export function ProMorningCanvas({
     [freemiumUser]
   )
 
-  /** Default 3 strategic rows (full) or 2 (light); optional +1 via “+ Add Strategic Action”; consultant note when tasks.length > 3. */
-  const baseStreamSlots = planningMode === 'light' ? 2 : 3
+  /** Default 3 strategic rows (full) or 2 (light); first-plan onboarding uses 1. Optional +1 via “+ Add Strategic Action”. */
+  const defaultStreamSlots = planningMode === 'light' ? 2 : 3
+  const baseStreamSlots = firstPlanOnboarding ? 1 : defaultStreamSlots
   /** Hard cap on priority rows (Rule-of-3 base + expanded stream). */
   const maxStreamSlots = 10
   const [streamExtraSlot, setStreamExtraSlot] = useState(false)
@@ -740,7 +750,7 @@ export function ProMorningCanvas({
       forcedActionPlan?: ActionPlanOption2,
       forcedDecision?: string
     ) => {
-      if (strategicLocked || intelligenceGated) return
+      if (strategicLocked || intelligenceGated || firstPlanOnboarding) return
       const name = (forcedDescription !== undefined ? forcedDescription : taskAt(index).description).trim()
       if (!name) return
       if (ghostwritingRef.current.has(index) && forcedActionPlan === undefined) return
@@ -779,7 +789,7 @@ export function ProMorningCanvas({
         }
       }
     },
-    [decision.decision, intelligenceGated, setTasks, strategicLocked, taskAt]
+    [decision.decision, firstPlanOnboarding, intelligenceGated, setTasks, strategicLocked, taskAt]
   )
 
   const appendToRowDescription = useCallback(
@@ -1351,7 +1361,7 @@ export function ProMorningCanvas({
   )
 
   const showBlueprintsSection =
-    !tutorialMode && filledStreamSlots < 3 && blueprintChipsRow.length > 0
+    !tutorialMode && !firstPlanOnboarding && filledStreamSlots < 3 && blueprintChipsRow.length > 0
 
   const addSuggestionToPlan = useCallback(
     (suggestion: TraySuggestion) => {
@@ -1545,7 +1555,7 @@ export function ProMorningCanvas({
       }
       if (e.key === 'Enter' && e.shiftKey) {
         e.preventDefault()
-        if (!strategicLocked && !intelligenceGated) void runGhostwriterForRow(index)
+        if (!strategicLocked && !intelligenceGated && !firstPlanOnboarding) void runGhostwriterForRow(index)
         if (index + 1 < slotCount) {
           const nextEl = document.querySelector<HTMLTextAreaElement>(`[data-pro-task-slot="${index + 1}"]`)
           nextEl?.focus()
@@ -1556,7 +1566,7 @@ export function ProMorningCanvas({
         return
       }
     },
-    [intelligenceGated, openRefine, runGhostwriterForRow, slotCount, strategicLocked]
+    [firstPlanOnboarding, intelligenceGated, openRefine, runGhostwriterForRow, slotCount, strategicLocked]
   )
 
   useEffect(() => {
@@ -1786,6 +1796,7 @@ export function ProMorningCanvas({
     refineIndex !== null && Boolean(taskAt(refineIndex).recurringBlueprintKey?.trim())
 
   const showTaskConsultantTrigger =
+    !firstPlanOnboarding &&
     !decisionAiLocked &&
     Boolean(decision.decision.trim()) &&
     !(traySuggestions !== null && traySuggestions.length > 0)
@@ -1890,7 +1901,7 @@ export function ProMorningCanvas({
           </div>
         </div>
       ) : null}
-      {morningBrainDumpBlock
+      {!hideBrainDumpSection
         ? brainDumpPortalHost
           ? createPortal(morningBrainDumpBlock, brainDumpPortalHost)
           : (
@@ -1929,7 +1940,13 @@ export function ProMorningCanvas({
           </div>
         </div>
 
-        {!tutorialMode && !decision.decision.trim() && !strategyPrismOpen && !decisionAiLocked ? (
+        {firstPlanOnboarding ? (
+          <p className="mb-3 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+            What would make today a win?
+          </p>
+        ) : null}
+
+        {!firstPlanOnboarding && !tutorialMode && !decision.decision.trim() && !strategyPrismOpen && !decisionAiLocked ? (
           <div className="mb-3">
             {intelligenceGated ? (
               <FreemiumStandbyFrame active blockPointerOnContent>
@@ -1962,7 +1979,8 @@ export function ProMorningCanvas({
         ) : null}
 
         <AnimatePresence>
-          {strategyPrismOpen &&
+          {!firstPlanOnboarding &&
+          strategyPrismOpen &&
           !decision.decision.trim() &&
           oracleLoading &&
           !(decisionStrategies && decisionStrategies.length >= 3) ? (
@@ -1984,7 +2002,11 @@ export function ProMorningCanvas({
         </AnimatePresence>
 
         <AnimatePresence>
-          {strategyPrismOpen && decisionStrategies && decisionStrategies.length > 0 && !decision.decision.trim() ? (
+          {!firstPlanOnboarding &&
+          strategyPrismOpen &&
+          decisionStrategies &&
+          decisionStrategies.length > 0 &&
+          !decision.decision.trim() ? (
             <motion.div
               key="decision-strategy-tray"
               role="region"
@@ -2093,9 +2115,13 @@ export function ProMorningCanvas({
               document.querySelector<HTMLInputElement>('[data-pro-task-slot="0"]')?.focus()
             }
           }}
-          placeholder="What is the ONE thing that must happen today?"
-          rows={5}
-          className={`min-h-[7.5rem] w-full resize-y border-2 px-4 py-3 text-base leading-relaxed text-gray-900 placeholder:text-gray-400 focus:outline-none dark:text-white dark:placeholder:text-gray-500 ${
+          placeholder={
+            firstPlanOnboarding
+              ? "What's the one outcome that must happen today?"
+              : 'What is the ONE thing that must happen today?'
+          }
+          rows={firstPlanOnboarding ? 2 : 5}
+          className={`${firstPlanOnboarding ? 'min-h-[3.5rem]' : 'min-h-[7.5rem]'} w-full resize-y border-2 px-4 py-3 text-base leading-relaxed text-gray-900 placeholder:text-gray-400 focus:outline-none dark:text-white dark:placeholder:text-gray-500 ${
             decisionHighlightFromBrainDump
               ? 'rounded-lg border-amber-300/90 bg-amber-50/50 shadow-[0_0_28px_rgba(251,191,36,0.35)] ring-2 ring-amber-300/70 dark:border-amber-600/55 dark:bg-amber-950/25 dark:ring-amber-500/40'
               : cockpitOnboarding
@@ -2124,6 +2150,7 @@ export function ProMorningCanvas({
           </div>
         ) : null}
 
+        {!firstPlanOnboarding ? (
         <div className="mt-3 flex flex-wrap gap-3">
           <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Type</span>
           <button
@@ -2149,6 +2176,7 @@ export function ProMorningCanvas({
             Tactical
           </button>
         </div>
+        ) : null}
       </div>
 
       <AnimatePresence>
@@ -2364,10 +2392,14 @@ export function ProMorningCanvas({
         </div>
         <p className="mb-6 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
           {cockpitOnboarding ? (
-            <>
-              Verify your {baseStreamSlots} needle movers below. Sit back while Mrs. Deer drafts the &apos;How&apos; for
-              each—strategic clarity starts here.
-            </>
+            firstPlanOnboarding ? (
+              <>Add the one needle mover that moves your objective forward today.</>
+            ) : (
+              <>
+                Verify your {baseStreamSlots} needle movers below. Sit back while Mrs. Deer drafts the &apos;How&apos; for
+                each—strategic clarity starts here.
+              </>
+            )
           ) : blueprintsLocked ? (
             <>
               Enter your {pivotHeaderTitle.toLowerCase()} and your {streamTasksPhrase} manually below.{' '}
@@ -2490,6 +2522,7 @@ export function ProMorningCanvas({
             const isGhostwritingRow = ghostwritingSlots.includes(index)
             const rowBrainDumpBusy = brainDumpProcessing && index < baseStreamSlots
             const showStrategicCard =
+              !firstPlanOnboarding &&
               Boolean(rowTask.description.trim()) &&
               !showUndoBar &&
               (isGhostwritingRow || rowHasStrategicInlineContent(rowTask))
@@ -2631,15 +2664,17 @@ export function ProMorningCanvas({
                               focusedProTaskSlotRef.current = index
                             }}
                             onBlur={() => {
-                              if (!strategicLocked && !intelligenceGated) void runGhostwriterForRow(index)
+                              if (!strategicLocked && !intelligenceGated && !firstPlanOnboarding) void runGhostwriterForRow(index)
                             }}
                             onKeyDown={(e) => onRowKeyDown(e, index)}
                             placeholder={
                               rowSuggestedTemplate && !rowTask.description.trim()
                                 ? `Suggested: ${rowSuggestedTemplate}`
-                                : index < baseStreamSlots
-                                  ? `Action ${index + 1}...`
-                                  : `Task ${index + 1}`
+                                : firstPlanOnboarding && index === 0
+                                  ? "What's the one move that gets this done today?"
+                                  : index < baseStreamSlots
+                                    ? `Action ${index + 1}...`
+                                    : `Task ${index + 1}`
                             }
                             disabled={rowBrainDumpBusy}
                             minRows={1}

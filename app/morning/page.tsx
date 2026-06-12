@@ -1599,7 +1599,7 @@ export default function MorningPage() {
           setPlanCreatedAt(new Date(displayTasks[0].created_at))
           setPlanUpdatedAt(new Date(displayTasks[0].updated_at))
         } else {
-          const maxTasks = planning_mode === 'light' ? 2 : 3
+          const maxTasks = isFirstTime ? 1 : planning_mode === 'light' ? 2 : 3
           setTasks(Array.from({ length: maxTasks }, () => ({ ...EMPTY_TASK, id: generateTaskId() })))
         }
         if (displayDecision) {
@@ -1617,7 +1617,7 @@ export default function MorningPage() {
         }
       } else {
         setHasPlan(false)
-        const maxTasks = planning_mode === 'light' ? 2 : 3
+        const maxTasks = isFirstTime ? 1 : planning_mode === 'light' ? 2 : 3
         setTasks(Array.from({ length: maxTasks }, () => ({ ...EMPTY_TASK, id: generateTaskId() })))
         setPostMorningInsight(null)
         setPostMorningInsightFetchFailed(false)
@@ -2494,15 +2494,12 @@ export default function MorningPage() {
     return () => ac.abort()
   }, [planDate, fetchMonthStatus])
 
-  // First-time flow: ensure exactly 3 tasks for simplified form
+  // First-time flow: ensure exactly one needle mover row
   useEffect(() => {
-    if (isFirstTime && !hasPlan && tasks.length < 3) {
+    if (isFirstTime && !hasPlan && tasks.length !== 1) {
       setTasks((prev) => {
-        const next = [...prev]
-        while (next.length < 3) {
-          next.push({ ...EMPTY_TASK, id: generateTaskId() })
-        }
-        return next
+        const kept = prev.find((t) => t.description.trim()) ?? prev[0] ?? { ...EMPTY_TASK, id: generateTaskId() }
+        return [{ ...kept, id: kept.id || generateTaskId() }]
       })
     }
   }, [isFirstTime, hasPlan, tasks.length])
@@ -2626,6 +2623,13 @@ export default function MorningPage() {
     const tasksForDb = filteredTasks.filter((t) => !t.movedToTomorrow)
 
     console.log('🔴 [SAVE] After getUserSession:', { hasSession: !!session, filteredTasksCount: filteredTasks.length })
+
+    if (isFirstTime && !decision.decision.trim()) {
+      console.log('🔴 [SAVE] Exiting early: no core objective (first-time)')
+      setSaving(false)
+      window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Add your core objective for today', type: 'error' } }))
+      return
+    }
 
     if (isFirstTime && filteredTasks.length === 0) {
       console.log('🔴 [SAVE] Exiting early: no valid tasks (first-time)')
@@ -3151,12 +3155,6 @@ export default function MorningPage() {
         className="min-h-[100svh] overflow-y-auto max-w-3xl mx-auto px-4 md:px-5 pt-2 pb-44 max-lg:pb-48 md:pb-40"
         style={{ paddingTop: spacing['xl'] }}
       >
-        {morningBrainDumpListening ? (
-          <div
-            className="pointer-events-none fixed inset-0 z-[35] bg-black/20 transition-opacity duration-300 dark:bg-black/35"
-            aria-hidden
-          />
-        ) : null}
         {proTrialWelcomeBanner}
         <MorningEmergencyPauseChip visible={showEmergencyPauseChip} />
         {entryContextNudge}
@@ -3166,8 +3164,6 @@ export default function MorningPage() {
             Welcome back! You were about to plan your first day. Let&apos;s finish what you started.
           </p>
         )}
-
-        <div ref={setBrainDumpPortalHost} className="mb-4 w-full" />
 
         <div className={emergencyNeedlePauseClass}>
           <ProMorningCanvas
@@ -3183,8 +3179,8 @@ export default function MorningPage() {
             saving={saving}
             hydratedDecisionStrategies={proMorningStrategyHydration}
             onDecisionStrategiesPersist={onProDecisionStrategiesPersist}
-            brainDumpPortalHost={brainDumpPortalHost}
-            onBrainDumpListeningChange={setMorningBrainDumpListening}
+            hideBrainDumpSection
+            firstPlanOnboarding
             streakDays={userStreakDays}
             founderStruggleIds={founderStruggleIds}
             freemiumUser={freemiumUserStrategic}

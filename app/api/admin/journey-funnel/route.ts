@@ -7,6 +7,7 @@ import { authorizeAdminApiRequest } from '@/lib/admin'
 import { isWhitelistAdminEmail } from '@/lib/admin-emails'
 import { adminSupabase } from '@/lib/supabase/admin'
 import { subDays } from 'date-fns'
+import { getAdminCached, setAdminCached, adminCacheBypassRequested } from '@/lib/admin/api-cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -197,8 +198,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Admin client not configured' }, { status: 500 })
   }
 
-  const days = parseInt(req.nextUrl.searchParams.get('days') ?? '90', 10)
-  const userEmailParam = req.nextUrl.searchParams.get('userEmail')?.trim()
+  const sp = req.nextUrl.searchParams
+  const days = parseInt(sp.get('days') ?? '30', 10)
+  const userEmailParam = sp.get('userEmail')?.trim()
+  const cacheKey = `journey-funnel:${days}:${userEmailParam ?? 'all'}`
+
+  if (!adminCacheBypassRequested(sp)) {
+    const hit = getAdminCached<Record<string, unknown>>(cacheKey)
+    if (hit) return NextResponse.json({ ...hit, meta: { cached: true } })
+  }
+
   const since = subDays(new Date(), days).toISOString()
 
   // 1. Get all users (excluding admin)
@@ -687,12 +696,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({
+  const payload = {
     funnel,
     users: userStages,
     totalSignUps: total,
     biggestDrop,
     stageInsights,
     ...(userJourney && { userJourney }),
-  })
+  }
+  setAdminCached(cacheKey, payload)
+  return NextResponse.json({ ...payload, meta: { cached: false } })
 }

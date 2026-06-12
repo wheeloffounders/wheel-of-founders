@@ -36,8 +36,9 @@ import { generateUserStory } from '@/lib/admin/user-story-verdict'
 export default function AdminFounderJourneyCommandCenterPage() {
   const [data, setData] = useState<FounderJourneyCommandCenterPayload | null>(null)
   const [loading, setLoading] = useState(true)
+  const [pulseLoading, setPulseLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [startDate, setStartDate] = useState(() => format(subDays(new Date(), 14), 'yyyy-MM-dd'))
+  const [startDate, setStartDate] = useState(() => format(subDays(new Date(), 7), 'yyyy-MM-dd'))
   const [endDate, setEndDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
   const [strategicReview, setStrategicReview] = useState<string | null>(null)
   const [strategicLoading, setStrategicLoading] = useState(false)
@@ -48,9 +49,10 @@ export default function AdminFounderJourneyCommandCenterPage() {
     let cancelled = false
     const run = async () => {
       setLoading(true)
+      setPulseLoading(true)
       setError(null)
       try {
-        const qs = new URLSearchParams({ startDate, endDate })
+        const qs = new URLSearchParams({ startDate, endDate, includePulse: '0', pulseCap: '100' })
         const res = await fetch(`/api/admin/founder-journey-dashboard?${qs.toString()}`, {
           credentials: 'include',
         })
@@ -59,12 +61,44 @@ export default function AdminFounderJourneyCommandCenterPage() {
           else setError('Failed to load command center.')
           return
         }
-        const json = (await res.json()) as FounderJourneyCommandCenterPayload
+        const json = (await res.json()) as FounderJourneyCommandCenterPayload & {
+          meta?: { cached?: boolean }
+        }
         if (!cancelled) setData(json)
+
+        const pulseQs = new URLSearchParams({
+          startDate,
+          endDate,
+          pulseOnly: '1',
+          pulseCap: '100',
+        })
+        const pulseRes = await fetch(`/api/admin/founder-journey-dashboard?${pulseQs.toString()}`, {
+          credentials: 'include',
+        })
+        if (!pulseRes.ok || cancelled) return
+        const pulseJson = (await pulseRes.json()) as {
+          pulse: FounderJourneyCommandCenterPayload['pulse']
+          deviceMix: FounderJourneyCommandCenterPayload['deviceMix']
+        }
+        if (!cancelled) {
+          setData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  pulse: pulseJson.pulse,
+                  deviceMix: pulseJson.deviceMix,
+                  sampleNote: prev.sampleNote ?? null,
+                }
+              : prev
+          )
+        }
       } catch {
         if (!cancelled) setError('Failed to load command center.')
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+          setPulseLoading(false)
+        }
       }
     }
     void run()
@@ -280,6 +314,12 @@ export default function AdminFounderJourneyCommandCenterPage() {
                 Engagement score (tasks, evenings, decisions in cohort window) vs days since signup — dots colored by
                 shadow archetype from first 3 days of signal.
               </p>
+              {pulseLoading && data.pulse.points.length === 0 ? (
+                <p className="mb-4 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading pulse chart…
+                </p>
+              ) : null}
               <UserPulseChart points={data.pulse.points} title="" subtitle="" />
               <CoachVerdictBox text={coachNotes?.pulse} className="mt-4" />
               <CoachVerdictBox

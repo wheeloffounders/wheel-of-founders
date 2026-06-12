@@ -1,4 +1,5 @@
 import { badgeWhatsNewMeta, FOUNDER_DNA_FEATURE_META } from '@/lib/founder-dna/feature-links'
+import { buildDashboardInsightPreview } from '@/lib/insight-utils'
 import type { RecentMilestonesResult } from '@/lib/milestones/getRecentMilestones'
 import type { MilestoneUserContext } from '@/lib/milestones/milestoneMessages'
 
@@ -34,16 +35,9 @@ type Candidate = {
   priority: number
 }
 
-export function previewSentences(text: string, maxSentences = 3, maxChars = 320): string {
-  const clean = text
-    .replace(/^#{1,6}\s*/gm, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  if (!clean) return ''
-  const parts = clean.match(/[^.!?]+[.!?]*/g) ?? [clean]
-  const joined = parts.slice(0, maxSentences).join(' ').trim()
-  if (joined.length <= maxChars) return joined
-  return `${joined.slice(0, maxChars).trim()}...`
+/** @deprecated Prefer {@link buildDashboardInsightPreview} — handles markdown + section headers. */
+export function previewSentences(text: string, maxSentences = 2, maxChars = 280): string {
+  return buildDashboardInsightPreview(text, maxSentences, maxChars)
 }
 
 export function sameDayWhatsNew(value: string | Date, todayStr: string): boolean {
@@ -221,7 +215,7 @@ export function buildDashboardRotatingCard(input: BuildDashboardCardInput): Dash
         title: "What's New Today ✨",
         typeLabel: latest.typeLabel,
         preview: latest.text
-          ? previewSentences(latest.text, 3, 320)
+          ? previewSentences(latest.text)
           : `Open ${latest.typeLabel} for the full update.`,
         href: latest.href,
         icon: latest.icon,
@@ -262,7 +256,7 @@ export function buildDashboardRotatingCard(input: BuildDashboardCardInput): Dash
       title: 'You Might Have Missed',
       typeLabel: latest.typeLabel,
       preview: latest.text
-        ? previewSentences(latest.text, 3, 320)
+        ? previewSentences(latest.text)
         : `Open ${latest.typeLabel} for the full update.`,
       href: latest.href,
       icon: latest.icon,

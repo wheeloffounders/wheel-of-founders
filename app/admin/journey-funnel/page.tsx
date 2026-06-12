@@ -50,7 +50,7 @@ export default function JourneyFunnelPage() {
   const [totalSignUps, setTotalSignUps] = useState(0)
   const [biggestDrop, setBiggestDrop] = useState<{ stage: string; count: number } | null>(null)
   const [loading, setLoading] = useState(true)
-  const [days, setDays] = useState(90)
+  const [days, setDays] = useState(30)
   const [error, setError] = useState<string | null>(null)
   const [debugEmail, setDebugEmail] = useState('')
   const [userJourney, setUserJourney] = useState<Record<string, unknown> | null>(null)

@@ -12,6 +12,12 @@ import { fetchLatestUserAgentsForUsers } from '@/lib/admin/latest-page-view-user
 import { formatUserLocalClock, formatUserLocalDateTime, getLocalHour } from '@/lib/admin/user-local-time'
 import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezoneFromProfile } from '@/lib/timezone'
+import {
+  commandCenterCohortKey,
+  getCommandCenterCohort,
+  setCommandCenterCohort,
+  type CommandCenterCohortSnapshot,
+} from '@/lib/admin/command-center-cohort-cache'
 
 /** Internal / family accounts excluded from admin cohort analytics. */
 export const EXCLUDED_EMAILS = ['sniclam@gmail.com', 'vanieho@hotmail.com', 'wttmotivation@gmail.com'] as const
@@ -545,8 +551,22 @@ export type BuildCommandCenterOptions = {
   /** Inclusive yyyy-MM-DD. Takes precedence over cohortDays when both endDate and startDate are set. */
   startDate?: string
   endDate?: string
-  /** Fallback when startDate/endDate omitted: last N days ending today (7–365). */
+  /** Fallback when startDate/endDate omitted: last N days ending today (7–365). Default 7. */
   cohortDays?: number
+  /** When false, skip pulse chart + sample enrichment (faster first paint). Default true. */
+  includePulse?: boolean
+  /** When true, return only `{ pulse, deviceMix }` using cached cohort for the date window. */
+  pulseOnly?: boolean
+}
+
+/** Lazy-loaded pulse section for Command Center (merged client-side). */
+export type FounderJourneyPulseSectionPayload = {
+  generatedAt: string
+  dateRangeStart: string
+  dateRangeEnd: string
+  pulse: FounderJourneyCommandCenterPayload['pulse']
+  deviceMix: FounderJourneyCommandCenterPayload['deviceMix']
+  cachedCohort?: boolean
 }
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -573,7 +593,7 @@ function resolveCommandCenterDateRange(options: BuildCommandCenterOptions): {
       endDateStr: e,
     }
   }
-  const cohortDays = Math.min(Math.max(options.cohortDays ?? 90, 7), 365)
+  const cohortDays = Math.min(Math.max(options.cohortDays ?? 7, 7), 365)
   const endD = new Date()
   const endDateStr = format(endD, 'yyyy-MM-dd')
   const startDateStr = format(subDays(endD, cohortDays), 'yyyy-MM-dd')
@@ -592,9 +612,27 @@ function resolveCommandCenterDateRange(options: BuildCommandCenterOptions): {
 export async function buildFounderJourneyCommandCenter(
   db: SupabaseClient,
   options: BuildCommandCenterOptions = {}
-): Promise<FounderJourneyCommandCenterPayload> {
+): Promise<FounderJourneyCommandCenterPayload | FounderJourneyPulseSectionPayload> {
   const { startIso, endIso, startDateStr, endDateStr } = resolveCommandCenterDateRange(options)
-  const pulseUserCap = Math.min(Math.max(options.pulseUserCap ?? 400, 50), 2000)
+  const pulseUserCap = Math.min(Math.max(options.pulseUserCap ?? 100, 50), 2000)
+  const includePulse = options.includePulse !== false
+  const cohortKey = commandCenterCohortKey(startDateStr, endDateStr)
+
+  if (options.pulseOnly) {
+    let cached = getCommandCenterCohort(cohortKey)
+    if (!cached) {
+      await buildFounderJourneyCommandCenter(db, {
+        ...options,
+        pulseOnly: false,
+        includePulse: false,
+      })
+      cached = getCommandCenterCohort(cohortKey)
+    }
+    if (!cached) {
+      throw new Error('Command Center cohort cache unavailable for pulse load')
+    }
+    return buildPulseSectionPayload(db, cached, pulseUserCap, cached.userIds.length)
+  }
 
   let profQuery = db
     .from('user_profiles')
@@ -802,6 +840,20 @@ export async function buildFounderJourneyCommandCenter(
   const deerAdvice = buildDeerAdviceFromFunnel(funnel)
 
   const cohortSet = new Set(userIds)
+  setCommandCenterCohort(cohortKey, {
+    startDateStr,
+    endDateStr,
+    startIso,
+    endIso,
+    users,
+    userIds,
+    morningByUser,
+    decisionsByUser,
+    eveningByUser,
+    unlocksByUser,
+    shadowByUser,
+    cohortSet,
+  })
 
   const { data: pvEmergencyAll } = await db
     .from('page_views')
@@ -809,7 +861,8 @@ export async function buildFounderJourneyCommandCenter(
     .gte('entered_at', startIso)
     .lte('entered_at', endIso)
     .not('user_id', 'is', null)
-    .limit(50000)
+    .ilike('path', '%emergency%')
+    .limit(8000)
 
   const emergencyVisitors = new Set<string>()
   for (const r of (pvEmergencyAll ?? []) as any[]) {
@@ -902,6 +955,49 @@ export async function buildFounderJourneyCommandCenter(
   }
   const shadowSummary = buildShadowSummary(cohortShadowDistribution)
 
+  if (!includePulse) {
+    const shadowLegend = (Object.keys(SHADOW_COLORS) as ShadowArchetypeName[]).map((shadow) => ({
+      shadow,
+      color: SHADOW_COLORS[shadow],
+    }))
+    return {
+      generatedAt: new Date().toISOString(),
+      dateRangeStart: startDateStr,
+      dateRangeEnd: endDateStr,
+      funnel,
+      deerAdvice,
+      shadowDistribution: cohortShadowDistribution,
+      shadowSummary,
+      pulse: {
+        points: [],
+        shadowLegend,
+        shadowDistribution: { ...emptyShadowDist },
+        activityByHourUtc: Array.from({ length: 24 }, (_, h) => ({
+          hour: h,
+          total: 0,
+          byShadow: {},
+        })),
+      },
+      retentionByShadow,
+      emergency: {
+        visitedEmergency: visited,
+        withNextStep: nextCount,
+        ratePct,
+        trustLeak,
+      },
+      sensors: {
+        avgPostponementsPerUser: avgPost,
+        ttvInsightSecondsMedian: null,
+        ttvNote: 'Add client beacon: time from app open to first streamed insight.',
+      },
+      deviceMix: { handheldPct: 0, desktopPct: 0, knownCount: 0, unknownCount: users.length },
+      sampleNote:
+        users.length >= 4000
+          ? 'Cohort capped at 4000 newest profiles; pulse loads separately.'
+          : 'Pulse chart loads on demand — data unchanged.',
+    }
+  }
+
   const emailMap = new Map(users.map((u) => [u.id, u.email]))
   const profileTimezoneByUserId = new Map(users.map((u) => [u.id, getUserTimezoneFromProfile(u)]))
   const cohortSize = userIds.length
@@ -915,7 +1011,7 @@ export async function buildFounderJourneyCommandCenter(
     const dec = decisionsByUser.get(uid)?.length ?? 0
     const engagementScore = computeEngagementScore(mt, ev, dec, { cohortSize })
     const daysSinceSignup = differenceInCalendarDays(new Date(), new Date(u.created_at))
-    const shadow = shadowByUser.get(uid)?.label ?? 'hybrid'
+    const shadow = (shadowByUser.get(uid)?.label ?? 'hybrid') as ShadowArchetypeName
     const lastAction = formatLastActionLabel(uid, morningByUser, decisionsByUser, eveningByUser)
     pulsePoints.push({
       userId: uid,
@@ -1130,7 +1226,7 @@ export async function buildFounderJourneyCommandCenter(
     for (const row of allPv) {
       const uid = row.user_id
       const h = new Date(row.entered_at).getUTCHours()
-      const sh = shadowByUser.get(uid)?.label ?? 'hybrid'
+      const sh = (shadowByUser.get(uid)?.label ?? 'hybrid') as ShadowArchetypeName
       const bucket = activityByHourUtc[h]!
       bucket.total += 1
       bucket.byShadow[sh] = (bucket.byShadow[sh] ?? 0) + 1
@@ -1168,5 +1264,276 @@ export async function buildFounderJourneyCommandCenter(
       users.length >= 4000
         ? 'Cohort capped at 4000 newest profiles; pulse capped per pulseUserCap.'
         : null,
+  }
+}
+
+function chunkUserIds<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+/** Pulse chart + sample users — uses cached cohort when dashboard lazy-loads. */
+async function buildPulseSectionPayload(
+  db: SupabaseClient,
+  snap: CommandCenterCohortSnapshot,
+  pulseUserCap: number,
+  cohortSize: number
+): Promise<FounderJourneyPulseSectionPayload> {
+  const {
+    startDateStr,
+    endDateStr,
+    users,
+    userIds,
+    morningByUser: morningRaw,
+    decisionsByUser: decisionsRaw,
+    eveningByUser: eveningRaw,
+    shadowByUser,
+  } = snap
+  const morningByUser = morningRaw as Map<string, MorningRow[]>
+  const decisionsByUser = decisionsRaw as Map<string, DecisionRow[]>
+  const eveningByUser = eveningRaw as Map<string, EveningRow[]>
+
+  const emailMap = new Map(users.map((u) => [u.id, u.email]))
+  const profileTimezoneByUserId = new Map(users.map((u) => [u.id, getUserTimezoneFromProfile(u)]))
+  const pulsePoints: FounderJourneyCommandCenterPayload['pulse']['points'] = []
+  const nPulse = Math.min(userIds.length, pulseUserCap)
+  for (let i = 0; i < nPulse; i++) {
+    const uid = userIds[i]!
+    const u = users[i]!
+    const mt = morningByUser.get(uid)?.length ?? 0
+    const ev = (eveningByUser.get(uid) ?? []).filter((e) => e.is_draft !== true).length
+    const dec = decisionsByUser.get(uid)?.length ?? 0
+    const engagementScore = computeEngagementScore(mt, ev, dec, { cohortSize })
+    const daysSinceSignup = differenceInCalendarDays(new Date(), new Date(u.created_at))
+    const shadow = (shadowByUser.get(uid)?.label ?? 'hybrid') as ShadowArchetypeName
+    const lastAction = formatLastActionLabel(uid, morningByUser, decisionsByUser, eveningByUser)
+    pulsePoints.push({
+      userId: uid,
+      email: emailMap.get(uid) ?? null,
+      shadow,
+      daysSinceSignup,
+      engagementScore,
+      lastAction,
+      recentPath: [],
+      calendarHook: false,
+      googleCalendarLinked: false,
+      minutesToFirstMorningSave: null,
+      lastDevice: 'Unknown',
+      profileTimezone: 'UTC',
+      userLocalTime: '',
+      signupBornLocal: '',
+      firstMorningStartedLocal: '',
+      signupLocalHour: null,
+      firstMorningCommittedAt: null,
+      profileCreatedAt: u.created_at,
+      outreach7d: { ...EMPTY_OUTREACH_7D },
+    })
+  }
+
+  let pathByUser = new Map<string, FlowPathStep[]>()
+  try {
+    pathByUser = await fetchRecentPathLabelsForUsers(
+      db,
+      pulsePoints.map((p) => p.userId),
+      5
+    )
+  } catch (e) {
+    console.error('[admin/tracking] recent path (page_views) failed:', e)
+  }
+  const pulsePointsWithPath = pulsePoints.map((p) => ({
+    ...p,
+    recentPath: pathByUser.get(p.userId) ?? [],
+  }))
+
+  let uaByUser = new Map<string, string | null>()
+  try {
+    uaByUser = await fetchLatestUserAgentsForUsers(db, pulsePointsWithPath.map((p) => p.userId))
+  } catch (e) {
+    console.error('[admin/tracking] latest page_view user_agent fetch failed:', e)
+  }
+
+  const pulsePointsWithDevice = pulsePointsWithPath.map((p) => {
+    const ua = uaByUser.get(p.userId)
+    return { ...p, lastDevice: ua ? parseDeviceType(ua) : 'Unknown' }
+  })
+
+  const pulseIdsForIntent = pulsePointsWithDevice.map((p) => p.userId)
+  const calendarHookUserIds = new Set<string>()
+  const googleCalendarLinkedUserIds = new Set<string>()
+  const firstMorningCommitAt = new Map<string, string>()
+  if (pulseIdsForIntent.length > 0) {
+    try {
+      for (const part of chunkUserIds(pulseIdsForIntent, 400)) {
+        const { data: subs } = await (db.from('calendar_subscriptions') as any)
+          .select('user_id')
+          .in('user_id', part)
+          .eq('is_active', true)
+        for (const r of subs ?? []) {
+          const uid = (r as { user_id?: string }).user_id
+          if (uid) calendarHookUserIds.add(uid)
+        }
+        const { data: gcal } = await (db.from('google_calendar_tokens') as any)
+          .select('user_id')
+          .in('user_id', part)
+        for (const r of gcal ?? []) {
+          const uid = (r as { user_id?: string }).user_id
+          if (uid) {
+            calendarHookUserIds.add(uid)
+            googleCalendarLinkedUserIds.add(uid)
+          }
+        }
+        const { data: commits } = await (db.from('morning_plan_commits') as any)
+          .select('user_id, committed_at')
+          .in('user_id', part)
+        for (const r of commits ?? []) {
+          const row = r as { user_id?: string; committed_at?: string }
+          const uid = row.user_id
+          const ca = row.committed_at
+          if (!uid || !ca) continue
+          const prev = firstMorningCommitAt.get(uid)
+          if (!prev || new Date(ca).getTime() < new Date(prev).getTime()) {
+            firstMorningCommitAt.set(uid, ca)
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[admin/tracking] calendar hook / first morning commit fetch failed:', e)
+    }
+  }
+
+  const createdAtByUserId = new Map(users.map((u) => [u.id, u.created_at]))
+  const dashboardClockAt = new Date()
+
+  const pulsePointsFinal = pulsePointsWithDevice.map((p) => {
+    const signup = createdAtByUserId.get(p.userId)
+    const commitAt = firstMorningCommitAt.get(p.userId)
+    const minutes = signup && commitAt ? minutesBetweenIso(signup, commitAt) : null
+    const tz = profileTimezoneByUserId.get(p.userId) ?? 'UTC'
+    return {
+      ...p,
+      calendarHook: calendarHookUserIds.has(p.userId),
+      googleCalendarLinked: googleCalendarLinkedUserIds.has(p.userId),
+      minutesToFirstMorningSave: minutes,
+      profileTimezone: tz,
+      userLocalTime: formatUserLocalClock(dashboardClockAt, tz),
+      signupBornLocal: signup ? formatUserLocalDateTime(signup, tz) : '',
+      firstMorningStartedLocal: commitAt ? formatUserLocalDateTime(commitAt, tz) : '',
+      signupLocalHour: signup ? getLocalHour(signup, tz) : null,
+      firstMorningCommittedAt: commitAt ?? null,
+    }
+  })
+
+  const sevenDaysAgoComm = subDays(new Date(), 7).toISOString()
+  type CommRow = {
+    user_id: string
+    email_type: string
+    subject: string | null
+    sent_at: string
+    opened_at: string | null
+  }
+  const commLogsByUser = new Map<string, CommRow[]>()
+  const pulseIdsForOutreach = pulsePointsFinal.map((p) => p.userId)
+  if (pulseIdsForOutreach.length > 0) {
+    const allComm: CommRow[] = []
+    for (const part of chunkUserIds(pulseIdsForOutreach, 400)) {
+      const { data, error } = await (db.from('communication_logs') as any)
+        .select('user_id, email_type, subject, sent_at, opened_at')
+        .in('user_id', part)
+        .gte('sent_at', sevenDaysAgoComm)
+      if (error) {
+        console.warn('[admin/tracking] communication_logs', error)
+        continue
+      }
+      allComm.push(...((data ?? []) as CommRow[]))
+    }
+    for (const r of allComm) {
+      if (!commLogsByUser.has(r.user_id)) commLogsByUser.set(r.user_id, [])
+      commLogsByUser.get(r.user_id)!.push(r)
+    }
+  }
+
+  const pulsePointsWithOutreach = pulsePointsFinal.map((p) => ({
+    ...p,
+    outreach7d: computeOutreach7dSummary(
+      commLogsByUser.get(p.userId) ?? [],
+      p.recentPath ?? [],
+      p.profileTimezone ?? 'UTC'
+    ),
+  }))
+
+  let handheldN = 0
+  let desktopN = 0
+  let unknownDeviceN = 0
+  for (const p of pulsePointsWithOutreach) {
+    if (p.lastDevice === 'Desktop') desktopN += 1
+    else if (p.lastDevice === 'Mobile' || p.lastDevice === 'Tablet') handheldN += 1
+    else unknownDeviceN += 1
+  }
+  const deviceKnown = handheldN + desktopN
+  const deviceMix = {
+    handheldPct: deviceKnown > 0 ? Math.round((handheldN / deviceKnown) * 1000) / 10 : 0,
+    desktopPct: deviceKnown > 0 ? Math.round((desktopN / deviceKnown) * 1000) / 10 : 0,
+    knownCount: deviceKnown,
+    unknownCount: unknownDeviceN,
+  }
+
+  const shadowLegend = (Object.keys(SHADOW_COLORS) as ShadowArchetypeName[]).map((shadow) => ({
+    shadow,
+    color: SHADOW_COLORS[shadow],
+  }))
+
+  const pulseShadowDistribution: ShadowDistribution = {
+    visionary: 0,
+    builder: 0,
+    hustler: 0,
+    strategist: 0,
+    hybrid: 0,
+  }
+  for (const p of pulsePointsWithOutreach) {
+    pulseShadowDistribution[p.shadow] = (pulseShadowDistribution[p.shadow] ?? 0) + 1
+  }
+
+  const last24Iso = subHours(new Date(), 24).toISOString()
+  const activityByHourUtc: PulseActivityByHourUtc = Array.from({ length: 24 }, (_, h) => ({
+    hour: h,
+    total: 0,
+    byShadow: {},
+  }))
+  const pulseUserIds = pulsePointsWithOutreach.map((p) => p.userId)
+  if (pulseUserIds.length > 0) {
+    const allPv: Array<{ user_id: string; entered_at: string }> = []
+    for (const part of chunkUserIds(pulseUserIds, 400)) {
+      const { data: pvData, error: pvErr } = await db
+        .from('page_views')
+        .select('user_id, entered_at')
+        .in('user_id', part)
+        .gte('entered_at', last24Iso)
+        .limit(8000)
+      if (pvErr) throw pvErr
+      allPv.push(...((pvData ?? []) as Array<{ user_id: string; entered_at: string }>))
+    }
+    for (const row of allPv) {
+      const uid = row.user_id
+      const h = new Date(row.entered_at).getUTCHours()
+      const sh = (shadowByUser.get(uid)?.label ?? 'hybrid') as ShadowArchetypeName
+      const bucket = activityByHourUtc[h]!
+      bucket.total += 1
+      bucket.byShadow[sh] = (bucket.byShadow[sh] ?? 0) + 1
+    }
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    dateRangeStart: startDateStr,
+    dateRangeEnd: endDateStr,
+    pulse: {
+      points: pulsePointsWithOutreach,
+      shadowLegend,
+      shadowDistribution: pulseShadowDistribution,
+      activityByHourUtc,
+    },
+    deviceMix,
+    cachedCohort: true,
   }
 }

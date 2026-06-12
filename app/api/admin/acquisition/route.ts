@@ -3,6 +3,7 @@ import { getServerSession } from '@/lib/server-auth'
 import { isWhitelistAdminEmail } from '@/lib/admin-emails'
 import { buildAcquisitionHub } from '@/lib/admin/build-acquisition-hub'
 import { serverSupabase } from '@/lib/supabase/server'
+import { withAdminCache } from '@/lib/admin/api-cache'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -26,19 +27,28 @@ export async function GET(req: Request) {
     const gate = await assertAdmin()
     if (!gate.ok) return NextResponse.json({ error: 'Unauthorized' }, { status: gate.status })
 
-    const url = new URL(req.url)
-    const startDate = url.searchParams.get('startDate')?.trim() || undefined
-    const endDate = url.searchParams.get('endDate')?.trim() || undefined
-    const daysRaw = url.searchParams.get('days')
-    const windowDays = daysRaw ? Number.parseInt(daysRaw, 10) : undefined
-
     const db = serverSupabase()
-    const payload = await buildAcquisitionHub(db, {
-      startDate,
-      endDate,
-      windowDays: Number.isFinite(windowDays) ? windowDays : startDate && endDate ? undefined : 30,
-    })
-    return NextResponse.json(payload)
+    const url = new URL(req.url)
+    const sp = url.searchParams
+    const startDate = sp.get('startDate')?.trim() || undefined
+    const endDate = sp.get('endDate')?.trim() || undefined
+    const daysRaw = sp.get('days')
+    const windowDays = daysRaw ? Number.parseInt(daysRaw, 10) : undefined
+    const cacheKey = [
+      'acquisition',
+      startDate ?? '',
+      endDate ?? '',
+      String(windowDays ?? 30),
+    ].join(':')
+
+    const { data: payload, cached } = await withAdminCache(cacheKey, sp, () =>
+      buildAcquisitionHub(db, {
+        startDate,
+        endDate,
+        windowDays: Number.isFinite(windowDays) ? windowDays : startDate && endDate ? undefined : 30,
+      })
+    )
+    return NextResponse.json({ ...payload, meta: { cached } })
   } catch (e) {
     console.error('[admin/acquisition]', e)
     return NextResponse.json(
