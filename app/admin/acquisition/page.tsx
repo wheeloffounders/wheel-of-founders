@@ -55,6 +55,10 @@ const ACQUISITION_HINTS = {
     'Page views on core product paths (homepage, pricing, signup) from batched analytics — same date range as this hub. Excludes admin/localhost traffic.',
   keySitePagesVisitsCol: 'Navigation events recorded in page_views for this path.',
   keySitePagesSignupsCol: 'Accounts whose captured first landing page was this path.',
+  vercelAnalytics:
+    'Mirrors Vercel Web Analytics (referrer, country, device, browser) via a Drain into /api/ingest/vercel-analytics. First-party counts above come from Supabase page_views + Radar.',
+  vercelPageviews: 'Page views ingested from Vercel Web Analytics Drains in this date range.',
+  vercelSessions: 'Distinct Vercel sessionId values in this window.',
   activityFeed:
     'Chronological mix of signups, blog lands, widget steps, trial gifts, and key site visits — newest first.',
   eventCol: 'What happened: signup, land, widget step, trial conversion, or site visit.',
@@ -77,6 +81,33 @@ const ACQUISITION_HINTS = {
   nextStepCol:
     'Where they went next on-site: another page (→ /pricing), widget step, or trial signup. Blank if no further tracked action.',
 } as const
+
+function VercelTopTable({
+  title,
+  rows,
+}: {
+  title: string
+  rows: Array<{ label: string; views: number }>
+}) {
+  if (rows.length === 0) return null
+  return (
+    <div className="overflow-hidden rounded-xl border border-zinc-800">
+      <p className="bg-[#0d1219] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">{title}</p>
+      <table className="min-w-full text-sm">
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${title}-${row.label}`} className="border-t border-zinc-800/80">
+              <td className="max-w-[200px] truncate px-4 py-2 font-mono text-xs text-zinc-300" title={row.label}>
+                {row.label}
+              </td>
+              <td className="px-4 py-2 text-right tabular-nums">{row.views}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 const STAT_CARDS = [
   { key: 'signups' as const, label: 'Signups', hint: ACQUISITION_HINTS.signups },
@@ -631,6 +662,56 @@ export default function AdminAcquisitionPage() {
                   </tbody>
                 </table>
               </div>
+            </section>
+
+            <section className="space-y-3">
+              <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold uppercase tracking-wider text-zinc-500">
+                Vercel Web Analytics
+                <InfoTooltip
+                  text={ACQUISITION_HINTS.vercelAnalytics}
+                  presentation="popover"
+                  position="bottom"
+                  tone="controlRoom"
+                />
+              </h2>
+              {data.vercel_analytics?.setup_note ? (
+                <p className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100/90">
+                  {data.vercel_analytics.setup_note}
+                </p>
+              ) : null}
+              {data.vercel_analytics?.configured && data.vercel_analytics.pageviews > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="rounded-xl border border-zinc-800 bg-[#0d1219] px-4 py-3">
+                      <StatTitleWithHint label="Pageviews" hint={ACQUISITION_HINTS.vercelPageviews} />
+                      <p className="mt-1 text-xl font-semibold tabular-nums">{data.vercel_analytics.pageviews}</p>
+                    </div>
+                    <div className="rounded-xl border border-zinc-800 bg-[#0d1219] px-4 py-3">
+                      <StatTitleWithHint label="Sessions" hint={ACQUISITION_HINTS.vercelSessions} />
+                      <p className="mt-1 text-xl font-semibold tabular-nums">
+                        {data.vercel_analytics.unique_sessions}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-zinc-800 bg-[#0d1219] px-4 py-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Devices</p>
+                      <p className="mt-1 text-xl font-semibold tabular-nums">
+                        {data.vercel_analytics.unique_devices}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-zinc-800 bg-[#0d1219] px-4 py-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Custom events</p>
+                      <p className="mt-1 text-xl font-semibold tabular-nums">{data.vercel_analytics.custom_events}</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                    <VercelTopTable title="Top pages" rows={data.vercel_analytics.top_pages} />
+                    <VercelTopTable title="Top referrers" rows={data.vercel_analytics.top_referrers} />
+                    <VercelTopTable title="Countries" rows={data.vercel_analytics.top_countries} />
+                    <VercelTopTable title="Devices" rows={data.vercel_analytics.top_devices} />
+                    <VercelTopTable title="Browsers" rows={data.vercel_analytics.top_browsers} />
+                  </div>
+                </>
+              ) : null}
             </section>
 
             {data.top_landing_pages.length > 0 ? (

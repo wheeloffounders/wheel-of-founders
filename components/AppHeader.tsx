@@ -25,6 +25,7 @@ import {
   Activity,
   LayoutGrid,
   Route,
+  BookOpen,
 } from 'lucide-react'
 import { NotificationCenter } from './notifications/NotificationCenter'
 import { useTheme } from '@/components/ThemeProvider'
@@ -72,6 +73,7 @@ const menuSections = [
   {
     label: 'Support',
     items: [
+      { name: 'Blog', href: '/blog', icon: BookOpen },
       { name: 'Help', href: '/about', icon: HelpCircle },
       { name: 'Contact', href: '/feedback', icon: Mail },
     ],

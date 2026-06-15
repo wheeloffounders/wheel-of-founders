@@ -13,6 +13,10 @@ import {
   isExcludedFromAdminAnalytics,
   isInternalTrafficPath,
 } from '@/lib/admin/internal-traffic-exclusion'
+import {
+  buildVercelAnalyticsSummary,
+  type VercelAnalyticsSummary,
+} from '@/lib/admin/build-vercel-analytics-summary'
 import { isLocalhostReferrer } from '@/lib/analytics/skip-internal-analytics'
 import {
   attributionFromInboundSnapshot,
@@ -125,6 +129,7 @@ export type AcquisitionHubPayload = {
   by_keyword: AcquisitionKeywordRow[]
   top_landing_pages: AcquisitionLandingPageRow[]
   key_site_pages: AcquisitionKeySitePageRow[]
+  vercel_analytics: VercelAnalyticsSummary
   leak_hints: AcquisitionLeakHint[]
   feed: AcquisitionFeedRow[]
   sample_note?: string
@@ -683,6 +688,7 @@ export async function buildAcquisitionHub(
   const fullFeed = feed.slice(0, 150)
   const top_landing_pages = buildTopLandingPages(fullFeed)
   const key_site_pages = buildKeySitePageStats(totals, signups)
+  const vercel_analytics = await buildVercelAnalyticsSummary(db, sinceIso, untilIso)
   const leak_hints = computeLeakHints(totals, by_source, funnel_rates)
 
   const sample_note =
@@ -700,6 +706,7 @@ export async function buildAcquisitionHub(
     by_keyword,
     top_landing_pages,
     key_site_pages,
+    vercel_analytics,
     leak_hints,
     feed: fullFeed,
     sample_note,
