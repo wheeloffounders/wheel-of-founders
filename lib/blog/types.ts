@@ -5,7 +5,10 @@ export type BlogFaqItem = {
 
 export type BlogFrontmatter = {
   title: string
+  /** Publish date (YYYY-MM-DD). Hidden from the blog index until this day (UTC). */
   date: string
+  /** When true, post stays hidden even after `date`. */
+  draft?: boolean
   description: string
   /** Optional image path, usually relative to the MDX file (e.g. ./cover.jpeg) */
   coverImage?: string

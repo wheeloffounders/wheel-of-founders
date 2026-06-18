@@ -1,8 +1,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { MoonStar, Puzzle, Sun } from 'lucide-react'
-import { getBlogSlugs, loadBlogPostFile } from '@/lib/blog/load-blog-post'
-import type { BlogFrontmatter } from '@/lib/blog/types'
+import { getPublishedBlogPosts, sortBlogPostsByDateDesc } from '@/lib/blog/published-posts'
 import { SiteHeader } from '@/components/SiteHeader'
 
 const DAILY_RHYTHM = [
@@ -69,16 +68,9 @@ const VALUE_CARDS = [
 ] as const
 
 export default function HomePage() {
-  const posts = getBlogSlugs()
-    .map((slug) => {
-      const post = loadBlogPostFile(slug)
-      return post ? { slug, ...post.frontmatter } : null
-    })
-    .filter(Boolean) as Array<{ slug: string } & BlogFrontmatter>
-
-  const latestPosts = posts
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  const latestPosts = sortBlogPostsByDateDesc(getPublishedBlogPosts())
     .slice(0, 3)
+    .map((p) => ({ slug: p.slug, ...p.frontmatter }))
 
   return (
     <main className="-mt-4 bg-[#fdfcfb] text-[#1a1a1a]">
