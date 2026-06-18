@@ -2,7 +2,8 @@
 
 **Cadence:** 2 posts per week — **Tuesday** (new article) + **Friday** (optimize or companion piece)  
 **Series:** Founder Energy (time-of-day founder pain → short ritual → Mrs. Deer hook)  
-**How publishing works:** Set `date: 'YYYY-MM-DD'` in MDX frontmatter. Posts stay hidden until that date (UTC). Use `draft: true` while writing.
+**How publishing works:** Set `date: 'YYYY-MM-DD'` in MDX frontmatter. Posts stay hidden until that date (UTC). Use `draft: true` while writing.  
+**Images:** See [`BLOG_IDEOGRAM_PROMPTS.md`](./BLOG_IDEOGRAM_PROMPTS.md) for hero art prompts.
 
 ---
 
@@ -39,49 +40,49 @@
 **Widget/CTA:** Morning Canvas / needle distiller funnel.  
 **Link from:** `brain-quits-at-7pm`, `founder-burnout-warning-signs`
 
-### 2. `two-pm-slump-context-debt` — Jun 10
+### 2. `two-pm-slump-context-debt` — Jun 24 *(draft ready)*
 **Title:** The 2 PM Slump Isn't Coffee — It's Context Debt  
 **Hook:** Fine at 10, useless at 2 — too many role switches.  
 **Ritual:** Context ledger + batch low-cog work into one 30-min block.  
 **Widget/CTA:** Two-tray / mobile vs laptop framing.  
 **Link from:** `context-switching-founder-parent`
 
-### 3. `one-more-thing-before-bed` — Jun 17
+### 3. `one-more-thing-before-bed` — Jul 1 *(draft ready)*
 **Title:** Why "One More Thing" Before Bed Ruins Tomorrow  
 **Hook:** 9 PM "quick check" → midnight replay loop.  
 **Ritual:** Hard stop + tomorrow's gate on paper (Evening Reset step 3).  
 **Widget/CTA:** `finished_enough_toggle` (same as 7 PM post).  
 **Link from:** `brain-quits-at-7pm`, `stop-second-guessing`
 
-### 4. `small-decisions-after-4pm` — Jun 24
+### 4. `small-decisions-after-4pm` — Jul 8 *(draft ready)*
 **Title:** Why Small Decisions Feel Impossible After 4 PM  
 **Hook:** "What's for dinner" level decisions break you.  
 **Ritual:** Decision budget — no new choices after 4; pre-decide defaults.  
 **Widget/CTA:** Decision logger / parser widget.  
 **Link from:** `founders-fog-decision-clarity`
 
-### 5. `pickup-line-productivity-trap` — Jul 1
+### 5. `pickup-line-productivity-trap` — Jul 15 *(draft ready)*
 **Title:** The Pickup Line Productivity Trap  
 **Hook:** 12 minutes feels too short to "count."  
 **Ritual:** Mobile-tier task list (3 items max, completable on phone).  
 **Widget/CTA:** Stolen-moments / mobile tray.  
 **Link from:** `context-switching-founder-parent`
 
-### 6. `slack-at-10pm-compulsive-fixing` — Jul 8
+### 6. `slack-at-10pm-compulsive-fixing` — Jul 22 *(draft ready)*
 **Title:** The Founder Who Can't Stop at 10 PM (Even When They Want To)  
 **Hook:** Body on couch, brain still fixing.  
 **Ritual:** Compulsive-fixing interrupt — name it, park it, close the loop on paper.  
 **Widget/CTA:** Evening reflection / shutdown ritual.  
 **Link from:** `founder-burnout-warning-signs` (Sign #5)
 
-### 7. `monday-morning-dread` — Jul 15
+### 7. `monday-morning-dread` — Jul 29 *(draft ready)*
 **Title:** Monday Morning Dread Is Not a Motivation Problem  
 **Hook:** Sunday was fine; Monday inbox feels like an attack.  
 **Ritual:** Monday anchor (one win) + parking lot for everything else.  
 **Widget/CTA:** Needle mover / weekly bridge.  
 **Link from:** `sunday-night-reset`
 
-### 8. `three-minute-parent-founder-switch` — Jul 22
+### 8. `three-minute-parent-founder-switch` — Aug 5 *(draft ready)*
 **Title:** The 3-Minute Switch From Parent to Founder  
 **Hook:** Kid leaves the room; you still can't focus for 20 minutes.  
 **Ritual:** Transition script — physical cue, one sentence intention, timer.  
