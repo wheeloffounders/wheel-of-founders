@@ -15,24 +15,24 @@
 
 ---
 
-## 8-week calendar (starts Tue Jun 3, 2026)
+## 8-week calendar (updated Jun 18, 2026)
 
 | Week | Tue — publish | Fri — ship | Focus |
 |------|---------------|------------|-------|
-| 1 | **Jun 3** — `morning-brain-cant-pick` *(new)* | **Jun 6** — Cross-link `brain-quits-at-7pm` → `founder-burnout-warning-signs`; add CTAs on burnout post | Morning mirror of top post |
-| 2 | **Jun 10** — `two-pm-slump-context-debt` *(new)* | **Jun 13** — CTA upgrade on `context-switching-founder-parent` | Midday + transition tax |
-| 3 | **Jun 17** — `one-more-thing-before-bed` *(new)* | **Jun 20** — CTA upgrade on `sunday-night-reset` | Night loops / Sunday scaries |
-| 4 | **Jun 24** — `small-decisions-after-4pm` *(new)* | **Jun 27** — CTA upgrade on `stop-second-guessing` | Decision fatigue deep dive |
-| 5 | **Jul 1** — `pickup-line-productivity-trap` *(new)* | **Jul 4** — Re-share `brain-quits-at-7pm` (social/email; no new URL) | Founder-parent stolen moments |
-| 6 | **Jul 8** — `slack-at-10pm-compulsive-fixing` *(new)* | **Jul 11** — CTA upgrade on `founders-fog-decision-clarity` | Can't stop working |
-| 7 | **Jul 15** — `monday-morning-dread` *(new)* | **Jul 18** — CTA upgrade on `why-i-built-mrs-deer` | Week-start anxiety |
-| 8 | **Jul 22** — `three-minute-parent-founder-switch` *(new)* | **Jul 25** — Internal-link pass across whole Founder Energy cluster | Micro transition ritual |
+| 1 | **Jun 18** — `morning-brain-cant-pick` *(live)* | **Jun 20** — Cross-link `brain-quits-at-7pm` → `founder-burnout-warning-signs`; add CTAs on burnout post | Morning mirror of top post |
+| 2 | **Jun 24** — `two-pm-slump-context-debt` *(new)* | **Jun 27** — CTA upgrade on `context-switching-founder-parent` | Midday + transition tax |
+| 3 | **Jul 1** — `one-more-thing-before-bed` *(new)* | **Jul 4** — CTA upgrade on `sunday-night-reset` | Night loops / Sunday scaries |
+| 4 | **Jul 8** — `small-decisions-after-4pm` *(new)* | **Jul 11** — CTA upgrade on `stop-second-guessing` | Decision fatigue deep dive |
+| 5 | **Jul 15** — `pickup-line-productivity-trap` *(new)* | **Jul 18** — Re-share `brain-quits-at-7pm` (social/email) | Founder-parent stolen moments |
+| 6 | **Jul 22** — `slack-at-10pm-compulsive-fixing` *(new)* | **Jul 25** — CTA upgrade on `founders-fog-decision-clarity` | Can't stop working |
+| 7 | **Jul 29** — `monday-morning-dread` *(new)* | **Aug 1** — CTA upgrade on `why-i-built-mrs-deer` | Week-start anxiety |
+| 8 | **Aug 5** — `three-minute-parent-founder-switch` *(new)* | **Aug 8** — Internal-link pass across Founder Energy cluster | Micro transition ritual |
 
 ---
 
 ## New post briefs (Tuesday slots)
 
-### 1. `morning-brain-cant-pick` — Jun 3
+### 1. `morning-brain-cant-pick` — Jun 18 *(published)*
 **Title:** Why Your Morning Brain Can't Pick (The 8 AM Paralysis)  
 **Hook:** Open laptop, 47 tabs mentally open, can't choose the first task.  
 **Ritual:** Morning Gate — brain dump → one needle → 25-min shield.  
