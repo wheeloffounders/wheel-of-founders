@@ -9,7 +9,8 @@ import { DecisionParserWidget } from '@/components/DecisionParserWidget'
 import { BlogPostRadarLand } from '@/components/blog/BlogPostRadarLand'
 import { extractPrimaryWidgetFunnelFromMdx } from '@/lib/blog/extract-widget-funnel'
 import { BlogArticleJsonLd, buildBlogArticleMetadata } from '@/lib/blog/blog-seo'
-import { getBlogSlugs, loadBlogPostFile } from '@/lib/blog/load-blog-post'
+import { loadBlogPostFile } from '@/lib/blog/load-blog-post'
+import { getPublishedBlogSlugs, isBlogPostPublished } from '@/lib/blog/published-posts'
 import type { BlogFrontmatter } from '@/lib/blog/types'
 
 function blogMdxImg(slug: string) {
@@ -42,14 +43,14 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params
   const file = loadBlogPostFile(slug)
-  if (!file) return { title: 'Post not found | Wheel of Founders' }
+  if (!file || !isBlogPostPublished(file.frontmatter)) return { title: 'Post not found | Wheel of Founders' }
   return buildBlogArticleMetadata({ slug, frontmatter: file.frontmatter })
 }
 
 export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const file = loadBlogPostFile(slug)
-  if (!file) notFound()
+  if (!file || !isBlogPostPublished(file.frontmatter)) notFound()
 
   const { content } = await compileMDX<BlogFrontmatter>({
     source: file.raw,

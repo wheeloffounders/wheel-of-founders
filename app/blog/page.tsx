@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { BlogIndexRadarLand } from '@/components/blog/BlogIndexRadarLand'
-import { getBlogSlugs, loadBlogPostFile } from '@/lib/blog/load-blog-post'
+import { getPublishedBlogPosts, sortBlogPostsByDateDesc } from '@/lib/blog/published-posts'
 import type { BlogFrontmatter } from '@/lib/blog/types'
 
 export const metadata: Metadata = {
@@ -24,13 +24,10 @@ function resolveBlogCover(slug: string, coverImage: string | undefined): string 
 }
 
 export default function BlogIndexPage() {
-  const slugs = getBlogSlugs()
-  const posts = slugs
-    .map((slug) => {
-      const post = loadBlogPostFile(slug)
-      return post ? { slug, ...post.frontmatter } : null
-    })
-    .filter(Boolean) as Array<{ slug: string } & BlogFrontmatter>
+  const posts = sortBlogPostsByDateDesc(getPublishedBlogPosts()).map((p) => ({
+    slug: p.slug,
+    ...p.frontmatter,
+  })) as Array<{ slug: string } & BlogFrontmatter>
 
   return (
     <main className="mx-auto max-w-4xl py-12">
