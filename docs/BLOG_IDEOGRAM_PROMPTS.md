@@ -144,14 +144,14 @@ Desk close-up: monitor with single short abstract sentence line highlighted in c
 
 | Post slug | Save hero as |
 |-----------|----------------|
-| `morning-brain-cant-pick` | `content/blog/morning-gate-hero.jpeg` |
-| `two-pm-slump-context-debt` | `content/blog/two-pm-slump-hero.jpeg` |
-| `one-more-thing-before-bed` | `content/blog/one-more-thing-before-bed-hero.jpeg` |
-| `small-decisions-after-4pm` | `content/blog/small-decisions-4pm-hero.jpeg` |
-| `pickup-line-productivity-trap` | `content/blog/pickup-line-trap-hero.jpeg` |
-| `slack-at-10pm-compulsive-fixing` | `content/blog/slack-at-10pm-hero.jpeg` |
-| `monday-morning-dread` | `content/blog/monday-morning-dread-hero.jpeg` |
-| `three-minute-parent-founder-switch` | `content/blog/three-minute-switch-hero.jpeg` |
+| `morning-brain-cant-pick` | `content/blog/morning-gate-hero.png` |
+| `two-pm-slump-context-debt` | `content/blog/two-pm-slump-hero.png` |
+| `one-more-thing-before-bed` | `content/blog/one-more-thing-before-bed-hero.png` |
+| `small-decisions-after-4pm` | `content/blog/small-decisions-4pm-hero.png` |
+| `pickup-line-productivity-trap` | `content/blog/pickup-line-trap-hero.png` |
+| `slack-at-10pm-compulsive-fixing` | `content/blog/slack-at-10pm-hero.png` |
+| `monday-morning-dread` | `content/blog/monday-morning-dread-hero.png` |
+| `three-minute-parent-founder-switch` | `content/blog/three-minute-switch-hero.png` |
 
 After generating, drop JPEGs in `content/blog/` (same folder as MDX—matches existing `7pm-cognitive-shutdown.jpeg` pattern).
 
