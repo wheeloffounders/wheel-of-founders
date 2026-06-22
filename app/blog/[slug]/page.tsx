@@ -33,8 +33,10 @@ const blogHeadings = Lora({
 })
 
 export async function generateStaticParams() {
-  return getBlogSlugs().map((slug) => ({ slug }))
+  return getPublishedBlogSlugs().map((slug) => ({ slug }))
 }
+
+export const dynamicParams = true
 
 export async function generateMetadata({
   params,
